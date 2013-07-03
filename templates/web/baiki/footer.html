@@ -1,6 +1,31 @@
                     [% IF pagefooter %]
                     <footer role="content-info">
-                        <p><a href="/privacy">Privacy and cookies</a></p>
+                        <div class="tablewrapper bordered">
+                            <div id="footer-help">
+                                <h4>Sponsored by</h4>
+
+                                <ul>
+                                  <li>
+				    <a href="http://isif.asia/">
+				      <img src="/i/isif.png" alt="isif asia"/>
+				    </a>
+				  </li>
+                                </ul>
+                            </div>
+
+                            <div id="footer-help">
+                                <ul>
+                                    <li>
+                                        <h4>[% loc('Are you a developer?') %]</h4>
+                                        <p>[% loc('Would you like to contribute to FixMyStreet Malaysia? Our code is open source and <a href="https://github.com/Sinar/fixmystreet">available on GitHub</a>.') %]</p>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <p style="margin-top: 10px;">
+			  <a href="/privacy">Privacy and cookies</a>
+			  |&nbsp;<a href="/faq">FAQ</a>
+			</p>
                     </footer>
                     [% END %]
                 </div><!-- .content role=main -->
