@@ -127,6 +127,33 @@ function fms_map_clicked(e) {
     // TODO
 
     $('#sub_map_links').hide();
+    if ($('html').hasClass('mobile')) {
+        var $map_box = $('#map_box'),
+        width = $map_box.width(),
+        height = $map_box.height();
+        $map_box.append( '<p id="mob_sub_map_links">' + '<a href="#" id="try_again">' + translation_strings.try_again + '</a>' + '<a href="#ok" id="mob_ok">' + translation_strings.ok + '</a>' + '</p>' ).css({ position: 'relative', width: width, height: height, marginBottom: '1em' });
+        // Making it relative here makes it much easier to do the scrolling later
+
+        $('.mobile-map-banner').html('<a href="/">' + translation_strings.home + '</a> ' + translation_strings.right_place);
+
+        // mobile user clicks 'ok' on map
+        $('#mob_ok').toggle(function(){
+            //scroll the height of the map box instead of the offset
+            //of the #side-form or whatever as we will probably want
+            //to do this on other pages where #side-form might not be
+            $('html, body').animate({ scrollTop: height-60 }, 1000, function(){
+                $('#mob_sub_map_links').addClass('map_complete');
+                $('#mob_ok').text(translation_strings.map);
+            });
+        }, function(){
+            $('html, body').animate({ scrollTop: 0 }, 1000, function(){
+                $('#mob_sub_map_links').removeClass('map_complete');
+                $('#mob_ok').text(translation_strings.ok);
+            });
+        });
+    }
+
+
     fixmystreet.page = 'new';
     location.hash = 'report';
 }
