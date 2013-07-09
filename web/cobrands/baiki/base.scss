@@ -1,7 +1,28 @@
+
 @import "../sass/h5bp";
 @import "./_colours";
 @import "../sass/mixins";
 @import "compass";
 
 @import "../sass/base";
+
+#mpsj-logo {
+    display: block;
+    width: 75px;
+    height: 75px;
+    background: url('/i/mpsj.gif') no-repeat;
+    text-indent: -999999px;
+    position: absolute;
+    z-index: 2;
+    margin: -0.8em 0 0 180px;
+    
+}
+
+html.mobile {
+    #mpsj-logo {
+	margin: 0 0 0 180px;
+	top: 0.5em;
+	background: url('/i/mpsj-small.gif') no-repeat;
+    }
+}
 

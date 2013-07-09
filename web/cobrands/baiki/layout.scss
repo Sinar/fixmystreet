@@ -36,3 +36,46 @@ body.mappage {
         }
     }
 }
+
+#mpsj-logo {
+    top: 0.9em;
+    position: absolute;
+    z-index: 3;
+}
+
+.ie6, .ie7 {
+    #mpsj-logo {
+	position: absolute;
+	top: -3.25em;
+    }
+}
+
+body.mappage {
+    #site-logo {
+	position: fixed;
+    }
+}
+
+.ie6, .ie7, .ie8 {
+    body.mappage {
+	position: absolute;
+    }
+}
+
+body.frontpage {
+    #mpsj-logo {
+	top: 3.5em;
+	margin-left: 300px;
+    }
+}
+
+.ie6, ie7, ie8 {
+    body.frontpage {
+	#mbsj-logo {
+	    position: relative;
+	    width: 60em;
+	    margin: 0 auto;
+	    top: -1em;
+	}
+    }
+}
