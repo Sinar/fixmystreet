@@ -6,23 +6,37 @@
 
 @import "../sass/base";
 
-#mpsj-logo {
-    display: block;
-    width: 75px;
-    height: 75px;
-    background: url('/i/mpsj.gif') no-repeat;
-    text-indent: -999999px;
-    position: absolute;
-    z-index: 2;
-    margin: -0.8em 0 0 180px;
-    
+ul.partner-list li {
+    list-style: none;
 }
 
-html.mobile {
-    #mpsj-logo {
-	margin: 0 0 0 180px;
-	top: 0.5em;
-	background: url('/i/mpsj-small.gif') no-repeat;
-    }
+.partner-logo {
+    height: 75px;
+    width: 75px;
 }
+
+/* #mpsj-logo { */
+/*     display: block; */
+/*     width: 75px; */
+/*     height: 75px; */
+/*     background: url('/i/mpsj.gif') no-repeat; */
+/*     /\* text-indent: -999999px; *\/ */
+/*     /\* position: absolute; *\/ */
+/*     /\* z-index: 2; *\/ */
+/*     /\* margin: -0.8em 0 0 180px; *\/     */
+/* } */
+
+/* #dbkl-logo { */
+/*     width: 75px; */
+/*     height: 75px; */
+/*     background: url('/i/dbkl.gif') no-repeat;     */
+/* } */
+
+/* html.mobile { */
+/*     #mpsj-logo { */
+/* 	margin: 0 0 0 180px; */
+/* 	top: 0.5em; */
+/* 	background: url('/i/mpsj-small.gif') no-repeat; */
+/*     } */
+/* } */
 
