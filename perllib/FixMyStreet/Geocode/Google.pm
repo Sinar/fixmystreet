@@ -75,9 +75,9 @@ sub string {
                 address => $address,
                 latitude => sprintf('%0.6f', $latitude),
 		longitude => sprintf('%0.6f', $longitude)      
-		 });
+	    });
 	};
-	push (@valid_location, $_
+	push (@valid_locations, $_);
     }
     return { latitude => $latitude, longitude => $longitude } if scalar @valid_locations == 1;
     return { error => $error };
