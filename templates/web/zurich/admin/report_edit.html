@@ -68,9 +68,9 @@
 <li>
 [% photo = problem.get_photo_params %]
 <div class="update-img">
-    [% IF photo.url_full %]<a href="[% photo.url_full %]" rel="fancy">[% END
-    %]<img alt="Photo of this report" [% IF photo.height %]height="[% photo.height %]" width="[% photo.width %]"[% END %] src="[% photo.url %]">
-    [%- IF photo.url_full %]<span>zoom</span></a>[% END %]
+    <a href="[% c.cobrand.base_url %]/photo/[% problem.photo %].fulltemp.jpeg" rel="fancy">
+        <img alt="Photo of this report" src="[% c.cobrand.base_url %]/photo/[% problem.photo %].temp.jpeg">
+    <span>zoom</span></a>
 </div>
 <br>
 <input type="submit" name="rotate_photo" value="[% loc('Rotate Left') %]">
@@ -81,8 +81,8 @@
 [% END %]
 </ul>
 
-<p><label for="internal_notes">[% loc('Internal notes:') %]</label>
-<textarea name='internal_notes' id='internal_notes' cols=60 rows=5>[% problem.extra.internal_notes | html %]</textarea></p>
+<p><label for="new_internal_note">[% loc('New internal note:') %]</label>
+<textarea name='new_internal_note' id='new_internal_note' cols=60 rows=5>[% new_internal_note | html %]</textarea></p>
 
 <p><span class="mock-label">[% loc('State:') %]</span> <select name="state"  id="state">
     <option value="">--</option>
@@ -102,6 +102,24 @@
     <option selected value="in progress">[% loc('In progress') %]</option>
   [% END %]
 </select></p>
+
+<p id="automatic-reply">
+    <span class="mock-label">automatische Antwort</span>
+    <input type="checkbox" name="send_rejected_email" id="send_rejected_email" value="1" checked="checked" />
+</p>
+
+<script type="text/javascript">
+$(function(){
+    // Show or hide the automatic reply field
+    $('#state').change(function(){
+        if ($(this).val() === 'hidden') {
+            $('#automatic-reply').show();
+        } else {
+            $('#automatic-reply').hide();
+        }
+    }).change();
+});
+</script>
 
 [% IF problem.state == 'unconfirmed' OR problem.state == 'confirmed' %]
 
@@ -136,7 +154,7 @@
     <select name="body_external" id="body_external">
         <option value="">--</option>
     [% FOR body IN bodies %]
-        [% NEXT IF body.parent OR body.bodies %]
+        [% NEXT IF body.parent OR body.bodies OR body.deleted %]
         <option value="[% body.id %]"[% IF body.id == problem.bodies_str %] selected[% END %]>[% body.name %]</option>
     [% END %]
     </select>
