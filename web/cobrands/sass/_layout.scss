@@ -689,7 +689,7 @@ body.twothirdswidthpage {
     }
     &#closed {
       padding-top:5em;
-      background-image:url(/cobrands/fixmystreet/images/sprite.png);
+      background-image:url($image-sprite);
       background-position:-318px -326px;
       background-repeat:no-repeat;
       &:before {
