@@ -1,4 +1,4 @@
-Subject: New problems in <?=$values['area_name']?> on FixMyStreet Malaysia
+Subject: New problems in <?=$values['area_name']?> on AduanKu
 
 The following new problems have been added within
 <?=$values['area_name']?>:

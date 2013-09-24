@@ -1,8 +1,8 @@
-Subject: Confirm your report on FixMyStreet
+Subject: Confirm your report on AduanKu
 
 Hi [% report.name || report.email %],
 
-To confirm the report you have uploaded to FixMyStreet Malaysia via
+To confirm the report you have uploaded to AduanKu via
 [% report.service %], and to check or add any details,
 please visit the following URL:
 
