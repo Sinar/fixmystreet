@@ -3,10 +3,20 @@
                         <div class="tablewrapper bordered">
                             <div id="footer" style="width: 30%">
                                 <h5>Partners</h5>
-                                <ul>
-                                  <li style="list-style: none">
+                                <ul class="partner-list">
+                                  <li>
 				    <a href="https://sinarproject.org/">
 				      <img style="max-width: 150px" src="/i/sinar.png" alt="Sinar Project"/>
+				    </a>
+				  </li>
+				  <li>
+				    <a style="" href="http://ocps.mpsj.gov.my/cms/index.jsp" id="mpsj-logo">
+				      <img class="partner-logo" src="/i/mpsj.gif" alt="MPSJ"/>				      
+				    </a>
+				  </li>
+				  <li>
+				    <a href="http://www.dbkl.gov.my/index.php?lang=ms">
+				      <img class="partner-logo" src="/i/dbkl.gif" alt="DBKL"/>
 				    </a>
 				  </li>
                                 </ul>
@@ -25,7 +35,7 @@
                                 <ul>
                                     <li>
                                         <h4>[% loc('Are you a developer?') %]</h4>
-                                        <p>[% loc('Would you like to contribute to FixMyStreet Malaysia? Our code is open source and <a href="https://github.com/Sinar/fixmystreet">available on GitHub</a>.') %]</p>
+                                        <p>[% loc('Would you like to contribute to AduanKu? Our code is open source and <a href="https://github.com/Sinar/fixmystreet">available on GitHub</a>.') %]</p>
                                     </li>
                                 </ul>
                             </div>
@@ -60,7 +70,8 @@
                             %]>[% loc("All reports") %]</[% c.req.uri.path == '/reports' ? 'span' : 'a' %]></li>[%
                         %]<li><[% IF c.req.uri.path == '/alert' %]span[% ELSE %]a href="/alert[% pc ? '/list?pc=' : '' %][% pc | uri %]"[% END
                             %]>[% loc("Local alerts") %]</[% c.req.uri.path == '/alert' ? 'span' : 'a' %]></li>[%
-                        %]<li><[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
+                        %][% IF not c.user_exists %]<li><a href="/auth?r=my">SignIn</a></li>[% END
+			%]<li><[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
                             %]>[% loc("Help") %]</[% c.req.uri.path == '/faq' ? 'span' : 'a' %]></li>
                     </ul>
                 </div>
