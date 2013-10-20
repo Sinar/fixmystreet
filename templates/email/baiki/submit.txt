@@ -13,6 +13,8 @@ please visit the following link:
 
 <?=$values['has_photo']?>----------
 
+Tracking Id: <?=$values['id']?>
+
 Name: <?=$values['name']?>
 
 Email: <?=$values['email']?>
@@ -24,6 +26,9 @@ Details: <?=$values['detail']?>
 <?=$values['easting_northing']?>Latitude: <?=$values['latitude']?>
 
 Longitude: <?=$values['longitude']?>
+
+Download the image here
+http://aduanku.my/photo/<?=$values['id']?>.full.jpeg
 
 <?=$values['closest_address']?>----------
 
