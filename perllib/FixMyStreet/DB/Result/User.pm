@@ -21,7 +21,7 @@ __PACKAGE__->add_columns(
   "email",
   { data_type => "text", is_nullable => 0 },
   "name",
-  { data_type => "text", is_nullable => 1 },
+  { data_type => "text", is_nullable => 0 },
   "phone",
   { data_type => "text", is_nullable => 1 },
   "password",
@@ -106,6 +106,10 @@ sub check_for_errors {
 
     if ( !$self->name || $self->name !~ m/\S/ ) {
         $errors{name} = _('Please enter your name');
+    }
+
+    if ( !$self->phone) {
+        $errors{phone} = _('Please enter your phone number');
     }
 
     if ( $self->email !~ /\S/ ) {
