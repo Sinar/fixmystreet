@@ -961,6 +961,12 @@ sub check_for_errors : Private {
         }
     }
 
+    if ( $c->cobrand->moniker eq 'baiki') {	
+        if ( ! $c->req->param('phone') ) {
+            $field_errors{phone} = _("This information is required");
+        }
+    }
+
     # FIXME: need to check for required bromley fields here
 
     # if they're got the login details wrong when signing in then
