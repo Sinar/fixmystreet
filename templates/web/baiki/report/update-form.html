@@ -41,10 +41,10 @@
                 
                 [% ELSIF !problem.is_fixed %]
                 
-                <!-- <div class="checkbox-group"> -->
-                <!--     <input type="checkbox" name="fixed" id="form_fixed" value="1"[% ' checked' IF update.mark_fixed %]> -->
-                <!--     <label class="inline" for="form_fixed">[% loc('This problem has been fixed') %]</label> -->
-                <!-- </div> -->
+                <div class="checkbox-group">
+                    <input type="checkbox" name="fixed" id="form_fixed" value="1"[% ' checked' IF update.mark_fixed %]>
+                    <label class="inline" for="form_fixed">[% loc('This problem has been fixed') %]</label>
+                </div>
 
                 [% END %]
             [% END %]
