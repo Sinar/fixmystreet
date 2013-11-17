@@ -138,6 +138,13 @@ sub index : Path : Args(0) {
 }
 
 sub config_page : Path( 'config' ) : Args(0) {
+    my ($self, $c) = @_;
+    my $dir = $c->stash->{additional_template_paths}->[0];
+    my $git_version = `cd $dir && git describe --tags`;
+    chomp $git_version;
+    $c->stash(
+        git_version => $git_version,
+    );
 }
 
 sub timeline : Path( 'timeline' ) : Args(0) {
@@ -969,7 +976,7 @@ sub user_add : Path('user_edit') : Args(0) {
     $c->forward('check_token');
 
     if ( $c->cobrand->moniker eq 'zurich' and $c->req->param('email') eq '' ) {
-        $c->stash->{field_errors}->{email} = _('The email field is required');
+        $c->stash->{field_errors}->{email} = _('Please enter a valid email');
         return 1;
     }
 
@@ -1022,7 +1029,7 @@ sub user_edit : Path('user_edit') : Args(1) {
         $user->flagged( $c->req->param('flagged') || 0 );
 
         if ( $c->cobrand->moniker eq 'zurich' and $user->email eq '' ) {
-            $c->stash->{field_errors}->{email} = _('The email field is required');
+            $c->stash->{field_errors}->{email} = _('Please enter a valid email');
             return 1;
         }
         $user->update;
