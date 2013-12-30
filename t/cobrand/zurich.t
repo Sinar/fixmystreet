@@ -280,7 +280,11 @@ subtest "report_edit" => sub {
     is ( $report->extra->{closed_overdue},    0, 'Marking hidden from scratch also set closed_overdue' );
     is get_moderated_count(), 1;
 
-    reset_report_state($report);
+    is (FixMyStreet::Cobrand::Zurich->new->get_or_check_overdue($report), 0, 'sanity check');
+    $report->update({ created => $created->clone->subtract(days => 10) });
+    is (FixMyStreet::Cobrand::Zurich->new->get_or_check_overdue($report), 0, 'overdue call not increased');
+
+    reset_report_state($report, $created);
 };
 
 FixMyStreet::override_config {
@@ -617,21 +621,29 @@ subtest "hidden report email are only sent when requested" => sub {
 };
 
 subtest "test stats" => sub {
-    $user = $mech->log_in_ok( 'super@example.org' );
-
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'zurich' ],
     }, sub {
-        $mech->get( '/admin/stats' );
+        $user = $mech->log_in_ok( 'super@example.org' );
+
+        $mech->get_ok( '/admin/stats' );
+        is $mech->res->code, 200, "superuser should be able to see stats page";
+
+        $mech->content_contains('Innerhalb eines Arbeitstages moderiert: 2'); # now including hidden
+        $mech->content_contains('Innerhalb von f&uuml;nf Arbeitstagen abgeschlossen: 3');
+        # my @data = $mech->content =~ /(?:moderiert|abgeschlossen): \d+/g;
+        # diag Dumper(\@data); use Data::Dumper;
+        
+        $mech->get_ok( '/admin/stats?export=1' );
+        is $mech->res->code, 200, 'csv retrieved ok';
+        is $mech->content_type, 'text/csv', 'content_type correct' and do {
+            $mech->content_contains(',fixed - council,');
+            $mech->content_contains(',hidden,');
+            my @lines = split /\n/, $mech->content;
+            is scalar @lines, 4, 'Correct number of lines';
+        };
+        $mech->log_out_ok;
     };
-    is $mech->res->code, 200, "superuser should be able to see stats page";
-
-    $mech->content_contains('Innerhalb eines Arbeitstages moderiert: 2'); # now including hidden
-    $mech->content_contains('Innerhalb von f&uuml;nf Arbeitstagen abgeschlossen: 3');
-    # my @data = $mech->content =~ /(?:moderiert|abgeschlossen): \d+/g;
-    # diag Dumper(\@data); use Data::Dumper;
-
-    $mech->log_out_ok;
 };
 
 subtest "test admin_log" => sub {
