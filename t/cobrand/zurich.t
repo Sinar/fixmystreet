@@ -43,14 +43,6 @@ sub reset_report_state {
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
-sub cleanup {
-    $mech->delete_problems_for_body( 2 );
-    $mech->delete_user( 'dm1@example.org' );
-    $mech->delete_user( 'sdm1@example.org' );
-}
-
-cleanup();
-
 # Front page test
 ok $mech->host("zurich.example.com"), "change host to Zurich";
 FixMyStreet::override_config {
@@ -79,10 +71,37 @@ $external_body->send_method( 'Zurich' );
 $external_body->endpoint( 'external_body@example.org' );
 $external_body->update;
 
+sub cleanup {
+    $mech->delete_problems_for_body( $division->id );
+    $mech->delete_problems_for_body( $subdivision->id );
+    $mech->delete_user( 'dm1@example.org' );
+    $mech->delete_user( 'sdm1@example.org' );
+}
+
+sub get_export_rows_count {
+    my $mech = shift;
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'zurich' ],
+    }, sub {
+        $mech->get_ok( '/admin/stats?export=1' );
+    };
+    is $mech->res->code, 200, 'csv retrieved ok';
+    is $mech->content_type, 'text/csv', 'content_type correct' and do {
+        my @lines = split /\n/, $mech->content;
+        return @lines - 1;
+    };
+    return;
+}
+
+cleanup();
+
+my $EXISTING_REPORT_COUNT = 0;
+
 subtest "set up superuser" => sub {
     my $superuser = $mech->log_in_ok( 'super@example.org' );
     # a user from body $zurich is a superuser, as $zurich has no parent id!
     $superuser->update({ from_body => $zurich->id }); 
+    $EXISTING_REPORT_COUNT = get_export_rows_count($mech);
     $mech->log_out_ok;
 };
 
@@ -634,14 +653,13 @@ subtest "test stats" => sub {
         # my @data = $mech->content =~ /(?:moderiert|abgeschlossen): \d+/g;
         # diag Dumper(\@data); use Data::Dumper;
         
-        $mech->get_ok( '/admin/stats?export=1' );
-        is $mech->res->code, 200, 'csv retrieved ok';
-        is $mech->content_type, 'text/csv', 'content_type correct' and do {
+        my $export_count = get_export_rows_count($mech);
+        if (defined $export_count) {
+            is $export_count - $EXISTING_REPORT_COUNT, 3, 'Correct number of reports';
             $mech->content_contains(',fixed - council,');
             $mech->content_contains(',hidden,');
-            my @lines = split /\n/, $mech->content;
-            is scalar @lines, 4, 'Correct number of lines';
-        };
+        }
+
         $mech->log_out_ok;
     };
 };
