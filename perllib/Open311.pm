@@ -172,19 +172,22 @@ sub _generate_service_request_description {
     my $problem = shift;
     my $extra = shift;
 
-    my $description = <<EOT;
-detail: @{[$problem->detail()]}
-
-url: $extra->{url}
-
-Submitted via FixMyStreet
-EOT
-;
-    if ($self->extended_description ne 'oxfordshire') {
-        $description = <<EOT . $description;
-title: @{[$problem->title()]}
-
-EOT
+    my $description = "";
+    if ($extra->{easting_northing}) { # Proxy for cobrand being in the UK
+        $description .= "detail: " . $problem->detail . "\n\n";
+        $description .= "url: " . $extra->{url} . "\n\n";
+        $description .= "Submitted via FixMyStreet\n";
+        if ($self->extended_description ne 'oxfordshire') {
+            $description = "title: " . $problem->title . "\n\n$description";
+        }
+    } elsif ($problem->cobrand eq 'fixamingata') {
+        $description .= "Beskrivning: " . $problem->detail . "\n\n";
+        $description .= "Länk till ärendet: " . $extra->{url} . "\n\n";
+        $description .= "Skickad via FixaMinGata\n";
+    } else {
+        $description .= $problem->title . "\n\n";
+        $description .= $problem->detail . "\n\n";
+        $description .= $extra->{url} . "\n";
     }
 
     return $description;

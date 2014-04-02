@@ -67,17 +67,36 @@ requires 'Readonly';
 requires 'Regexp::Common';
 requires 'Scalar::Util';
 requires 'SOAP::Lite';
-# Required by Barnet sending, currently fails to install, no-one else needs it.
-# requires 'SOAP::WSDL';
 requires 'Statistics::Distributions';
 requires 'Storable';
 requires 'Template::Plugin::Comma';
+requires 'Text::CSV';
 requires 'URI';
 requires 'URI::Escape';
 requires 'URI::QueryParam';
 requires 'XML::RSS';
 requires 'XML::Simple';
 requires 'YAML';
+
+# SOAP::Lite isn't needed by all cobrands, but it would require
+# code changes to only be imported when installed.
+
+feature 'uk', 'FixMyStreet.com specific requirements' => sub {
+#    # East Hampshire
+#    requires 'SOAP::Lite';
+    # Barnet
+    requires 'SOAP::WSDL';
+};
+
+#feature 'zurich', 'Zueri wie neu specific requirements' => sub {
+#    # Geocoder
+#    requires 'SOAP::Lite';
+#};
+
+# Modules used by css watcher
+requires 'File::ChangeNotify';
+requires 'Path::Tiny';
+requires 'File::Find::Rule';
 
 # Modules used by the test suite
 requires 'CGI::Simple';

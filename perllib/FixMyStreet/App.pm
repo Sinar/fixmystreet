@@ -336,7 +336,7 @@ sub send_email {
         {
             _template_ => $email->body,    # will get line wrapped
             _parameters_ => {},
-            _line_indent => $c->cobrand->email_indent,
+            _line_indent => '',
             $email->header_pairs
         }
     ) };
@@ -352,8 +352,8 @@ sub send_email_cron {
 
     return 1 if $c->is_abuser( $env_to );
 
-    $params->{'Message-ID'} = sprintf('<fms-cron-%s-%s@mysociety.org>', time(),
-        unpack('h*', random_bytes(5, 1))
+    $params->{'Message-ID'} = sprintf('<fms-cron-%s-%s@%s>', time(),
+        unpack('h*', random_bytes(5, 1)), FixMyStreet->config('EMAIL_DOMAIN')
     );
 
     $params->{_parameters_}->{signature} = '';
@@ -366,6 +366,7 @@ sub send_email_cron {
     #    }
     #);
 
+    $params->{_line_indent} = '';
     my $email = mySociety::Locale::in_gb_locale { mySociety::Email::construct_email($params) };
 
     if ( FixMyStreet->test_mode ) {

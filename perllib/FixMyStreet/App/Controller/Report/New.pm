@@ -666,9 +666,19 @@ sub setup_categories_and_bodies : Private {
         }
     }
 
+    if ($c->cobrand->can('hidden_categories')) {
+        my %hidden_categories = map { $_ => 1 }
+            $c->cobrand->hidden_categories;
+
+        @category_options = grep { 
+            !$hidden_categories{$_} 
+            } @category_options;
+    }
+
     # put results onto stash for display
     $c->stash->{bodies} = \%bodies;
     $c->stash->{all_body_names} = [ map { $_->name } values %bodies ];
+    $c->stash->{all_body_urls} = [ map { $_->external_url } values %bodies ];
     $c->stash->{bodies_to_list} = [ keys %bodies_to_list ];
     $c->stash->{category_options} = \@category_options;
     $c->stash->{category_extras}  = \%category_extras;
@@ -799,6 +809,7 @@ sub process_report : Private {
     $report->postcode( $params{pc} );
     $report->latitude( $c->stash->{latitude} );
     $report->longitude( $c->stash->{longitude} );
+    $report->send_questionnaire( $c->cobrand->send_questionnaires() );
 
     # set some simple bool values (note they get inverted)
     $report->anonymous( $params{may_show_name} ? 0 : 1 );
