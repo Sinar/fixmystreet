@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Test::MockTime ':all';
 
 use FixMyStreet::TestMech;
 use Web::Scraper;
@@ -24,6 +25,9 @@ my $p_user = FixMyStreet::App->model('DB::User')->find_or_create( {
     email => 'p_user@example.com'
 } );
 
+# Dashboard tests assume we are not too early in year, to allow reporting
+# within same year, as a convenience.
+set_absolute_time('2014-03-01T12:00:00');
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
     MAPIT_URL => 'http://mapit.mysociety.org/',
@@ -111,34 +115,35 @@ FixMyStreet::override_config {
         is_deeply $reports, {}, 'No reports';
     }
 
+    my $now = DateTime->now(time_zone => 'local');
     foreach my $test (
         {
             desc => 'confirmed today with no state',
-            dt   => DateTime->now,
+            dt   => $now,
             counts => [1,1,1,1],
             report_counts => [1, 0, 0],
         },
         {
             desc => 'confirmed last 7 days with no state',
-            dt   => DateTime->now->subtract( days => 6, hours => 23 ),
+            dt   => $now->clone->subtract( days => 6, hours => 23 ),
             counts => [1,2,2,2],
             report_counts => [2, 0, 0],
         },
         {
             desc => 'confirmed last 8 days with no state',
-            dt   => DateTime->now->subtract( days => 8 ),
+            dt   => $now->clone->subtract( days => 8 ),
             counts => [1,2,3,3],
             report_counts => [2, 1, 0],
         },
         {
-            desc => 'confirmed last 4 weeks with no state',
-            dt   => DateTime->now->subtract( weeks => 2 ),
+            desc => 'confirmed last 2 weeks with no state',
+            dt   => $now->clone->subtract( weeks => 2 ),
             counts => [1,2,4,4],
             report_counts => [2, 1, 1],
         },
         {
             desc => 'confirmed this year with no state',
-            dt   => DateTime->now->subtract( weeks => 7 ),
+            dt   => $now->clone->subtract( weeks => 7 ),
             counts => [1,2,4,5],
             report_counts => [2, 1, 1],
         },
@@ -609,7 +614,7 @@ FixMyStreet::override_config {
         is scalar @lines, 6, '1 (header) + 5 (reports) = 6 lines';
     };
 };
-
+restore_time;
 
 sub make_problem {
     my $args = shift;
