@@ -12,8 +12,10 @@ use Sub::Override;
 use mySociety::Config;
 use mySociety::DBHandle;
 
+my $CONF_FILE = $ENV{FMS_OVERRIDE_CONFIG} || 'general';
+
 # load the config file and store the contents in a readonly hash
-mySociety::Config::set_file( __PACKAGE__->path_to("conf/general") );
+mySociety::Config::set_file( __PACKAGE__->path_to("conf/${CONF_FILE}") );
 Readonly::Hash my %CONFIG, %{ mySociety::Config::get_list() };
 
 =head1 NAME
@@ -94,6 +96,12 @@ sub override_config($&) {
 
     # For historical reasons, we have two ways of asking for config variables.
     # Override them both, I'm sure we'll find time to get rid of one eventually.
+    # 
+    # NB: though we have these two functions, templates tend to use [% c.config %]
+    # This overriding happens after $c->config is set, so note that
+    # FixMyStreet::App->setup_request rewrites $c->config if we are in
+    # test_mode, so tests should Just Work there too.
+
     my $override_guard1 = Sub::Override->new(
         "FixMyStreet::config",
         sub {

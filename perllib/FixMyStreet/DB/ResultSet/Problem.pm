@@ -376,6 +376,8 @@ sub send_reports {
 
             if ( $row->subcategory ) {
                 $h{subcategory_line} = sprintf(_("Subcategory: %s"), $row->subcategory) . "\n\n";
+            } else {
+                $h{subcategory_line} = "\n\n";
             }
 
             $h{bodies_name} = join(_(' and '), @dear);
@@ -438,7 +440,7 @@ sub send_reports {
                 lastupdate => \'ms_current_timestamp()',
             } );
             if ( $cobrand->report_sent_confirmation_email && !$h{anonymous_report}) {
-                _send_report_sent_email( $row, \%h, $nomail );
+                _send_report_sent_email( $row, \%h, $nomail, $cobrand );
             }
             debug_print("send successful: OK", $row->id) if $debug_mode;
         } else {
@@ -491,6 +493,7 @@ sub _send_report_sent_email {
     my $row = shift;
     my $h = shift;
     my $nomail = shift;
+    my $cobrand = shift;
 
     my $template = 'confirm_report_sent.txt';
     my $template_path = FixMyStreet->path_to( "templates", "email", $row->cobrand, $row->lang, $template )->stringify;
@@ -509,7 +512,8 @@ sub _send_report_sent_email {
         },
         mySociety::Config::get('CONTACT_EMAIL'),
         [ $row->user->email ],
-        $nomail
+        $nomail,
+        $cobrand
     );
 }
 
