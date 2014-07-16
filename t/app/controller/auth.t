@@ -66,7 +66,7 @@ $mech->not_logged_in_ok;
     $mech->email_count_is(1);
     my $email = $mech->get_email;
     $mech->clear_emails_ok;
-    is $email->header('Subject'), "Your FixMyStreet.com account details",
+    is $email->header('Subject'), "Your FixMyStreet account details",
       "subject is correct";
     is $email->header('To'), $test_email, "to is correct";
 
@@ -213,10 +213,28 @@ $mech->submit_form_ok(
         },
         button => 'sign_in',
     },
-    "sign in with '$test_email' & '$test_password"
+    "sign in with '$test_email' & 'not the password'"
 );
 is $mech->uri->path, '/auth', "redirected to correct page";
 $mech->content_contains( 'problem with your email/password combination', 'found error message' );
+
+subtest "sign in but have email form autofilled" => sub {
+    $mech->get_ok('/auth');
+    $mech->submit_form_ok(
+        {
+            form_name => 'general_auth',
+            fields    => {
+                email    => $test_email,
+                password_sign_in => $test_password,
+                name => 'Auto-completed from elsewhere',
+            },
+            button => 'sign_in',
+        },
+        "sign in with '$test_email' and auto-completed name"
+    );
+    is $mech->uri->path, '/my', "redirected to correct page";
+};
+
 
 # more test:
 # TODO: test that email are always lowercased

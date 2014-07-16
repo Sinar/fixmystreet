@@ -103,6 +103,7 @@ sub determine_location_from_pc : Private {
     }
 
     # pass errors back to the template
+    $c->stash->{location_error_pc_lookup} = 1;
     $c->stash->{location_error} = $error;
     return;
 }
@@ -128,6 +129,22 @@ sub check_location : Private {
     }
 
     return 1;
+}
+
+=head2 country_message
+
+Displays the country_message template, used for displaying a message to
+people using the site from outside the host country.
+
+=cut
+
+sub country_message : Path('/country_message') : Args(0) {
+    my ( $self, $c ) = @_;
+
+    # we do not want to cache this as we always want to check if displaying this
+    # is the right thing to do.
+    $c->res->header( 'Cache_Control' => 'max-age=0' );
+    $c->stash->{template} = 'front/international_banner.html';
 }
 
 # Utility function for if someone (rarely) enters a grid reference

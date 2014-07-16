@@ -624,15 +624,13 @@ sub setup_categories_and_bodies : Private {
             _('Empty public building - school, hospital, etc.')
         );
 
-    } elsif ($first_area->{id} != COUNCIL_ID_BROMLEY && $first_area->{type} eq 'LBO') {
+    } elsif ($first_area->{id} != COUNCIL_ID_BROMLEY 
+          && $first_area->{id} != COUNCIL_ID_BARNET 
+          && $first_area->{type} eq 'LBO') {
 
         $bodies_to_list{ $first_body->id } = 1;
         my @local_categories;
-        if ($first_area->{id} == COUNCIL_ID_BARNET) {
-            @local_categories =  sort keys %{ Utils::barnet_categories() }
-        } else {
-            @local_categories =  sort keys %{ Utils::london_categories() }            
-        }
+        @local_categories =  sort keys %{ Utils::london_categories() };
         @category_options = (
             _('-- Pick a category --'),
             @local_categories 
@@ -721,7 +719,8 @@ sub process_user : Private {
 
     # Extract all the params to a hash to make them easier to work with
     my %params = map { $_ => scalar $c->req->param($_) }
-      ( 'email', 'name', 'phone', 'password_register', 'fms_extra_title' );
+      ( 'email', 'name', 'phone', 'password_register', 'fms_extra_title',
+        'email_y', 'email_n' );
 
     my $user_title = Utils::trim_text( $params{fms_extra_title} );
 
@@ -746,6 +745,9 @@ sub process_user : Private {
 
     # cleanup the email address
     my $email = $params{email} ? lc $params{email} : '';
+    my $email_y = $params{email_y} ? lc $params{email_y} : '';
+    my $email_n = $params{email_n} ? lc $params{email_n} : '';
+    $email = $email || $email_y || $email_n;
     $email =~ s{\s+}{}g;
 
     $report->user( $c->model('DB::User')->find_or_new( { email => $email } ) )
@@ -853,15 +855,10 @@ sub process_report : Private {
             $report->extra( \%extra );
         }
 
-    } elsif ( $first_area->{id} == COUNCIL_ID_BARNET ) {
+    } elsif ($first_area->{id} != COUNCIL_ID_BROMLEY 
+          && $first_area->{id} != COUNCIL_ID_BARNET 
+          && $first_area->{type} eq 'LBO') {
 
-        unless ( exists Utils::barnet_categories()->{ $report->category } ) {
-            $c->stash->{field_errors}->{category} = _('Please choose a category');
-        }
-        $report->bodies_str( $first_body->id );
-        
-    } elsif ( $first_area->{id} != COUNCIL_ID_BROMLEY && $first_area->{type} eq 'LBO') {
-        
         unless ( Utils::london_categories()->{ $report->category } ) {
             $c->stash->{field_errors}->{category} = _('Please choose a category');
         }
@@ -1161,6 +1158,9 @@ sub redirect_or_confirm_creation : Private {
             $report_uri = $c->cobrand->base_url_for_report( $report ) . $report->url;
         }
         $c->log->info($report->user->id . ' was logged in, redirecting to /report/' . $report->id);
+        if ( $c->sessionid ) {
+            $c->flash->{created_report} = 'loggedin';
+        }
         $c->res->redirect($report_uri);
         $c->detach;
     }

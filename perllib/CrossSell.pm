@@ -161,6 +161,25 @@ for campaigns too.
 EOF
 }
 
+sub display_app_links {
+    return <<EOF;
+<h1>Next time, report your issue quicker.</h1>
+<p>Download our awesome app, and make reporting and monitoring issues on the go a breeze.</p>
+
+<p class="app-links">
+<a href="https://play.google.com/store/apps/details?id=org.mysociety.FixMyStreet">
+  <img alt="FixMyStreet Android app on Google Play"
+       src="/cobrands/fixmystreet/images/google_play_logo.png" />
+</a><a href="https://itunes.apple.com/gb/app/fixmystreet/id297456545">
+  <img alt="FixMyStreet app on the App Store"
+       src="/cobrands/fixmystreet/images/itunes_store_logo.png" />
+</a>
+</p>
+
+<p class="desktop-advice">Not on your mobile? No problem! Download now, and the app will be ready to use when you next pick up your phone.</p>
+EOF
+}
+
 # Not currently used, needs more explanation and testing; perhaps in future.
 sub display_gny_groups {
     my ($lon, $lat) = @_;
@@ -221,8 +240,8 @@ sub display_advert ($$;$%) {
 
     #unless (defined $data{done_tms} && $data{done_tms}==1) {
     $c->stash->{scratch} = 'advert=wtt';
-    return '<div style="margin: 0 5em; border-top: dotted 1px #666666;">'
-        . display_wtt_link()
+    return '<div class="advert-mobile-apps">'
+        . display_app_links()
         . '</div>';
 
     $c->stash->{scratch} = 'advert=news';

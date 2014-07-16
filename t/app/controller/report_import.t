@@ -147,8 +147,8 @@ subtest "Submit a correct entry" => sub {
 
     # Check photo present, and still there after map submission (testing bug #18)
     $mech->content_contains( '<img align="right" src="/photo/' );
-    $mech->content_contains('latitude" value="51.50101"', 'Check latitude');
-    $mech->content_contains('longitude" value="-0.141587"', 'Check longitude');
+    $mech->content_contains('latitude" value="51.501009"', 'Check latitude');
+    $mech->content_contains('longitude" value="-0.141588"', 'Check longitude');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
         MAPIT_URL => 'http://mapit.mysociety.org/',
@@ -302,10 +302,12 @@ subtest "Submit a correct entry (with location)" => sub {
 
 subtest "Submit a correct entry (with location) to cobrand" => sub {
   FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'fiksgatami' ],
-    MAPIT_URL => 'http://mapit.nuug.no/',
+    ALLOWED_COBRANDS => [ 'zurich' ],
+    MAPIT_URL => 'http://global.mapit.mysociety.org/',
+    MAPIT_TYPES => [ 'O08' ],
+    MAPIT_ID_WHITELIST => [],
   }, sub {
-    ok $mech->host("fiksgatami.no"), 'change host to fiksgatami';
+    ok $mech->host("zurich.example.org"), 'change host to zurich';
 
     $mech->get_ok('/import');
 
@@ -313,8 +315,8 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
         {
             with_fields => {
                 service => 'test-script',
-                lat     => '59',
-                lon     => '10',
+                lat     => '47.4',
+                lon     => '8.5',
                 name    => 'Test User ll',
                 email   => 'test-ll@example.com',
                 subject => 'Test report ll',
@@ -346,11 +348,10 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
     is_deeply $mech->visible_form_values,
       {
         name          => 'Test User ll',
-        title         => 'Test report ll',
         detail        => 'This is a test report ll',
         photo         => '',
         phone         => '',
-        may_show_name => '1',
+        email => 'test-ll@example.com',
       },
       "check imported fields are shown";
 
@@ -362,7 +363,7 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
     my $report = $user->problems->first;
     is $report->state, 'partial',        'is still partial';
     is $report->title, 'Test report ll', 'title is correct';
-    is $report->lang, 'nb',              'language is correct';
+    is $report->lang, 'de-ch',           'language is correct';
 
     $mech->delete_user($user);
   };

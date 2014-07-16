@@ -18,6 +18,7 @@ requires 'Catalyst::Plugin::Unicode::Encoding';
 requires 'Catalyst::View::TT';
 
 # Modules used by FixMyStreet
+requires 'Authen::SASL';
 requires 'Cache::Memcached';
 requires 'Carp';
 requires 'CGI';
@@ -61,6 +62,8 @@ requires 'Module::Pluggable';
 requires 'Moose';
 requires 'namespace::autoclean';
 requires 'Net::Domain::TLD';
+requires 'Net::SMTP::SSL';
+requires 'Net::SMTP::TLS';
 requires 'Path::Class';
 requires 'POSIX';
 requires 'Readonly';
@@ -85,6 +88,7 @@ feature 'uk', 'FixMyStreet.com specific requirements' => sub {
 #    # East Hampshire
 #    requires 'SOAP::Lite';
     # Barnet
+    # TODO: This can perhaps be removed since Barnet switched to email for problem reports
     requires 'SOAP::WSDL';
 };
 
