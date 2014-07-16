@@ -1,7 +1,17 @@
 package FixMyStreet::Cobrand::FixMyStreet;
 use base 'FixMyStreet::Cobrand::UK';
+use mySociety::Gaze;
 
 use constant COUNCIL_ID_BROMLEY => 2482;
+
+# Special extra
+sub path_to_web_templates {
+    my $self = shift;
+    return [
+        FixMyStreet->path_to( 'templates/web/fixmystreet.com' )->stringify,
+        FixMyStreet->path_to( 'templates/web/fixmystreet' )->stringify
+    ];
+}
 
 # FixMyStreet should return all cobrands
 sub restriction {
@@ -37,6 +47,13 @@ sub extra_contact_validation {
     }
 
     return %errors;
+}
+
+sub get_country_for_ip_address {
+    my $self = shift;
+    my $ip = shift;
+
+    return mySociety::Gaze::get_country_from_ip($ip);
 }
 
 1;

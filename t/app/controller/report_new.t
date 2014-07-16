@@ -1485,7 +1485,7 @@ subtest "categories from deleted bodies shouldn't be visible for new reports" =>
 subtest "extra google analytics code displayed on logged in problem creation" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        BASE_URL => 'http://www.fixmystreet.com',
+        BASE_URL => 'https://www.fixmystreet.com',
         MAPIT_URL => 'http://mapit.mysociety.org/',
     }, sub {
         # check that the user does not exist
@@ -1534,7 +1534,7 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
         # check that we got redirected to /report/
         is $mech->uri->path, "/report/" . $report->id, "redirected to report page";
 
-        $mech->content_contains( "extra = '?created_report", 'extra google code present' );
+        $mech->content_contains( "'id': 'report/" . $report->id . "'", 'extra google code present' );
 
         # cleanup
         $mech->delete_user($user);
@@ -1544,7 +1544,7 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
 subtest "extra google analytics code displayed on email confirmation problem creation" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        BASE_URL => 'http://www.fixmystreet.com',
+        BASE_URL => 'https://www.fixmystreet.com',
         MAPIT_URL => 'http://mapit.mysociety.org/',
     }, sub {
         $mech->log_out_ok;
@@ -1584,11 +1584,15 @@ subtest "extra google analytics code displayed on email confirmation problem cre
         # confirm token in order to update the user details
         $mech->get_ok($url);
 
-        $mech->content_contains( "extra = '?created_report", 'extra google code present' );
-
+        # find the report
         my $user =
           FixMyStreet::App->model('DB::User')
           ->find( { email => 'firstlast@example.com' } );
+
+        my $report = $user->problems->first;
+        ok $report, "Found the report";
+
+        $mech->content_contains( "'id': 'report/" . $report->id . "'", 'extra google code present' );
 
         $user->problems->delete;
         $user->alerts->delete;
