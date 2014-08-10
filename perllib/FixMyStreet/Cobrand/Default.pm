@@ -87,7 +87,7 @@ sub restriction {
     return $self->moniker ? { cobrand => $self->moniker } : {};
 }
 
-=head2 base_url_with_lang 
+=head2 base_url_with_lang
 
 =cut
 
@@ -259,7 +259,7 @@ sub front_stats_data {
 
 Returns any disambiguating information available. Defaults to none.
 
-=cut 
+=cut
 
 sub disambiguate_location { FixMyStreet->config('GEOCODING_DISAMBIGUATION') or {}; }
 
@@ -612,7 +612,7 @@ sub is_two_tier { 0; }
 
 =item council_rss_alert_options
 
-Generate a set of options for council rss alerts. 
+Generate a set of options for council rss alerts.
 
 =cut
 
@@ -731,7 +731,7 @@ Returns the colour of pin to be used for a particular report
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
     #return 'green' if time() - $p->confirmed->epoch < 7 * 24 * 60 * 60;
-    return 'yellow' if $context eq 'around' || $context eq 'reports' || $context eq 'report';
+    # return 'yellow' if $context eq 'around' || $context eq 'reports' || $context eq 'report';
     return $p->is_fixed ? 'green' : 'red';
 }
 
@@ -883,4 +883,3 @@ sub get_country_for_ip_address {
 }
 
 1;
-
