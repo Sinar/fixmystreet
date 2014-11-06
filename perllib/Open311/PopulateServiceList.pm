@@ -44,8 +44,10 @@ sub process_body {
         my $id = $self->_current_body->id;
         my $mapit_url = mySociety::Config::get('MAPIT_URL');
         my $areas = join( ",", keys %{$self->_current_body->areas} );
-        warn "Body $id for areas $areas - $mapit_url/areas/$areas.html - did not return a service list\n"
-            if $self->verbose >= 1;
+        if ($self->verbose >= 1) {
+            warn "Body $id for areas $areas - $mapit_url/areas/$areas.html - did not return a service list\n";
+            warn $open311->error;
+        }
         return;
     }
     $self->process_services( $list );
@@ -228,10 +230,13 @@ sub _add_meta_to_contact {
         sort { $a->{order} <=> $b->{order} }
         @{ $meta_data->{attributes}->{attribute} };
 
-    # we add these later on from bromley so don't list them here
-    # as we don't want to display them
-    if ( $self->_current_body->areas->{2482} ) {
-        my %ignore = map { $_ => 1 } qw/
+    # Some Open311 endpoints, such as Bromley and Warwickshire send <metadata>
+    # for attributes which we *don't* want to display to the user (e.g. as
+    # fields in "category_extras"
+
+    my %override = (
+        #2482
+        'Bromley Council' => [qw(
             service_request_id_ext
             requested_datetime
             report_url
@@ -243,8 +248,18 @@ sub _add_meta_to_contact {
             report_title
             public_anonymity_required
             email_alerts_requested
-        /;
+        ) ],
+        #2243, 
+        'Warwickshire County Council' => [qw(
+            external_id
+            easting
+            northing
+            closest_address
+        ) ],
+    );
 
+    if (my $override = $override{ $self->_current_body->name }) {
+        my %ignore = map { $_ => 1 } @{ $override };
         @meta = grep { ! $ignore{ $_->{ code } } } @meta;
     }
 
@@ -281,6 +296,16 @@ sub _delete_contacts_not_in_service_list {
             deleted => 0,
         }
     );
+
+    # for Warwickshire, which is mixed Open311 and email, don't delete the email
+    # addresses
+    if ($self->_current_body->name eq 'Warwickshire County Council') {
+        $found_contacts = $found_contacts->search(
+            {
+                email => { -not_like => '%@%' }
+            }
+        );
+    }
 
     $found_contacts->update(
         {
