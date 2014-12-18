@@ -91,16 +91,17 @@ build_db() {
   # copy the database script to a temporary folder
   rm -rf /tmp/fms_build/
   cp -R db/ /tmp/fms_build/
+  cd /tmp/fms_build/
 
   # generate initialization script
-  cat <<EOF > /tmp/fms_build/initdb.sh
+  cat <<EOF > initdb.sh
     gosu postgres postgres --single -E -j fms < /script/schema.sql
     gosu postgres postgres --single -E -j fms < /script/generate_secret.sql
     gosu postgres postgres --single -E -j fms < /script/alert_types.sql
 EOF
 
   # generate Dockerfile for building
-  cat <<EOF > /tmp/fms_build/Dockerfile
+  cat <<EOF > Dockerfile
     FROM ${DB_IMAGE}
     ENV POSTGRES_USER ${DB_USERNAME}
     ENV POSTGRES_PASSWORD ${DB_PASSWORD}
@@ -109,9 +110,10 @@ EOF
 EOF
 
   # begin building
-  docker build -t "${DB_TAG}" /tmp/fms_build/
+  docker build -t "${DB_TAG}" .
 
   # cleanup the mess
+  cd $OLDPWD
   rm -rf /tmp/fms_build/
 }
 
