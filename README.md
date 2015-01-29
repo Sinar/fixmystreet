@@ -14,7 +14,7 @@ RSS alerts of problems in their area.
 
 It was created in 2007 by [mySociety](https://www.mysociety.org/) for reporting
 problems to UK councils and has been copied around the world. The FixMyStreet
-Platform is now at version 1.5.
+Platform is now at version 1.5.2.
 
 ## Installation
 
@@ -37,6 +37,50 @@ We've extracted all of the mobile apps from this repository into the
 [fixmystreet-mobile repository](https://github.com/mysociety/fixmystreet-mobile).
 
 ## Releases
+
+* v1.5.3 (21st January 2015)
+    - New features:
+        - Satellite map toggle option on Google Maps view. #1002
+        - Greek translation.
+    - Bugfixes:
+        - Fix cron-based email to use configured SMTP settings. #988
+        - Update UNIX_USER variable on installation setup of crontab. #974
+        - Improve make_css finding of bundled compass when in symlink. #978
+        - Remove hard-coded site name from submit email template.
+        - Allow forked repository pull requests to run on Travis.
+        - Fix title of Privacy page, and other minor text fixes.
+        - CSS: add some bottom content padding and fix a tiny map links issue.
+    - Development improvements:
+        - Replace site_title cobrand function with site-name web template. #979
+        - Remove need for 'cron-wrapper' to run scripts. #852
+        - Rename 'test-wrapper' to 'run-tests'. #999
+        - Add client_max_body_size nginx config option. #995
+        - Tidy up bin directory and #! lines.
+    - Admin improvements:
+        - Add staging email warning on admin body pages if needed. #982
+        - Add admin navigation link to Configuration page. #1005
+        - Better URL for body category editing.
+
+* v1.5.2 (17th December 2014)
+    - Hide unneeded heading on default footer.
+    - Suppress 'Argument "" isn't numeric' warning on admin report edit page.
+    - [UK] Don't show topic form field when reporting abuse.
+    - Use token in moderation response URL to prevent hidden report leak.
+
+* v1.5.1 (12th December 2014)
+    - Bugfixes
+        - Use correct cobrand signature in SendReport emails. #960
+        - Fix double encoding of non-ASCII signature in emails. #961
+        - Use area-based alerts by default, as they function correctly. #959
+        - Set DefaultLocale appropriately when language set, for date display.
+    - Open311
+        - Better error if Open311 server returns a nil service list.
+        - Cope better with Open311 server not liking a blank jurisdiction_id.
+    - Installation/developer improvements:
+        - Add a script to use a test database for running tests. #786
+        - Make base FAQ more generic, move out UK-specific parts. #753 #935
+        - Provide guidance at top of example config file.
+        - Don't install open311-endpoint feature by default.
 
 * v1.5 (19th November 2014)
     - Installation/developer improvements:

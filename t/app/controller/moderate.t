@@ -24,7 +24,7 @@ sub create_report {
     FixMyStreet::App->model('DB::Problem')->create(
     {
         postcode           => 'BR1 3SB',
-        bodies_str         => $BROMLEY_ID,
+        bodies_str         => $body->id,
         areas              => ",$BROMLEY_ID,",
         category           => 'Other',
         title              => 'Good bad good',
@@ -64,10 +64,13 @@ subtest 'Auth' => sub {
         $mech->get_ok($REPORT_URL);
         $mech->content_lacks('Moderat');
 
-        $user->update({ from_body => $BROMLEY_ID });
+        $user->update({ from_body => $body->id });
 
         $mech->get_ok($REPORT_URL);
         $mech->content_lacks('Moderat');
+
+        $mech->get_ok('/contact?m=1&id=' . $report->id);
+        $mech->content_lacks('Good bad bad bad');
     };
 
     subtest 'Affiliated and permissioned user can see moderation' => sub {
@@ -158,6 +161,8 @@ subtest 'Problem moderation' => sub {
     };
 
     subtest 'Hide report' => sub {
+        $mech->clear_emails_ok;
+
         my $resp = $mech->post('/moderate/report/' . $report->id, {
             %problem_prepopulated,
             problem_hide => 1,
@@ -166,6 +171,13 @@ subtest 'Problem moderation' => sub {
 
         $report->discard_changes;
         is $report->state, 'hidden', 'Is hidden';
+
+        my $email = $mech->get_email;
+        my ($url) = $email->body =~ m{(http://\S+)};
+        ok $url, "extracted complain url '$url'";
+
+        $mech->get_ok($url);
+        $mech->content_contains('Good bad bad bad');
 
         # reset
         $report->update({ state => 'confirmed' });

@@ -9,8 +9,6 @@ sub council_area { return 'West Midlands'; }
 sub council_name { return 'See Something Say Something'; }
 sub council_url { return 'seesomething'; }
 sub area_types  { [ 'MTD' ] }
-sub site_title { return 'See Something, Say Something'; }
-
 
 sub site_restriction {
     my $self = shift;
@@ -86,6 +84,7 @@ sub admin_stats {
 
     my %filters = ();
 
+    # XXX The below lookup assumes a body ID === MapIt area ID
     my %councils =
         map {
             my $name = $_->name;

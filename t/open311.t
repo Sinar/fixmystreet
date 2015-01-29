@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
 
+use utf8;
 use strict;
 use warnings;
 use Test::More;
@@ -9,10 +10,6 @@ use CGI::Simple;
 use HTTP::Response;
 use DateTime;
 use DateTime::Format::W3CDTF;
-
-use FindBin;
-use lib "$FindBin::Bin/../perllib";
-use lib "$FindBin::Bin/../commonlib/perllib";
 
 use_ok( 'Open311' );
 
@@ -77,8 +74,6 @@ subtest 'posting service request' => sub {
 
     is $results->{ res }, 248, 'got request id';
 
-    my $req = $o->test_req_used;
-
     my $description = <<EOT;
 title: a problem
 
@@ -116,8 +111,6 @@ subtest 'posting service request with basic_description' => sub {
     );
 
     is $results->{ res }, 248, 'got request id';
-
-    my $req = $o->test_req_used;
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
@@ -182,7 +175,6 @@ for my $test (
         my $results = make_service_req( $problem, $extra, $problem->category,
 '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>'
         );
-        my $req = $o->test_req_used;
         my $c   = CGI::Simple->new( $results->{req}->content );
 
         for my $param ( @{ $test->{params} } ) {
@@ -207,7 +199,6 @@ for my $test (
         my $results = make_service_req( $problem, $extra, $problem->category,
 '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>'
         );
-        my $req = $o->test_req_used;
         my $c   = CGI::Simple->new( $results->{req}->content );
 
         is $c->param( 'first_name' ), $test->{first_name}, 'correct first name';
@@ -232,8 +223,6 @@ subtest 'basic request update post parameters' => sub {
 
     is $results->{ res }, 248, 'got update id';
 
-    my $req = $o->test_req_used;
-
     my $c = CGI::Simple->new( $results->{ req }->content );
 
     is $c->param('description'), 'this is a comment', 'email correct';
@@ -251,8 +240,6 @@ subtest 'extended request update post parameters' => sub {
     my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>', { use_extended_updates => 1 } );
 
     is $results->{ res }, 248, 'got update id';
-
-    my $req = $o->test_req_used;
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
@@ -277,8 +264,6 @@ subtest 'check media url set' => sub {
     my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
     is $results->{ res }, 248, 'got update id';
-
-    my $req = $o->test_req_used;
 
     my $c = CGI::Simple->new( $results->{ req }->content );
     my $expected_path = '/c/' . $comment->id . '.full.jpeg';
@@ -664,7 +649,30 @@ for my $test (
     };
 }
 
+subtest 'check FixaMinGata' => sub {
+    $problem->cobrand('fixamingata');
+    $problem->detail("MØØse");
+    my $extra = {
+        url => 'http://example.com/report/1',
+    };
+    my $results = make_service_req( $problem, $extra, $problem->category, '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>' );
+    is $results->{ res }, 248, 'got request id';
+    my $description = <<EOT;
+Beskrivning: MØØse
+
+Länk till ärendet: http://example.com/report/1
+
+Skickad via FixaMinGata
+EOT
+;
+    my $c = CGI::Simple->new( $results->{ req }->content );
+    (my $c_description = $c->param('description')) =~ s/\r\n/\n/g;
+    utf8::decode($c_description);
+    is $c_description, $description, 'description correct';
+};
+
 done_testing();
+
 
 sub make_update_req {
     my $comment = shift;
@@ -679,7 +687,7 @@ sub make_update_req {
         open311_conf => $open311_args,
     };
 
-    return make_req( $params );
+    return _make_req( $params );
 }
 
 sub make_service_req {
@@ -689,7 +697,7 @@ sub make_service_req {
     my $xml          = shift;
     my $open311_args = shift || {};
 
-    return make_req(
+    return _make_req(
         {
             object       => $problem,
             xml          => $xml,
@@ -701,7 +709,7 @@ sub make_service_req {
     );
 }
 
-sub make_req {
+sub _make_req {
     my $args = shift;
 
     my $object       = $args->{object};

@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use FixMyStreet;
 use FixMyStreet::Geocode::Bing;
+use DateTime;
 use Encode;
 use URI;
 use Digest::MD5 qw(md5_hex);
@@ -145,14 +146,6 @@ Can be specified in template.
 
 sub enter_postcode_text { }
 
-=head2 site_title
-
-The name of the site
-
-=cut
-
-sub site_title { return 'FixMyStreet'; }
-
 =head2 set_lang_and_domain
 
     my $set_lang = $cobrand->set_lang_and_domain( $lang, $unicode, $dir )
@@ -172,6 +165,13 @@ sub set_lang_and_domain {
     my $set_lang = mySociety::Locale::negotiate_language( $languages, $lang_override, $headers );
     mySociety::Locale::gettext_domain( $lang_domain, $unicode, $dir );
     mySociety::Locale::change();
+
+    if ($mySociety::Locale::langmap{$set_lang}) {
+        DateTime->DefaultLocale( $mySociety::Locale::langmap{$set_lang} );
+    } else {
+        DateTime->DefaultLocale( 'en_US' );
+    }
+
     return $set_lang;
 }
 sub languages { FixMyStreet->config('LANGUAGES') || [ 'en-gb,English,en_GB' ] }
@@ -625,10 +625,10 @@ sub council_rss_alert_options {
         ( $_->{id_name} = $_->{short_name} ) =~ tr/+/_/;
         push @options, {
             type      => 'council',
-            id        => sprintf( 'council:%s:%s', $_->{id}, $_->{id_name} ),
+            id        => sprintf( 'area:%s:%s', $_->{id}, $_->{id_name} ),
             text      => sprintf( _('Problems within %s'), $_->{name}),
             rss_text  => sprintf( _('RSS feed of problems within %s'), $_->{name}),
-            uri       => $c->uri_for( '/rss/reports/' . $_->{short_name} ),
+            uri       => $c->uri_for( '/rss/area/' . $_->{short_name} ),
         };
     }
 

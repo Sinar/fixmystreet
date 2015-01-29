@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-#
 # Utils.pm:
 # Various generic utilities for FixMyStreet.
 #
@@ -15,7 +13,6 @@ use strict;
 use DateTime;
 use Encode;
 use File::Slurp qw();
-use mySociety::DBHandle qw(dbh);
 use mySociety::GeoUtil;
 use mySociety::Locale;
 
