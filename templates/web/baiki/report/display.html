@@ -1,4 +1,4 @@
-[% 
+[%
     PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html";
 
@@ -19,6 +19,8 @@
   [% END %]
 
 </div>
+
+[% TRY %][% INCLUDE 'report/_extras_top.html' %][% CATCH file %][% END %]
 
 [% INCLUDE 'report/banner.html' %]
 
