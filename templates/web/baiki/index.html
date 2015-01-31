@@ -23,12 +23,14 @@ Modernizr.load({
     <p class="form-error">[% error %]</p>
 [% END %]
 
+[% INCLUDE 'banner.html' %]
+
 <div class="tablewrapper">
     <div id="front-howto">
         [% INCLUDE 'index-steps.html' %]
     </div>
 
-    [% 
+    [%
         recent_photos = c.cobrand.recent_photos('front', 5);
     %]
 
