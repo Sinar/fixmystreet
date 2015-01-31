@@ -1,4 +1,4 @@
-[% 
+[%
     PROCESS "maps/${map.type}.html";
 
     problem_title = problem.title_safe _ ' - ' _ loc('Viewing a problem');
@@ -19,6 +19,8 @@
 [% IF login_success %]
     <p class='form-success'>[% loc('You have successfully signed in; please check and confirm your details are accurate:') %]</p>
 [% END %]
+
+[% TRY %][% INCLUDE 'report/_extras_top.html' %][% CATCH file %][% END %]
 
 [% INCLUDE 'report/banner.html' %]
 [% INCLUDE 'report/_main.html' %]
