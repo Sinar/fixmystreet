@@ -153,13 +153,13 @@ __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 __PACKAGE__->rabx_column('geocode');
 
-use DateTime::TimeZone;
 use Image::Size;
 use Moose;
 use namespace::clean -except => [ 'meta' ];
 use Utils;
 
-with 'FixMyStreet::Roles::Abuser';
+with 'FixMyStreet::Roles::Abuser',
+     'FixMyStreet::Roles::Extra';
 
 =head2
 
@@ -316,18 +316,11 @@ sub council_states {
     return wantarray ? keys %{$states} : $states;
 }
 
-my $tz = DateTime::TimeZone->new( name => "local" );
-
-my $tz_f;
-$tz_f = DateTime::TimeZone->new( name => FixMyStreet->config('TIME_ZONE') )
-    if FixMyStreet->config('TIME_ZONE');
-
 my $stz = sub {
     my ( $orig, $self ) = ( shift, shift );
     my $s = $self->$orig(@_);
     return $s unless $s && UNIVERSAL::isa($s, "DateTime");
-    $s->set_time_zone($tz);
-    $s->set_time_zone($tz_f) if $tz_f;
+    FixMyStreet->set_time_zone($s);
     return $s;
 };
 
@@ -688,6 +681,10 @@ sub local_coords {
         my ($x, $y) = Geo::Coordinates::CH1903::from_latlon($self->latitude, $self->longitude);
         return ( int($x+0.5), int($y+0.5) );
     }
+    else {
+        # return a dummy value until this function is implemented.  useful for testing.
+        return (0, 0);
+    }
 }
 
 =head2 update_from_open311_service_request
@@ -745,7 +742,7 @@ sub update_from_open311_service_request {
     # of course if local timezone is not the one that went into the data
     # base then we're also in trouble
     my $lastupdate = $self->lastupdate;
-    $lastupdate->set_time_zone( DateTime::TimeZone->new( name => 'local' ) );
+    $lastupdate->set_time_zone( FixMyStreet->local_time_zone );
 
     # update from open311 is older so skip
     if ( $req_time < $lastupdate ) {

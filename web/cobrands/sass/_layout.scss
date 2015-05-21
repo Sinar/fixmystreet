@@ -101,6 +101,7 @@ h1 {
 }
 #site-logo {
   top: 0.9em;
+  left: auto;
   position: absolute;
   z-index: 3;
 }
@@ -118,8 +119,10 @@ h1 {
     top:-3.25em;
   }
 }
-#nav-link {
-  left:-999999px;
+#nav-link,
+#report-cta {
+  right: auto;
+  left: -999999px;
 }
 #main-nav{
   margin: 0 auto;
@@ -1093,6 +1096,14 @@ body.frontpage {
       margin-left:2%;
     }
   }
+}
+
+.confirmation-header {
+    width: 25em;
+    margin: 0 auto 1em;
+    text-align: left;
+    padding: 3em 0 3em 132px; // for tick icon
+    background-position: 0 2em;
 }
 
 /* Admin interface */

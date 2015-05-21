@@ -22,6 +22,9 @@ var fixmystreet = {
     'numZoomLevels': [% map.numZoomLevels %],
     'zoomOffset': [% map.zoomOffset %],
     'map_type': [% map.map_type %],
+[% IF include_key -%]
+    'key': '[% c.config.BING_MAPS_API_KEY %]',
+[%- END %]
     'pins': [% INCLUDE maps/pins_js.html %]
 }
 </script>
@@ -49,7 +52,7 @@ var fixmystreet = {
         [% INCLUDE compass %]
     </noscript></div>
     [% IF map.copyright %]
-    <p id="copyright">[% map.copyright %]</p>
+    <div class="olControlAttribution" style="position: absolute;">[% map.copyright %]</div>
     [% END %]
 
 

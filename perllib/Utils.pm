@@ -25,12 +25,13 @@ Takes the WGS84 latitude and longitude and returns OSGB36 easting and northing.
 =cut
 
 sub convert_latlon_to_en {
-    my ( $latitude, $longitude ) = @_;
+    my ( $latitude, $longitude, $coordsyst ) = @_;
+    $coordsyst ||= 'G';
 
     local $SIG{__WARN__} = sub { die $_[0] };
     my ( $easting, $northing ) =
         mySociety::Locale::in_gb_locale {
-            mySociety::GeoUtil::wgs84_to_national_grid( $latitude, $longitude, 'G' );
+            mySociety::GeoUtil::wgs84_to_national_grid( $latitude, $longitude, $coordsyst );
         };
 
     return ( $easting, $northing );
@@ -88,35 +89,6 @@ sub truncate_coordinate {
     };
     $out =~ s{\.?0+\z}{} if $out =~ m{\.};
     return $out;
-}
-
-sub london_categories {
-    return {
-        'Abandoned vehicle' => 'AbandonedVehicle',
-        'Car parking' => 'Parking',
-        'Dangerous structure' => 'DangerousStructure',
-        'Dead animal' => 'DeadAnimal',
-        'Dumped cylinder' => 'DumpedCylinder',
-        'Dumped rubbish' => 'DumpedRubbish',
-        'Flyposting' => 'FlyPosting',
-        'Graffiti' => 'Graffiti',
-        'Litter bin' => 'LitterBin',
-        'Public toilet' => 'PublicToilet',
-        'Refuse collection' => 'RefuseCollection',
-        'Road or pavement defect' => 'Road',
-        'Road or pavement obstruction' => 'Obstruction',
-        'Skip problem' => 'Skip',
-        'Street cleaning' => 'StreetCleaning',
-        'Street drainage' => 'StreetDrainage',
-        'Street furniture' => 'StreetFurniture',
-        'Street needs gritting' => 'StreetGritting',
-        'Street lighting' => 'StreetLighting',
-        'Street sign' => 'StreetSign',
-        'Traffic light' => 'TrafficLight',
-        'Tree (dangerous)' => 'DangerousTree',
-        'Tree (fallen branches)' => 'FallenTree',
-        'Untaxed vehicle' => 'UntaxedVehicle',
-    };
 }
 
 sub barnet_categories {
@@ -225,7 +197,7 @@ sub prettify_dt {
     $type ||= '';
     $type = 'short' if $type eq '1';
 
-    my $now = DateTime->now( time_zone => FixMyStreet->config('TIME_ZONE') || 'local' );
+    my $now = DateTime->now( time_zone => FixMyStreet->time_zone || FixMyStreet->local_time_zone );
 
     my $tt = '';
     return "[unknown time]" unless ref $dt;

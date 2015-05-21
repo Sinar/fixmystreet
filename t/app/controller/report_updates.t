@@ -457,6 +457,8 @@ for my $test (
             },
             'submit update'
         );
+        $mech->content_contains("/report/$report_id");
+        $mech->get_ok("/report/$report_id");
 
         $mech->content_contains('Test 2');
         $mech->content_contains('Update no email confirm');
@@ -690,6 +692,7 @@ for my $test (
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         my $update = $report->comments->first;
@@ -786,6 +789,7 @@ subtest "check comment with no status change has not status in meta" => sub {
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         my @updates = $report->comments->all;
@@ -816,6 +820,7 @@ subtest "check comment with no status change has not status in meta" => sub {
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         @updates = $report->comments->search(undef, { order_by => 'created' })->all;;
@@ -971,7 +976,7 @@ for my $test (
                 "submit good details"
             );
 
-            is $mech->uri->path, "/report/" . $report_id, "redirected to report page";
+            $mech->content_contains('Thank you for updating this issue');
             $mech->email_count_is(0);
 
             my $update = $report->comments->first;
@@ -1201,7 +1206,9 @@ for my $test (
             'submit update'
         );
 
-        is $mech->uri->path, "/report/" . $report_id, "redirected to report page";
+        $mech->content_contains('Thank you for updating this issue');
+        $mech->content_contains("/report/" . $report_id);
+        $mech->get_ok("/report/" . $report_id);
 
         if ( !defined( $test->{endstate_banner} ) ) {
             is $mech->extract_problem_banner->{text}, undef, 'endstate banner';
@@ -1255,7 +1262,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 0,
-        path => '/report/update',
         content =>
 "Thanks, glad to hear it's been fixed! Could we just ask if you have ever reported a problem to a council before?",
     },
@@ -1282,7 +1288,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 0,
-        path => '/report/update',
         content =>
 "Thanks, glad to hear it's been fixed! Could we just ask if you have ever reported a problem to a council before?",
     },
@@ -1310,7 +1315,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 1,
-        path    => '/report/' . $report->id,
         content => $report->title,
     },
   )
@@ -1363,7 +1367,7 @@ foreach my $test (
         $mech->submit_form_ok( { with_fields => $test->{fields}, },
             'submit update' );
 
-        is $mech->uri->path, $test->{path}, "page after submission";
+        is $mech->uri->path, '/report/update', "page after submission";
 
         $mech->content_contains( $test->{content} );
 
@@ -1393,7 +1397,8 @@ foreach my $test (
 
             $mech->submit_form_ok( { with_fields => { reported => 'Yes' } } );
 
-            $mech->content_contains( 'Thank you &mdash; you can' );
+            $mech->content_contains( $report->title );
+            $mech->content_contains( 'Thank you for updating this issue' );
 
             $questionnaire = FixMyStreet::App->model( 'DB::Questionnaire' )->find(
                 { problem_id => $report_id }
@@ -1452,7 +1457,7 @@ for my $test (
         anonymous => 0,
         answered  => 1,
         path    => '/report/update',
-        content => "You have successfully confirmed your update",
+        content => "Thank you for updating this issue",
     },
   )
 {
@@ -1542,7 +1547,8 @@ for my $test (
 
             $mech->submit_form_ok( { with_fields => { reported => 'Yes' } } );
 
-            $mech->content_contains( 'Thank you &mdash; you can' );
+            $mech->content_contains( $report->title );
+            $mech->content_contains( 'Thank you for updating this issue' );
 
             $questionnaire = FixMyStreet::App->model( 'DB::Questionnaire' )->find(
                 { problem_id => $report_id }

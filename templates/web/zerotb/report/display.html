@@ -15,17 +15,11 @@
 
 [% INCLUDE 'report/banner.html' %]
 
-[% IF c.flash.comment_created %]
-<p>
-[% loc('Your report has been sent') %]
-</p>
-[% END %]
-
 [% INCLUDE 'report/_main.html' %]
 
 <div class="shadow-wrap">
     <ul id="key-tools">
-        <li><a class="chevron" id="key-tool-problems-nearby" href="[% c.uri_for( '/around', { lat => short_latitude, lon => short_longitude } ) %]">[% loc( 'Clinics nearby' ) %]</a></li>
+        <li><a class="chevron" id="key-tool-problems-nearby" href="[% c.uri_for( '/around', { lat => latitude, lon => longitude } ) %]">[% loc( 'Clinics nearby' ) %]</a></li>
     </ul>
 
 </div>

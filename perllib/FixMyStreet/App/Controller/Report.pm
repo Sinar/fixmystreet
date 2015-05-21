@@ -159,7 +159,7 @@ sub format_problem_for_display : Private {
 
     my $problem = $c->stash->{problem};
 
-    ( $c->stash->{short_latitude}, $c->stash->{short_longitude} ) =
+    ( $c->stash->{latitude}, $c->stash->{longitude} ) =
       map { Utils::truncate_coordinate($_) }
       ( $problem->latitude, $problem->longitude );
 
@@ -168,9 +168,6 @@ sub format_problem_for_display : Private {
     }
 
     $c->stash->{extra_name_info} = $problem->bodies_str && $problem->bodies_str eq '2482' ? 1 : 0;
-    if ( $c->sessionid && $c->flash->{created_report} ) {
-        $c->stash->{created_report} = $c->flash->{created_report};
-    }
 
     $c->forward('generate_map_tags');
 

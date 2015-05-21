@@ -17,13 +17,16 @@ use JSON;
 #     commonlib/bin/gettext-makemo FixMyStreet
 
 use FixMyStreet;
+my $c = FixMyStreet::App->new();
+my $cobrand = FixMyStreet::Cobrand::Zurich->new({ c => $c });
+$c->stash->{cobrand} = $cobrand;
 
 # This is a helper method that will send the reports but with the config
 # correctly set - notably SEND_REPORTS_ON_STAGING needs to be true.
 sub send_reports_for_zurich {
     FixMyStreet::override_config { SEND_REPORTS_ON_STAGING => 1 }, sub {
         # Actually send the report
-        FixMyStreet::App->model('DB::Problem')->send_reports('zurich');
+        $c->model('DB::Problem')->send_reports('zurich');
     };
 }
 sub reset_report_state {
@@ -144,16 +147,11 @@ $mech->content_contains( 'Erfasst' );
 subtest "changing of categories" => sub {
     # create a few categories (which are actually contacts)
     foreach my $name ( qw/Cat1 Cat2/ ) {
-        FixMyStreet::App->model('DB::Contact')->find_or_create({
+        $mech->create_contact_ok(
             body => $division,
             category => $name,
             email => "$name\@example.org",
-            confirmed => 1,
-            deleted => 0,
-            editor => "editor",
-            whenedited => DateTime->now(),
-            note => "note for $name",
-        });
+        );
     }
 
     # put report into known category
@@ -297,7 +295,11 @@ subtest "report_edit" => sub {
     is ( $report->extra->{closed_overdue},    0, 'Marking hidden from scratch also set closed_overdue' );
     is get_moderated_count(), 1;
 
-    reset_report_state($report);
+    is ($cobrand->get_or_check_overdue($report), 0, 'sanity check');
+    $report->update({ created => $created->clone->subtract(days => 10) });
+    is ($cobrand->get_or_check_overdue($report), 0, 'overdue call not increased');
+
+    reset_report_state($report, $created);
 };
 
 FixMyStreet::override_config {
@@ -645,7 +647,24 @@ subtest "test stats" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'zurich' ],
     }, sub {
-        $mech->get( '/admin/stats' );
+        $user = $mech->log_in_ok( 'super@example.org' );
+
+        $mech->get_ok( '/admin/stats' );
+        is $mech->res->code, 200, "superuser should be able to see stats page";
+
+        $mech->content_contains('Innerhalb eines Arbeitstages moderiert: 2'); # now including hidden
+        $mech->content_contains('Innerhalb von f&uuml;nf Arbeitstagen abgeschlossen: 3');
+        # my @data = $mech->content =~ /(?:moderiert|abgeschlossen): \d+/g;
+        # diag Dumper(\@data); use Data::Dumper;
+
+        my $export_count = get_export_rows_count($mech);
+        if (defined $export_count) {
+            is $export_count - $EXISTING_REPORT_COUNT, 3, 'Correct number of reports';
+            $mech->content_contains('fixed - council');
+            $mech->content_contains(',hidden,');
+        }
+
+        $mech->log_out_ok;
     };
     is $mech->res->code, 200, "superuser should be able to see stats page";
 

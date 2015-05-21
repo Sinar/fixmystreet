@@ -1,5 +1,5 @@
                     [% IF pagefooter %]
-                    <footer role="content-info">
+                    <footer role="contentinfo">
                         [% INCLUDE 'front/footer-marketing.html' %]
                     </footer>
                     [% END %]
@@ -36,9 +36,15 @@
         </div>
 
 <!-- [% INCLUDE 'debug_footer.html' %] -->
-</div> <!-- .wrapper -->
+<!-- <<<<<<< HEAD -->
+<!-- </div> <\!-- .wrapper -\-> -->
 
-[% TRY %][% PROCESS 'footer_extra.html' %][% CATCH file %][% END %]
+<!-- [% TRY %][% PROCESS 'footer_extra.html' %][% CATCH file %][% END %] -->
+<!-- ======= -->
+    </div> <!-- .wrapper -->
+
+    [% TRY %][% PROCESS 'footer_extra.html' %][% CATCH file %][% END %]
+<!-- >>>>>>> upstream/master -->
 
 </body>
 </html>
