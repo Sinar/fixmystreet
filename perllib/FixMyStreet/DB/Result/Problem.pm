@@ -228,38 +228,6 @@ sub closed_states {
 
 =head2
 
-    @states = FixMyStreet::DB::Problem::visible_states();
-
-Get a list of states that should be visible on the site. If called in
-array context then returns an array of names, otherwise returns a
-HASHREF.
-
-=cut
-
-my $visible_states = {
-    'confirmed'                   => 1,
-    'investigating'               => 1,
-    'in progress'                 => 1,
-    'planned'                     => 1,
-    'action scheduled'            => 1,
-    'fixed'                       => 1,
-    'fixed - council'             => 1,
-    'fixed - user'                => 1,
-    'unable to fix'               => 1,
-    'not responsible'             => 1,
-    'duplicate'                   => 1,
-    'closed'                      => 1,
-    'internal referral'           => 1,
-};
-sub visible_states {
-    return wantarray ? keys %{$visible_states} : $visible_states;
-}
-sub visible_states_add_unconfirmed {
-    $visible_states->{unconfirmed} = 1;
-}
-
-=head2
-
     @states = FixMyStreet::DB::Problem::all_states();
 
 Get a list of all states that a problem can have. If called in
@@ -289,6 +257,70 @@ sub all_states {
     };
 
     return wantarray ? keys %{$states} : $states;
+}
+
+=head2
+
+    @visible_states = FixMyStreet::DB::Problem::visible_states();
+    @hidden_states  = FixMyStreet::DB::Problem::hidden_states();
+
+Get a list of states that should be visible (or hidden) on the site. If called
+in array context then returns an array of names, otherwise returns a HASHREF.
+
+=cut
+
+my $hidden_states = {
+    'hidden' => 1,
+    'partial' => 1,
+    'unconfirmed' => 1,
+};
+
+my $visible_states = {
+    map {
+        $hidden_states->{$_} ? () : ($_ => 1)
+    } all_states()
+};
+    ## e.g.:
+    # 'confirmed'                   => 1,
+    # 'investigating'               => 1,
+    # 'in progress'                 => 1,
+    # 'planned'                     => 1,
+    # 'action scheduled'            => 1,
+    # 'fixed'                       => 1,
+    # 'fixed - council'             => 1,
+    # 'fixed - user'                => 1,
+    # 'unable to fix'               => 1,
+    # 'not responsible'             => 1,
+    # 'duplicate'                   => 1,
+    # 'closed'                      => 1,
+    # 'internal referral'           => 1,
+
+sub hidden_states {
+    return wantarray ? keys %{$hidden_states} : $hidden_states;
+}
+
+sub visible_states {
+    return wantarray ? keys %{$visible_states} : $visible_states;
+}
+
+sub visible_states_add {
+    my ($self, @states) = @_;
+    for my $state (@states) {
+        delete $hidden_states->{$state};
+        $visible_states->{$state} = 1;
+    }
+}
+
+sub visible_states_remove {
+    my ($self, @states) = @_;
+    for my $state (@states) {
+        delete $visible_states->{$state};
+        $hidden_states->{$state} = 1;
+    }
+}
+
+sub visible_states_add_unconfirmed {
+    $_[0]->visible_states_add('unconfirmed')
 }
 
 =head2
@@ -373,14 +405,6 @@ sub check_for_errors {
     if ( !$self->name || $self->name !~ m/\S/ ) {
         $errors{name} = _('Please enter your name');
     }
-    elsif (length( $self->name ) < 5
-        || $self->name !~ m/\s/
-        || $self->name =~ m/\ba\s*n+on+((y|o)mo?u?s)?(ly)?\b/i )
-    {
-        $errors{name} = _(
-'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below'
-        ) unless $self->cobrand eq 'emptyhomes';
-    }
 
     if (   $self->category
         && $self->category eq _('-- Pick a category --') )
@@ -393,18 +417,6 @@ sub check_for_errors {
     {
         $errors{category} = _('Please choose a property type');
         $self->category(undef);
-    }
-
-    if ( $self->bodies_str && $self->detail ) {
-        # Custom character limit:
-        # Bromley Council
-        if ( $self->bodies_str eq '2482' && length($self->detail) > 1750 ) {
-            $errors{detail} = sprintf( _('Reports are limited to %s characters in length. Please shorten your report'), 1750 );
-        }
-        # Oxfordshire
-        if ( $self->bodies_str eq '2237' && length($self->detail) > 1700 ) {
-            $errors{detail} = sprintf( _('Reports are limited to %s characters in length. Please shorten your report'), 1700 );
-        }
     }
 
     return \%errors;
@@ -655,14 +667,14 @@ sub processed_summary_string {
     }
     if ($problem->can_display_external_id) {
         if ($duration_clause) {
-            $external_ref_clause = sprintf(_('council ref:&nbsp;%s'), $problem->external_id);
+            $external_ref_clause = '<strong>' . sprintf(_('Council ref:&nbsp;%s'), $problem->external_id) . '.</strong>';
         } else {
-            $external_ref_clause = sprintf(_('%s ref:&nbsp;%s'), $problem->external_body, $problem->external_id);
+            $external_ref_clause = '<strong>' . sprintf(_('%s ref:&nbsp;%s'), $problem->external_body, $problem->external_id) . '.</strong>';
         }
     }
     if ($duration_clause and $external_ref_clause) {
-        return "$duration_clause, $external_ref_clause"
-    } else { 
+        return "$duration_clause. $external_ref_clause"
+    } else {
         return $duration_clause || $external_ref_clause
     }
 }

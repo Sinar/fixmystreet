@@ -37,7 +37,7 @@ sub process_extras {
     if ( $body_id eq '2482' ) {
         my @fields = ( 'fms_extra_title', @$fields );
         for my $field ( @fields ) {
-            my $value = $ctx->request->param( $field );
+            my $value = $ctx->get_param($field);
 
             if ( !$value ) {
                 $ctx->stash->{field_errors}->{ $field } = _('This information is required');
@@ -49,8 +49,8 @@ sub process_extras {
             };
         }
 
-        if ( $ctx->request->param('fms_extra_title') ) {
-            $ctx->stash->{fms_extra_title} = $ctx->request->param('fms_extra_title');
+        if ( $ctx->get_param('fms_extra_title') ) {
+            $ctx->stash->{fms_extra_title} = $ctx->get_param('fms_extra_title');
             $ctx->stash->{extra_name_info} = 1;
         }
     }
@@ -300,6 +300,39 @@ sub council_rss_alert_options {
     }
 
     return ( \@options, @reported_to_options ? \@reported_to_options : undef );
+}
+
+sub report_check_for_errors {
+    my $self = shift;
+    my $c = shift;
+
+    my %errors = $self->next::method($c);
+
+    my $report = $c->stash->{report};
+
+    if (!$errors{name} && (length($report->name) < 5
+        || $report->name !~ m/\s/
+        || $report->name =~ m/\ba\s*n+on+((y|o)mo?u?s)?(ly)?\b/i))
+    {
+        $errors{name} = _(
+'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below'
+        );
+    }
+
+    # XXX Hardcoded body ID matching mapit area ID
+    if ( $report->bodies_str && $report->detail ) {
+        # Custom character limit:
+        # Bromley Council
+        if ( $report->bodies_str eq '2482' && length($report->detail) > 1750 ) {
+            $errors{detail} = sprintf( _('Reports are limited to %s characters in length. Please shorten your report'), 1750 );
+        }
+        # Oxfordshire
+        if ( $report->bodies_str eq '2237' && length($report->detail) > 1700 ) {
+            $errors{detail} = sprintf( _('Reports are limited to %s characters in length. Please shorten your report'), 1700 );
+        }
+    }
+
+    return %errors;
 }
 
 1;

@@ -33,6 +33,23 @@ my $problem = $problem_rs->new(
     }
 );
 
+my $visible_states = $problem->visible_states;
+is_deeply $visible_states, {
+    'confirmed'                   => 1,
+    'investigating'               => 1,
+    'in progress'                 => 1,
+    'planned'                     => 1,
+    'action scheduled'            => 1,
+    'fixed'                       => 1,
+    'fixed - council'             => 1,
+    'fixed - user'                => 1,
+    'unable to fix'               => 1,
+    'not responsible'             => 1,
+    'duplicate'                   => 1,
+    'closed'                      => 1,
+    'internal referral'           => 1,
+    }, 'visible_states is correct';
+
 is $problem->confirmed,  undef, 'inflating null confirmed ok';
 is $problem->whensent,   undef, 'inflating null confirmed ok';
 is $problem->lastupdate, undef, 'inflating null confirmed ok';
@@ -47,30 +64,6 @@ for my $test (
             detail => 'Please enter some details',
             bodies => 'No council selected',
             name => 'Please enter your name',
-        }
-    },
-    {
-        desc => 'name too short',
-        changed => {
-            name => 'xx',
-        },
-        errors => {
-            title => 'Please enter a subject',
-            detail => 'Please enter some details',
-            bodies => 'No council selected',
-            name => 'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below',
-        }
-    },
-    {
-        desc => 'name is anonymous',
-        changed => {
-            name => 'anonymous',
-        },
-        errors => {
-            title => 'Please enter a subject',
-            detail => 'Please enter some details',
-            bodies => 'No council selected',
-            name => 'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below',
         }
     },
     {

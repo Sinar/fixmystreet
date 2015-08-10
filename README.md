@@ -14,7 +14,7 @@ RSS alerts of problems in their area.
 
 It was created in 2007 by [mySociety](https://www.mysociety.org/) for reporting
 problems to UK councils and has been copied around the world. The FixMyStreet
-Platform is now at version 1.5.4.
+Platform is now at version 1.6.1.
 
 ## Installation
 
@@ -37,6 +37,56 @@ We've extracted all of the mobile apps from this repository into the
 [fixmystreet-mobile repository](https://github.com/mysociety/fixmystreet-mobile).
 
 ## Releases
+
+* v1.6.1 (31st July 2015)
+    - Bugfixes:
+        - Fix bug introduced in last release when setting multiple areas
+          for a body in the admin. #1158
+    - New features:
+        - Danish translation.
+    - Front end improvements:
+        - Fix “All Reports” table headers on scroll. #50
+        - Add time tooltips to All Reports table headings. #983
+        - Fix sidebar running over the footer on alerts page. #1168
+    - Admin improvements:
+        - Add mark as sent button. #601
+        - Add link to comment user ID from body form if present. #580
+        - Add MapIt links from body page/ report co-ordinates. #638
+        - Show any category extra data. #517 #920
+        - Mark users who have moderate permission. #990
+        - Allow editing of body external URL.
+        - List a report’s bodies more nicely.
+    - UK specific improvements:
+        - Explain gone Northern Ireland councils. #1151
+        - Better messaging for councils refusing messages. #968
+
+* v1.5.5 / v1.6 (10th July 2015)
+    - Security:
+        - Fix vulnerability in login email sending that could allow an account
+          to be hijacked by a third party.
+        - Time out email authentication tokens.
+        - Update dependency to fix issue with Unicode characters in passwords.
+    - New features:
+        - Chinese translation.
+    - Front end improvements:
+        - Add “Report” button in default mobile header. #931
+        - Use ‘hamburger’ menu icon in mobile header. #931
+        - Resize map pins based on zoom level. #1041
+        - Improve report meta information display. #1080
+        - Display message on body page when reports list is empty.
+    - Bugfixes:
+        - Fix issue with shrunken update photos. #424
+        - Fix typo in footer role="contentinfo".
+        - Default Google maps to satellite view. #1133
+        - Update Bing Maps parameter ID.
+    - Development improvements:
+        - Add ability for map pages to filter by category/state. #1134
+          (this is currently on a couple of cobrands, to add to base soon)
+        - Allow cobrands to specify ordering on all reports page.
+        - Use mocked Nominatim in tests to cope with bad connections.
+        - Add Extra role to ease use of the {extra} database field. #1018
+    - UK specific improvements:
+        - Add dog poop poster. #1028
 
 * v1.5.4 (25th February 2015)
     - New features:

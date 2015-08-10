@@ -1,0 +1,328 @@
+@font-face {
+  font-family: 'MuseoSans';
+  src: url('fonts/MuseoSans_300-webfont.eot');
+  src: url('fonts/MuseoSans_300-webfont.eot?#iefix') format('embedded-opentype'),
+       url('fonts/MuseoSans_300-webfont.woff') format('woff'),
+       url('fonts/MuseoSans_300-webfont.ttf') format('truetype'),
+       url('fonts/MuseoSans_300-webfont.svg#MuseoSans300') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'MuseoSans';
+  src: url('fonts/MuseoSans_300_Italic-webfont.eot');
+  src: url('fonts/MuseoSans_300_Italic-webfont.eot?#iefix') format('embedded-opentype'),
+       url('fonts/MuseoSans_300_Italic-webfont.woff') format('woff'),
+       url('fonts/MuseoSans_300_Italic-webfont.ttf') format('truetype'),
+       url('fonts/MuseoSans_300_Italic-webfont.svg#MuseoSans300Italic') format('svg');
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'MuseoSans';
+  src: url('fonts/MuseoSans_500-webfont.eot');
+  src: url('fonts/MuseoSans_500-webfont.eot?#iefix') format('embedded-opentype'),
+       url('fonts/MuseoSans_500-webfont.woff') format('woff'),
+       url('fonts/MuseoSans_500-webfont.ttf') format('truetype'),
+       url('fonts/MuseoSans_500-webfont.svg#MuseoSans500') format('svg');
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'MuseoSans';
+  src: url('fonts/MuseoSans_500_Italic-webfont.eot');
+  src: url('fonts/MuseoSans_500_Italic-webfont.eot?#iefix') format('embedded-opentype'),
+       url('fonts/MuseoSans_500_Italic-webfont.woff') format('woff'),
+       url('fonts/MuseoSans_500_Italic-webfont.ttf') format('truetype'),
+       url('fonts/MuseoSans_500_Italic-webfont.svg#MuseoSans500Italic') format('svg');
+  font-weight: bold;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Museo300-display';
+  src: url('fonts/Museo300-Regular-webfont.eot');
+  src: url('fonts/Museo300-Regular-webfont.eot?#iefix') format('embedded-opentype'),
+       url('fonts/Museo300-Regular-webfont.woff') format('woff'),
+       url('fonts/Museo300-Regular-webfont.ttf') format('truetype'),
+       url('fonts/Museo300-Regular-webfont.svg#Museo300') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Opera has a bug (from around 10.5 upwards to current 11.6) with showing the
+ * table caption *at all* if the header is set to a font-face :( */
+noindex:-o-prefocus, #site-header {
+  font-family: sans-serif;
+}
+
+h3, h4 {
+    font-weight: bold;
+}
+
+@import "_colours";
+@import "../sass/layout";
+
+// Tiled background stripe, not plain colour
+#front-main {
+    background: $primary url(images/tile-y.jpg);
+}
+#main-nav {
+    ul#main-menu {
+        li {
+            a:hover {
+                @include background(linear-gradient(#000, #444 10%, #444 95%, #111));
+            }
+        }
+    }
+}
+.nav-wrapper {
+    .nav-wrapper-2 {
+        border-image-source: url(images/tile-y-border.jpg);
+        border-image-slice: 4 0 0;
+        border-image-repeat: repeat;
+    }
+}
+body.mappage {
+    .nav-wrapper {
+        .nav-wrapper-2 {
+            @include background(linear-gradient(#000, #222 10%, #222 90%, #000));
+        }
+    }
+}
+
+#main-nav {
+    ul#mysoc-menu {
+        background: #515151;
+        margin-top: -4px;
+        li a {
+            &#mysoc-logo {
+                background-position: 0px 15px;
+            }
+        }
+    }
+}
+
+body.twothirdswidthpage,
+body.fullwidthpage {
+    #front-main {
+        color: #333;
+        padding-bottom: 4em;
+
+        h1 {
+            font-size: 3em;
+            font-weight: bold;
+            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+        }
+        h2 {
+            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+        }
+        #postcodeForm {
+            div {
+                font-size: 1.3em;
+                width: 24em;
+                label {
+                    font-family: MuseoSans,Helmet,Freesans,sans-serif;
+                }
+                input#pc {
+                    color: #777;
+                    font-size: 0.9em;
+                    height: 2.6em;
+                    width: 20em;
+                    &:focus {
+                        outline: 0;
+                    }
+                }
+                input#sub {
+                    font-size: 1.1em;
+                    height: 2.4em;
+                    width: 3.5em;
+                    font-family: MuseoSans,Helmet,Freesans,sans-serif;
+                    font-weight: bold;
+                }
+            }
+        }
+        a#geolocate_link {
+            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+            background: url(images/locate-me.png) no-repeat;
+            height: 34px;
+            padding-left: 24px;
+            margin-top: 0.25em;
+            @media only screen and (min-resolution: 320dpi),
+            only screen and (-webkit-min-device-pixel-ratio: 2) {
+                background: url(images/locate-me@2.png) no-repeat;
+            }
+        }
+    }
+
+    .container {
+        .content {
+            footer {
+                .tablewrapper {
+                    background: #1a1a1a url(images/tile.jpg) 0 0 repeat;
+                }
+            }
+        }
+    }
+}
+
+body.frontpage {
+    .container {
+        background-color: transparent;
+
+        .content {
+            background-color: transparent;
+            padding: 0em 0em 1em;
+
+            > .tablewrapper {
+                margin: -4em 0em 0em;
+                padding: 1em 1em;
+                background-color: white;
+                width: auto;
+            }
+        }
+        footer {
+            .bordered {
+                margin: 0em;
+            }
+        }
+    }
+}
+
+body.twothirdswidthpage {
+    .container {
+        .content {
+            footer {
+                max-width: 48em;
+                @media only screen and (min-width: 61em) {
+                    max-width: 60em;
+                }
+                .tablewrapper {
+                    border: 0px;
+                }
+            }
+        }
+    }
+}
+
+#footer-nav {
+    display: block;
+    border: 0px;
+    border-top: 0.25em solid #ffd000;
+    border-image: url(images/tile-y.jpg) 30 0 repeat;
+
+    .tablewrapper {
+      max-width: 60em;
+      margin: 0 auto;
+      background: $base_bg;
+      ul {
+        list-style: none;
+        padding: 0px;
+        margin: 0px;
+        float:left;
+        li {
+          list-style: none;
+          display: inline;
+          margin: 0px;
+          padding: 0px;
+          float:left;
+          a,
+          span {
+            display: block;
+            color: $nav_fg;
+            background: none;
+            border-bottom: none;
+            padding: 0.75em;
+            font-size: 0.9em;
+          }
+        }
+      }
+      #footer-main-nav {
+        display: block;
+      }
+      #footer-help-nav {
+        float: right;
+      }
+    }
+}
+
+.next-steps {
+  @include clearfix;
+  margin-bottom: 2em; // add some space between this and the footer
+}
+
+.next-steps__step {
+  font-family: MuseoSans,Helmet,Freesans,sans-serif;
+  float: left;
+  width: 33%;
+  padding: 1.8em;
+
+  & + .next-steps__step {
+    border-top: none;
+    border-left: 1px solid #ede8c9;
+  }
+
+  h2 {
+    font-family: inherit;
+    font-weight: bold;
+    line-height: 1.2em;
+  }
+
+  p {
+    line-height: 1.4em;
+  }
+}
+
+body.unresponsive-council {
+    .container .content {
+        padding: 0;
+        margin-bottom: 4em;
+    }
+
+    h1, h2 {
+        font-family: inherit;
+        font-weight: bold;
+    }
+}
+
+.unresponsive-council__header,
+.unresponsive-council__body {
+    padding: 1.5em;
+    font-size: 1.3em;
+}
+
+.unresponsive-council__header {
+    background-color: $primary;
+
+    border-bottom: none;
+    margin-bottom: 0;
+
+    h1 {
+        font-size: 2.5em;
+        line-height: 1em;
+        margin-bottom: 0.2em;
+    }
+}
+
+.unresponsive-council__body {
+    p {
+        max-width: 26em;
+    }
+}
+
+.unresponsive-council-cta {
+    margin: 1.5em 0;
+    max-width: 20em;
+    padding-right: 6em;
+    background-image: url(images/unresponsive-council-cta-arrow.png);
+    background-position: right center;
+    background-repeat: no-repeat;
+
+    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        background-image: url(images/unresponsive-council-cta-arrow@2.png);
+        background-size: 60px;
+    }
+}

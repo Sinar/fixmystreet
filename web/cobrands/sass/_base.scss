@@ -164,15 +164,18 @@ select {
   width: 100%;
 }
 
-// links
-a,
-a:visited {
-  text-decoration:none;
-  color:#0BA7D1;
+a {
+  text-decoration: none;
+  color: #0BA7D1;
+
+  &:visited {
+    color: #0BA7D1;
+  }
+
   &:hover,
   &:active {
-    text-decoration:underline;
-    color:#0D7CCE;
+    text-decoration: underline;
+    color: #0D7CCE;
   }
 }
 
@@ -982,6 +985,19 @@ a:hover.button-left {
     margin-bottom: 0.5em;
 }
 
+.report_meta_info,
+.council_sent_info {
+  font-size: 0.9em;
+}
+
+.council_sent_info {
+  color: #666;
+
+  p + & {
+    margin-top: -0.6em; // partly counteract margin-bottom on previous paragraph
+  }
+}
+
 // map stuff
 #map_box{
   @extend .full-width;
@@ -1621,3 +1637,4 @@ table.nicetable {
 }
 
 @import "_admin";
+@import "_fixedthead";

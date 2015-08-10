@@ -36,3 +36,6 @@ phonegap/www/js/config.js
 phonegap/Android/bin/
 phonegap/iPhone/FixMyStreet.xcodeproj/project.xcworkspace/xcuserdata
 phonegap/Android/gen/
+
+/fixmystreet-international
+*[Mm]ake[Mm]y[Ii]sland*

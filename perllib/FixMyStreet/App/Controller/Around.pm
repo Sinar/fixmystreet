@@ -41,7 +41,7 @@ sub around_index : Path : Args(0) {
     my $ret = $c->forward('/location/determine_location_from_coords')
         || $c->forward('/location/determine_location_from_pc');
     unless ($ret) {
-        return $c->res->redirect('/') unless $c->req->param('pc') || $partial_report;
+        return $c->res->redirect('/') unless $c->get_param('pc') || $partial_report;
         return;
     }
 
@@ -78,13 +78,12 @@ Handle coord systems that are no longer in use.
 
 sub redirect_en_or_xy_to_latlon : Private {
     my ( $self, $c ) = @_;
-    my $req = $c->req;
 
     # check for x,y or e,n requests
-    my $x = $req->param('x');
-    my $y = $req->param('y');
-    my $e = $req->param('e');
-    my $n = $req->param('n');
+    my $x = $c->get_param('x');
+    my $y = $c->get_param('y');
+    my $e = $c->get_param('e');
+    my $n = $c->get_param('n');
 
     # lat and lon - fill in below if we need to
     my ( $lat, $lon );
@@ -118,7 +117,7 @@ token to stash and return report. Otherwise return false.
 sub load_partial : Private {
     my ( $self, $c ) = @_;
 
-    my $partial = scalar $c->req->param('partial')
+    my $partial = $c->get_param('partial')
       || return;
 
     # is it in the database
@@ -161,14 +160,19 @@ sub display_location : Private {
     my $longitude = $c->stash->{longitude};
 
     # Deal with pin hiding/age
-    my $all_pins = $c->req->param('all_pins') ? 1 : undef;
+    my $all_pins = $c->get_param('all_pins') ? 1 : undef;
     $c->stash->{all_pins} = $all_pins;
     my $interval = $all_pins ? undef : $c->cobrand->on_map_default_max_pin_age;
+
+    $c->forward( '/reports/stash_report_filter_status' );
+
+    # Check the category to filter by, if any, is valid
+    $c->forward('check_and_stash_category');
 
     # get the map features
     my ( $on_map_all, $on_map, $around_map, $distance ) =
       FixMyStreet::Map::map_features( $c, $latitude, $longitude,
-        $interval );
+        $interval, $c->stash->{filter_category}, $c->stash->{filter_problem_states} );
 
     # copy the found reports to the stash
     $c->stash->{on_map}     = $on_map;
@@ -177,7 +181,7 @@ sub display_location : Private {
 
     # create a list of all the pins
     my @pins;
-    unless ($c->req->param('no_pins') || $c->cobrand->moniker eq 'emptyhomes') {
+    unless ($c->get_param('no_pins') || $c->cobrand->moniker eq 'emptyhomes') {
         @pins = map {
             # Here we might have a DB::Problem or a DB::Nearby, we always want the problem.
             my $p = (ref $_ eq 'FixMyStreet::App::Model::DB::Nearby') ? $_->problem : $_;
@@ -221,6 +225,45 @@ sub check_location_is_acceptable : Private {
     return $c->forward('/council/load_and_check_areas');
 }
 
+=head2 check_and_stash_category
+
+Check that the 'filter_category' query param is valid, if it's present. Stores
+the validated string in the stash as filter_category.
+Puts all the valid categories in filter_categories on the stash.
+
+=cut
+
+sub check_and_stash_category : Private {
+    my ( $self, $c ) = @_;
+
+    my $all_areas = $c->stash->{all_areas};
+    my @bodies = $c->model('DB::Body')->search(
+        { 'body_areas.area_id' => [ keys %$all_areas ], deleted => 0 },
+        { join => 'body_areas' }
+    )->all;
+    my %bodies = map { $_->id => $_ } @bodies;
+
+    my @contacts = $c->model('DB::Contact')->not_deleted->search(
+        {
+            body_id => [ keys %bodies ],
+        },
+        {
+            columns => [ 'category' ],
+            order_by => [ 'category' ],
+            distinct => 1
+        }
+    )->all;
+    my @categories = map { $_->category } @contacts;
+    $c->stash->{filter_categories} = \@categories;
+
+
+    my $category = $c->get_param('filter_category');
+    my %categories_mapped = map { $_ => 1 } @categories;
+    if ( defined $category && $categories_mapped{$category} ) {
+        $c->stash->{filter_category} = $category;
+    }
+}
+
 =head2 /ajax
 
 Handle the ajax calls that the map makes when it is dragged. The info returned
@@ -234,7 +277,7 @@ sub ajax : Path('/ajax') {
 
     $c->res->content_type('application/json; charset=utf-8');
 
-    unless ( $c->req->param('bbox') ) {
+    unless ( $c->get_param('bbox') ) {
         $c->res->status(404);
         $c->res->body('');
         return;
@@ -244,7 +287,7 @@ sub ajax : Path('/ajax') {
     $c->res->header( 'Cache_Control' => 'max-age=0' );
 
     # how far back should we go?
-    my $all_pins = $c->req->param('all_pins') ? 1 : undef;
+    my $all_pins = $c->get_param('all_pins') ? 1 : undef;
     my $interval = $all_pins ? undef : $c->cobrand->on_map_default_max_pin_age;
 
     # Need to be the class that can handle it
@@ -276,7 +319,7 @@ sub ajax : Path('/ajax') {
 sub location_autocomplete : Path('/ajax/geocode') {
     my ( $self, $c ) = @_;
     $c->res->content_type('application/json; charset=utf-8');
-    unless ( $c->req->param('term') ) {
+    unless ( $c->get_param('term') ) {
         $c->res->status(404);
         $c->res->body('');
         return;
@@ -284,26 +327,26 @@ sub location_autocomplete : Path('/ajax/geocode') {
     # we want the match even if there's no ambiguity, so recommendation doesn't
     # disappear when it's the last choice being offered in the autocomplete.
     $c->stash->{allow_single_geocode_match_strings} = 1;
-    return $self->_geocode( $c, $c->req->param('term') );
+    return $self->_geocode( $c, $c->get_param('term') );
 }
 
 sub location_lookup : Path('/ajax/lookup_location') {
     my ( $self, $c ) = @_;
     $c->res->content_type('application/json; charset=utf-8');
-    unless ( $c->req->param('term') ) {
+    unless ( $c->get_param('term') ) {
         $c->res->status(404);
         $c->res->body('');
         return;
     }
 
-    return $self->_geocode( $c, $c->req->param('term') );
+    return $self->_geocode( $c, $c->get_param('term') );
 }
 
 sub _geocode : Private {
     my ( $self, $c, $term ) = @_;
 
     my ( $lat, $long, $suggestions ) =
-        FixMyStreet::Geocode::lookup( $c->req->param('term'), $c );
+        FixMyStreet::Geocode::lookup( $c->get_param('term'), $c );
 
     my ($response, @addresses, @locations);
 
