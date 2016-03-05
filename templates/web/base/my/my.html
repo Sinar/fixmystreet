@@ -21,32 +21,20 @@
     c.uri_for('/') ) %]
 [% END %]
 
+[% IF c.cobrand.moniker == 'fixmybarangay' %]
+    [% INCLUDE '_barangay_buttons.html' %]
+[% ELSIF c.cobrand.moniker == 'hart' %]
+    [% INCLUDE '_hart_hants_note.html' %]
+[% END %]
+
+[% INCLUDE "reports/_list-filters.html", use_section_wrapper = 1 %]
+
 [% INCLUDE 'pagination.html',
     pager = problems_pager,
     param = 'p'
 %]
 
-[% FOREACH p = problems.confirmed %]
-    [% IF loop.first %]<h2>[% loc('Open reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
-[% END %]
-
-[% FOREACH p = problems.fixed %]
-    [% IF loop.first %]<h2>[% loc('Fixed reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
-[% END %]
-
-[% FOREACH p = problems.closed %]
-    [% IF loop.first %]<h2>[% loc('Closed reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
-[% END %]
-
-[%# FOREACH p = problems.unconfirmed;
-    IF loop.first;
-        '<h2>' _ loc('Unconfirmed reports') _ '</h2>';
-    END;
-    INCLUDE problem;
-END %]
+[% INCLUDE 'my/_problem-list.html' %]
 
 [% FOREACH u IN updates %]
     [% IF loop.first %]
@@ -55,14 +43,24 @@ END %]
             pager = updates_pager,
             param = 'u'
         %]
-        <ul class="issue-list full-width">
+        <ul class="item-list item-list--updates full-width">
     [% END %]
 
-    <li>&ldquo;[% u.text | html %]&rdquo;
-    &ndash; <a href="[% c.uri_for( '/report', u.problem_id ) %]#update_[% u.id %]">[% u.problem.title | html %]</a>.
-    <em class="council_sent_info">
-        [% tprintf( loc("Added %s"), prettify_dt( u.confirmed, 'date' ) ) %]
-        </em>
+    <li class="item-list__item item-list__item--updates">
+        <div class="item-list__update-wrap">
+            [% INCLUDE 'report/photo.html' object=u %]
+            <div class="item-list__update-text">
+                [% add_links( u.text ) | html_para %]
+
+                <p class="meta-2">
+                    [% tprintf( loc("Added %s"), prettify_dt( u.confirmed, 'date' ) ) %]
+                    &ndash;
+                    <a href="[% c.uri_for( '/report', u.problem_id ) %]#update_[% u.id %]">
+                        [% u.problem.title | html %]
+                    </a>
+                </p>
+            </div>
+        </div>
     </li>
     [% "</ul>" IF loop.last %]
 [% END %]
@@ -70,20 +68,3 @@ END %]
 </div>
 
 [% INCLUDE 'footer.html' %]
-
-[% BLOCK problem %]
-    [% "<ul class='issue-list-a full-width'>" IF loop.first %]
-
-    <li><a href="[% c.uri_for( '/report', p.id ) %]">[% p.title | html %]</a>
-    <em class="council_sent_info"> &ndash;
-        [% IF p.whensent %]
-            [% tprintf( loc("Reported %s, to %s"), prettify_dt( p.confirmed, 'date' ), p.body(c) ) %]
-        [% ELSE %]
-            [% tprintf( loc("Reported %s"), prettify_dt( p.confirmed, 'date' ) ) %]
-        [% END %]
-        </em>
-    </li>
-
-    [% "</ul>" IF loop.last %]
-[% END %]
-

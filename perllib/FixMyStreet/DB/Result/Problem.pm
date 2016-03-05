@@ -53,8 +53,9 @@ __PACKAGE__->add_columns(
   "created",
   {
     data_type     => "timestamp",
-    default_value => \"ms_current_timestamp()",
+    default_value => \"current_timestamp",
     is_nullable   => 0,
+    original      => { default_value => \"now()" },
   },
   "confirmed",
   { data_type => "timestamp", is_nullable => 1 },
@@ -71,8 +72,9 @@ __PACKAGE__->add_columns(
   "lastupdate",
   {
     data_type     => "timestamp",
-    default_value => \"ms_current_timestamp()",
+    default_value => \"current_timestamp",
     is_nullable   => 0,
+    original      => { default_value => \"now()" },
   },
   "whensent",
   { data_type => "timestamp", is_nullable => 1 },
@@ -102,6 +104,8 @@ __PACKAGE__->add_columns(
   { data_type => "integer", default_value => 0, is_nullable => 1 },
   "subcategory",
   { data_type => "text", is_nullable => 1 },
+  "bodies_missing",
+  { data_type => "text", is_nullable => 1 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->has_many(
@@ -130,8 +134,8 @@ __PACKAGE__->belongs_to(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2014-07-31 15:57:02
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:EvD4sS1mdJJyI1muZ4TrCw
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-08-13 16:33:38
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:Go+T9oFRfwQ1Ag89qPpF/g
 
 # Add fake relationship to stored procedure table
 __PACKAGE__->has_one(
@@ -153,8 +157,7 @@ __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 __PACKAGE__->rabx_column('geocode');
 
-use Image::Size;
-use Moose;
+use Moo;
 use namespace::clean -except => [ 'meta' ];
 use Utils;
 
@@ -319,10 +322,6 @@ sub visible_states_remove {
     }
 }
 
-sub visible_states_add_unconfirmed {
-    $_[0]->visible_states_add('unconfirmed')
-}
-
 =head2
 
     @states = FixMyStreet::DB::Problem::council_states();
@@ -363,7 +362,8 @@ around lastupdate => $stz;
 
 around service => sub {
     my ( $orig, $self ) = ( shift, shift );
-    my $s = $self->$orig(@_);
+    # service might be undef if e.g. unsaved code report
+    my $s = $self->$orig(@_) || "";
     $s =~ s/_/ /g;
     return $s;
 };
@@ -400,7 +400,7 @@ sub check_for_errors {
 
     $errors{bodies} = _('No council selected')
       unless $self->bodies_str
-          && $self->bodies_str =~ m/^(?:-1|[\d,]+(?:\|[\d,]+)?)$/;
+          && $self->bodies_str =~ m/^(?:-1|[\d,]+)$/;
 
     if ( !$self->name || $self->name !~ m/\S/ ) {
         $errors{name} = _('Please enter your name');
@@ -441,15 +441,14 @@ sub confirm {
     return if $self->state eq 'confirmed';
 
     $self->state('confirmed');
-    $self->confirmed( \'ms_current_timestamp()' );
+    $self->confirmed( \'current_timestamp' );
     return 1;
 }
 
 sub bodies_str_ids {
     my $self = shift;
     return unless $self->bodies_str;
-    (my $bodies = $self->bodies_str) =~ s/\|.*$//;
-    my @bodies = split( /,/, $bodies );
+    my @bodies = split( /,/, $self->bodies_str );
     return \@bodies;
 }
 
@@ -463,7 +462,7 @@ sub bodies($) {
     my $self = shift;
     return {} unless $self->bodies_str;
     my $bodies = $self->bodies_str_ids;
-    my @bodies = FixMyStreet::App->model('DB::Body')->search({ id => $bodies })->all;
+    my @bodies = $self->result_source->schema->resultset('Body')->search({ id => $bodies })->all;
     return { map { $_->id => $_ } @bodies };
 }
 
@@ -478,15 +477,9 @@ sub url {
     return "/report/" . $self->id;
 }
 
-=head2 get_photo_params
-
-Returns a hashref of details of any attached photo for use in templates.
-
-=cut
-
-sub get_photo_params {
-    my $self = shift;
-    return FixMyStreet::App::get_photo_params($self, 'id');
+sub admin_url {
+    my ($self, $cobrand) = @_;
+    return $cobrand->admin_base_url . '/report_edit/' . $self->id;
 }
 
 =head2 is_open
@@ -623,7 +616,7 @@ sub body {
         $body = join( _(' and '),
             map {
                 my $name = $_->name;
-                if ($c and mySociety::Config::get('AREA_LINKS_FROM_PROBLEMS')) {
+                if ($c and FixMyStreet->config('AREA_LINKS_FROM_PROBLEMS')) {
                     '<a href="' . $_->url($c) . '">' . $name . '</a>';
                 } else {
                     $name;
@@ -634,6 +627,25 @@ sub body {
     return $body;
 }
 
+=head2 response_templates
+
+Returns all ResponseTemplates attached to this problem's bodies, in alphabetical
+order of title.
+
+=cut
+
+sub response_templates {
+    my $problem = shift;
+    return $problem->result_source->schema->resultset('ResponseTemplate')->search(
+        {
+            body_id => $problem->bodies_str_ids
+        },
+        {
+            order_by => 'title'
+        }
+    );
+}
+
 # returns true if the external id is the council's ref, i.e., useful to publish it
 # (by way of an example, the barnet send method returns a useful reference when
 # it succeeds, so that is the ref we should show on the problem report page).
@@ -642,8 +654,7 @@ sub body {
 #     Note:   this only makes sense when called on a problem that has been sent!
 sub can_display_external_id {
     my $self = shift;
-    if ($self->external_id && $self->send_method_used && 
-        ($self->send_method_used eq 'barnet' || $self->bodies_str =~ /2237/)) {
+    if ($self->external_id && $self->send_method_used && $self->bodies_str =~ /2237/) {
         return 1;
     }
     return 0;    
@@ -731,20 +742,17 @@ sub update_from_open311_service_request {
         $status_notes = $request->{status_notes};
     }
 
-    my $update = FixMyStreet::App->model('DB::Comment')->new(
-        {
-            problem_id => $self->id,
-            state      => 'confirmed',
-            created    => $updated || \'ms_current_timestamp()',
-            confirmed => \'ms_current_timestamp()',
-            text      => $status_notes,
-            mark_open => 0,
-            mark_fixed => 0,
-            user => $system_user,
-            anonymous => 0,
-            name => $body->name,
-        }
-    );
+    my $update = $self->new_related(comments => {
+        state => 'confirmed',
+        created => $updated || \'current_timestamp',
+        confirmed => \'current_timestamp',
+        text => $status_notes,
+        mark_open => 0,
+        mark_fixed => 0,
+        user => $system_user,
+        anonymous => 0,
+        name => $body->name,
+    });
 
     my $w3c = DateTime::Format::W3CDTF->new;
     my $req_time = $w3c->parse_datetime( $request->{updated_datetime} );
@@ -789,7 +797,7 @@ sub update_send_failed {
 
     $self->update( {
         send_fail_count => $self->send_fail_count + 1,
-        send_fail_timestamp => \'ms_current_timestamp()',
+        send_fail_timestamp => \'current_timestamp',
         send_fail_reason => $msg
     } );
 }
@@ -810,7 +818,7 @@ sub as_hashref {
         state_t   => _( $self->state ),
         used_map  => $self->used_map,
         is_fixed  => $self->fixed_states->{ $self->state } ? 1 : 0,
-        photo     => $self->get_photo_params,
+        photos    => [ map { $_->{url} } @{$self->photos} ],
         meta      => $self->confirmed ? $self->meta_line( $c ) : '',
         confirmed_pp => $self->confirmed ? $c->cobrand->prettify_dt( $self->confirmed ): '',
         created_pp => $c->cobrand->prettify_dt( $self->created ),
@@ -828,6 +836,48 @@ sub latest_moderation_log_entry {
     return $self->admin_log_entries->search({ action => 'moderation' }, { order_by => 'id desc' })->first;
 }
 
+=head2 get_photoset
+
+Return a PhotoSet object for all photos attached to this field
+
+    my $photoset = $obj->get_photoset;
+    print $photoset->num_images;
+    return $photoset->get_image_data(num => 0, size => 'full');
+
+=cut
+
+sub get_photoset {
+    my ($self) = @_;
+    my $class = 'FixMyStreet::App::Model::PhotoSet';
+    eval "use $class";
+    return $class->new({
+        db_data => $self->photo,
+        object => $self,
+    });
+}
+
+sub photos {
+    my $self = shift;
+    my $photoset = $self->get_photoset;
+    my $i = 0;
+    my $id = $self->id;
+    my @photos = map {
+        my $format = 'jpeg';
+        my $cachebust = substr($_, 0, 8);
+        {
+            id => $_,
+            url_temp => "/photo/$_.temp.$format",
+            url_temp_full => "/photo/$_.fulltemp.$format",
+            url => "/photo/$id.$i.$format?$cachebust",
+            url_full => "/photo/$id.$i.full.$format?$cachebust",
+            url_tn => "/photo/$id.$i.tn.$format?$cachebust",
+            url_fp => "/photo/$id.$i.fp.$format?$cachebust",
+            idx => $i++,
+        }
+    } $photoset->all_ids;
+    return \@photos;
+}
+
 __PACKAGE__->has_many(
   "admin_log_entries",
   "FixMyStreet::DB::Result::AdminLog",
@@ -838,7 +888,16 @@ __PACKAGE__->has_many(
   }
 );
 
-# we need the inline_constructor bit as we don't inherit from Moose
-__PACKAGE__->meta->make_immutable( inline_constructor => 0 );
+sub get_time_spent {
+    my $self = shift;
+    my $admin_logs = $self->admin_log_entries->search({},
+        {
+            group_by => 'object_id',
+            columns => [
+                { sum_time_spent => { sum => 'time_spent' } },
+            ]
+        })->single;
+    return $admin_logs ? $admin_logs->get_column('sum_time_spent') : 0;
+}
 
 1;

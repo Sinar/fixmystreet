@@ -1,7 +1,7 @@
 @import "_colours";
 @import "_fonts";
 @import "../sass/layout";
-@import "../sass/report_list";
+@import "../sass/report_list_pins";
 
 $fixed_page_width: 990px;
 
@@ -16,8 +16,6 @@ $fixed_page_width: 990px;
 .ie6 #site-logo,
 body.frontpage #site-logo,
 .ie6 body.frontpage #site-logo,
-body.authpage #site-logo,
-.ie6 body.authpage #site-logo,
 body.twothirdswidthpage #site-logo,
 .ie6 body.twothirdswidthpage #site-logo
 {
@@ -74,7 +72,7 @@ body.frontpage {
         top: -9em;
     }
 
-    .issue-list-a li {
+    .item-list--reports__item {
         border-left: solid 4px $primary;
     }
 
@@ -94,7 +92,7 @@ body.twothirdswidthpage #user-meta p {
     border-top: none;
 }
 
-#main-menu {
+.nav-menu--main {
     display: none;
 }
 
@@ -180,7 +178,7 @@ body.mappage {
         display: none;
     }
 
-    #main-menu {
+    .nav-menu--main {
         display: block;
     }
 
@@ -200,20 +198,15 @@ body.mappage {
         border-bottom: solid 4px $primary;
     }
 
-    #main-nav {
-        ul#main-menu {
-            li a.report-a-problem-btn {
-                color: $nav_fg;
-            }
+    .nav-menu--main a.report-a-problem-btn {
+        color: $nav_fg;
+    }
+    .nav-menu {
+        a, span {
+            color: $primary_text;
         }
-
-        ul li {
-            a, span {
-                color: $primary_text;
-            }
-            a:hover {
-                text-decoration: underline;
-            }
+        a:hover {
+            text-decoration: underline;
         }
     }
 }
@@ -287,10 +280,4 @@ body.fullwidthpage, body.twothirdswidthpage {
             height: 0;
         }
     }
-}
-
-// Override the default issue (report) list styling on the /my page, so that
-// reports don't pop out the side of the sidebar
-.issue-list-a.full-width {
-    margin-left: -1em;
 }

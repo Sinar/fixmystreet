@@ -43,6 +43,7 @@ requires 'DBIx::Class::ResultSet';
 requires 'DBIx::Class::Schema::Loader';
 requires 'Digest::MD5';
 requires 'Digest::SHA';
+requires 'Email::MIME';
 requires 'Email::Send';
 requires 'Email::Send::SMTP';
 requires 'Email::Simple';
@@ -58,18 +59,22 @@ requires 'HTML::Entities';
 requires 'HTTP::Request::Common';
 requires 'Image::Size';
 requires 'IO::String';
-requires 'JSON';
-requires 'JSON::XS';
+requires 'JSON::MaybeXS';
 requires 'Locale::gettext';
 requires 'LWP::Simple';
 requires 'LWP::UserAgent';
 requires 'Math::Trig';
 requires 'Module::Pluggable';
 requires 'Moose';
+requires 'MooX::Types::MooseLike';
 requires 'namespace::autoclean';
+requires 'Net::DNS::Resolver';
 requires 'Net::Domain::TLD';
-requires 'Net::SMTP::SSL';
+requires 'Net::Facebook::Oauth2';
+requires 'Net::OAuth';
+requires 'Net::SMTP::SSL', '1.03';
 requires 'Net::SMTP::TLS';
+requires 'Net::Twitter::Lite::WithAPIv1_1';
 requires 'Path::Class';
 requires 'POSIX';
 requires 'Readonly';
@@ -77,7 +82,7 @@ requires 'Regexp::Common';
 requires 'Scalar::Util';
 requires 'Statistics::Distributions';
 requires 'Storable';
-requires 'Template::Plugin::Comma';
+requires 'Template::Plugin::Number::Format';
 requires 'Text::CSV';
 requires 'URI';
 requires 'URI::Escape';
@@ -89,9 +94,6 @@ requires 'YAML';
 feature 'uk', 'FixMyStreet.com specific requirements' => sub {
     # East Hampshire
     requires 'SOAP::Lite';
-    # Barnet
-    # TODO: This can perhaps be removed since Barnet switched to email for problem reports
-    requires 'SOAP::WSDL';
 };
 
 feature 'open311-endpoint', 'Open311::Endpoint specific requirements' => sub {
@@ -99,12 +101,11 @@ feature 'open311-endpoint', 'Open311::Endpoint specific requirements' => sub {
     requires 'Data::Rx';
     requires 'MooX::HandlesVia';
     requires 'Types::Standard';
-    requires 'LWP::Protocol::PSGI'; # for testing end-to-end
     requires 'DateTime::Format::Oracle'; # for EXOR
 };
 
 feature 'zurich', 'Zueri wie neu specific requirements' => sub {
-#    # Geocoder
+    # Geocoder
     requires 'SOAP::Lite';
 };
 
@@ -116,14 +117,12 @@ requires 'File::ChangeNotify';
 requires 'Path::Tiny';
 requires 'File::Find::Rule';
 
-feature 'run-tests', 'Spin up a test database and config to run tests' => sub {
-    requires 'Test::PostgreSQL';
-};
-
 # Modules used by the test suite
+requires 'Test::PostgreSQL';
 requires 'CGI::Simple';
 requires 'HTTP::Headers';
 requires 'HTTP::Response';
+requires 'LWP::Protocol::PSGI';
 requires 'Sort::Key';
 requires 'Sub::Override';
 requires 'Test::Exception';
@@ -133,6 +132,7 @@ requires 'Test::More', '0.88';
 requires 'Test::Warn';
 requires 'Test::WWW::Mechanize::Catalyst';
 requires 'Web::Scraper';
+requires 'Web::Simple';
 
 #################################################################
 #

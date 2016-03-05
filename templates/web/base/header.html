@@ -1,7 +1,7 @@
 <!doctype html>
-<!--[if lt IE 7]><html class="no-js ie6 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 7]>   <html class="no-js ie7 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 8]>   <html class="no-js ie8 oldie" lang="[% lang_code %]"><![endif]-->
+<!--[if lt IE 7]><html class="no-js ie6 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 7]>   <html class="no-js ie7 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 8]>   <html class="no-js ie8 iel8" lang="[% lang_code %]"><![endif]-->
 <!--[if gt IE 8]><!--><html class="no-js" lang="[% lang_code %]"><!--<![endif]-->
     <head>
         <meta name="viewport" content="initial-scale=1.0">
@@ -10,6 +10,8 @@
         <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
         <meta name="HandHeldFriendly" content="true">
         <meta name="mobileoptimized" content="0">
+
+        [% INCLUDE 'header_opengraph.html' %]
 
         <link rel="stylesheet" href="[% version('/css/core.css') %]">
 
@@ -24,14 +26,16 @@
             %][% loc('FixMyStreet') %]
         [%- IF NOT title AND NOT c.req.path %]</h1>[% ELSE %]</a></div>[% END %]
 
-        <ul id="meta">
-            [% IF c.user_exists %]
-                <li>[% tprintf(loc('Signed in as %s'), c.user.name || c.user.email) %]
-                <li class="last"><a href="/auth/sign_out">[% loc('Sign out') %]</a></li>
-            [% ELSE %]
-                <li>&nbsp;</li>
-            [% END %]
-        </ul>
+          [% IF c.user_exists %]
+            <div id="user-meta">
+                <p>
+                    [% tprintf(loc('Hi %s'), c.user.name || c.user.email) %]
+                    <a href="/auth/sign_out">[% loc('sign out') %]</a>
+                </p>
+            </div>
+          [% END %]
+
+            [% pre_container_extra %]
 
     <div id="mysociety" class="container" role="main">
 

@@ -70,15 +70,13 @@ h3, h4 {
 #front-main {
     background: $primary url(images/tile-y.jpg);
 }
-#main-nav {
-    ul#main-menu {
-        li {
-            a:hover {
-                @include background(linear-gradient(#000, #444 10%, #444 95%, #111));
-            }
-        }
+
+.nav-menu--main {
+    a:hover {
+        @include background(linear-gradient(#000, #444 10%, #444 95%, #111));
     }
 }
+
 .nav-wrapper {
     .nav-wrapper-2 {
         border-image-source: url(images/tile-y-border.jpg);
@@ -94,16 +92,9 @@ body.mappage {
     }
 }
 
-#main-nav {
-    ul#mysoc-menu {
-        background: #515151;
-        margin-top: -4px;
-        li a {
-            &#mysoc-logo {
-                background-position: 0px 15px;
-            }
-        }
-    }
+.nav-menu--mysoc {
+    background: #515151;
+    margin-top: -4px;
 }
 
 body.twothirdswidthpage,
@@ -147,13 +138,14 @@ body.fullwidthpage {
         }
         a#geolocate_link {
             font-family: MuseoSans,Helmet,Freesans,sans-serif;
-            background: url(images/locate-me.png) no-repeat;
+            background: url(images/locate-me.png) $left 0 no-repeat;
             height: 34px;
-            padding-left: 24px;
+            padding-#{$left}: 24px;
             margin-top: 0.25em;
             @media only screen and (min-resolution: 320dpi),
             only screen and (-webkit-min-device-pixel-ratio: 2) {
-                background: url(images/locate-me@2.png) no-repeat;
+                background-image: url(images/locate-me@2.png);
+                background-size: 22px 34px;
             }
         }
     }
@@ -182,6 +174,12 @@ body.frontpage {
                 padding: 1em 1em;
                 background-color: white;
                 width: auto;
+            }
+            > .form-error {
+                margin-top: -4em;
+            }
+            > .form-error + .tablewrapper {
+                margin-top: 0;
             }
         }
         footer {
@@ -219,18 +217,12 @@ body.twothirdswidthpage {
       margin: 0 auto;
       background: $base_bg;
       ul {
-        list-style: none;
-        padding: 0px;
-        margin: 0px;
-        float:left;
+        @include list-reset-soft;
+        float: $left;
         li {
-          list-style: none;
           display: inline;
-          margin: 0px;
-          padding: 0px;
-          float:left;
-          a,
-          span {
+          float: $left;
+          a, span {
             display: block;
             color: $nav_fg;
             background: none;
@@ -244,7 +236,7 @@ body.twothirdswidthpage {
         display: block;
       }
       #footer-help-nav {
-        float: right;
+        float: $right;
       }
     }
 }
@@ -256,13 +248,13 @@ body.twothirdswidthpage {
 
 .next-steps__step {
   font-family: MuseoSans,Helmet,Freesans,sans-serif;
-  float: left;
+  float: $left;
   width: 33%;
   padding: 1.8em;
 
   & + .next-steps__step {
     border-top: none;
-    border-left: 1px solid #ede8c9;
+    border-#{$left}: 1px solid #ede8c9;
   }
 
   h2 {
@@ -274,6 +266,10 @@ body.twothirdswidthpage {
   p {
     line-height: 1.4em;
   }
+}
+
+.next-steps--two .next-steps__step {
+  width: 50%;
 }
 
 body.unresponsive-council {
@@ -316,9 +312,9 @@ body.unresponsive-council {
 .unresponsive-council-cta {
     margin: 1.5em 0;
     max-width: 20em;
-    padding-right: 6em;
+    padding-#{$right}: 6em;
     background-image: url(images/unresponsive-council-cta-arrow.png);
-    background-position: right center;
+    background-position: $right center;
     background-repeat: no-repeat;
 
     @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {

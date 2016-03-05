@@ -1,84 +1,103 @@
-[% INCLUDE 'header.html', title = loc('Sign in or create an account') %]
+[% INCLUDE 'header.html', bodyclass='authpage', title = loc('Sign in or create an account') %]
 
 <h1>[% loc('Sign in') %]</h1>
 
+[% IF oauth_need_email %]
+    <p class="form-error">[% loc('We need your email address, please give it below.') %]</p>
+[% END %]
+[% IF oauth_failure %]
+    <p class="form-error">[% loc('Sorry, we could not log you in. Please fill in the form below.') %]</p>
+[% END %]
+
 <form action="[% c.uri_for() %]" method="post" name="general_auth" class="validate">
-<input type="hidden" name="r" value="[% c.req.params.r | html %]">
-    
-    [% IF email_error;
+    <fieldset>
 
-        # other keys include fqdn, mxcheck if you'd like to write a custom error message
+        <input type="hidden" name="r" value="[% c.req.params.r | html %]">
 
-        errors = {
-            missing => loc('Please enter your email'),
-            other   => loc('Please check your email address is correct')
-        };
-        
-        loc_email_error = errors.$email_error || errors.other;
-    END %]
-    
-    [% IF loc_email_error  %]
+[% IF NOT oauth_need_email AND c.config.FACEBOOK_APP_ID %]
+      <div class="form-box">
+        <button name="facebook_sign_in" id="facebook_sign_in" value="facebook_sign_in" class="btn btn--block btn--social btn--facebook">
+            <img alt="" src="/i/facebook-icon-32.png" width="17" height="32">
+            Log in with Facebook
+        </button>
+      </div>
+      <div id="js-social-email-hide">
+[% END %]
+
+            [% IF email_error;
+
+                # other keys include fqdn, mxcheck if you'd like to write a custom error message
+
+                errors = {
+                    missing => loc('Please enter your email'),
+                    other   => loc('Please check your email address is correct')
+                };
+
+                loc_email_error = errors.$email_error || errors.other;
+            END %]
+
+        <label class="n" for="email">[% loc('Email') %]</label>
+      [% IF loc_email_error  %]
         <div class="form-error">[% loc_email_error %]</div>
-    [% ELSIF sign_in_error %]
+      [% ELSIF sign_in_error %]
         <div class="form-error">[% loc('There was a problem with your email/password combination. If you cannot remember your password, or do not have one, please fill in the &lsquo;sign in by email&rsquo; section of the form.') %]</div>
-    [% END %]
+      [% END %]
+        <input type="email" class="required email" id="email" name="email" value="[% email | html %]" placeholder="[% loc('Your email address') %]" autofocus>
 
-    <div class="form-field">
-        <label class="n" for="email">[% loc('Your email address:') %]</label>
-        <input type="email" class="required email" size="30" id="email" name="email" value="[% email | html %]">
-    </div>
-
-<div id="form_sign_in">
-    <h3>[% loc("Do you have a FixMyStreet password?") %]</h3>
-
-    <div id="form_sign_in_yes">
-
-        <p>
-        <label class="n" for="password_sign_in">[% loc('<strong>Yes</strong> I have a password') %]</label>
-        <input type="password" name="password_sign_in" id="password_sign_in" value="">
-        </p>
-
-        <p>
-        <input type="checkbox" id="remember_me" name="remember_me" value='1'[% ' checked' IF remember_me %]>
-        <label class="n" for="remember_me">
-        [% loc('Keep me signed in on this computer') %]
-        </label>
-        </p>
-        
-        <p>
-        <input type="submit" name="sign_in" value="[% loc('Sign in') %]">
-        </p>
-
-    </div>
-    <div id="form_sign_in_no">
-
-        <p>[% loc('<strong>No</strong>, I do not, let me sign in by email:') %]</p>
-
-        <div class="fieldset">
-            <div class="form-field">
-                <label for="name">[% loc('Your name:') %]</label>
-                <input type="text" name="name" value="">
-            </div>
-
-            <div class="form-field">
-                <label for="password_register">[% loc('Enter a new password:') %]</label>
-                <input type="password" name="password_register" id="password_register" value="">
-            </div>
+        <div id="form_sign_in">
+            <h3>[% tprintf(loc("Do you have a %s password?", "%s is the site name"), site_name)  %]</h3>
+          [% IF oauth_need_email %]
+            [% INCLUDE form_sign_in_no %]
+            [% INCLUDE form_sign_in_yes %]
+            <input type="hidden" name="oauth_need_email" value="1">
+          [% ELSE %]
+            [% INCLUDE form_sign_in_yes %]
+            [% INCLUDE form_sign_in_no %]
+          [% END %]
         </div>
 
-        <p><small>Providing a name and password is optional, but doing so
-        will allow you to more easily report problems, leave updates and
-        manage your reports.</small></p>
+[% IF NOT oauth_need_email AND c.config.FACEBOOK_APP_ID %]
+      </div>
+[% END %]
 
-        <p>
-        <input type="submit" name="email_sign_in" value="[% loc('Sign in by email') %]">
-        </p>
-
-    </div>
-
-</div>
-    
+    </fieldset>
 </form>
 
-
 [% INCLUDE 'footer.html' %]
+
+[% BLOCK form_sign_in_yes %]
+    <div id="form_sign_in_yes" class="form-box">
+        <h5>[% loc('<strong>Yes</strong> I have a password') %]</h5>
+
+        <label class="hidden-js n" for="password_sign_in">[% loc('Password:') %]</label>
+
+        <div class="form-txt-submit-box">
+            <input type="password" name="password_sign_in" id="password_sign_in" value="" placeholder="[% loc('Your password') %]">
+            <input class="green-btn" type="submit" name="sign_in" value="[% loc('Sign in') %]">
+        </div>
+
+        <input type="checkbox" id="remember_me" name="remember_me" value='1'[% ' checked' IF remember_me %]>
+        <label class="inline n" for="remember_me">[% loc('Keep me signed in on this computer') %]</label>
+
+    </div>
+[% END %]
+
+[% BLOCK form_sign_in_no %]
+    <div id="form_sign_in_no" class="form-box">
+        <h5>[% loc('<strong>No</strong> let me sign in by email') %]</h5>
+
+        <label for="name">[% loc('Name') %]</label>
+        <input type="text" name="name" value="" placeholder="[% loc('Your name') %]">
+
+        <label for="password_register">[% loc('Password (optional)') %]</label>
+
+        <div class="general-notes">
+            <p>[% loc('Providing a name and password is optional, but doing so will allow you to more easily report problems, leave updates and manage your reports.') %]</p>
+        </div>
+
+        <div class="form-txt-submit-box">
+            <input type="password" name="password_register" id="password_register" value="" placeholder="[% loc('Enter a password') %]">
+            <input class="green-btn" type="submit" name="email_sign_in" value="[% loc('Sign in') %]">
+        </div>
+    </div>
+[% END %]

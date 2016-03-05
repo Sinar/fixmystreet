@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Test::More;
 
-use FixMyStreet::App;
+use FixMyStreet::DB;
 
 use_ok( 'Open311::PopulateServiceList' );
 use_ok( 'Open311' );
@@ -13,7 +13,7 @@ use_ok( 'Open311' );
 my $processor = Open311::PopulateServiceList->new();
 ok $processor, 'created object';
 
-my $body = FixMyStreet::App->model('DB::Body')->find_or_create( {
+my $body = FixMyStreet::DB->resultset('Body')->find_or_create( {
     id => 1,
     name => 'Body Numero Uno',
 } );
@@ -22,7 +22,7 @@ $body->body_areas->find_or_create({
 } );
 
 my $BROMLEY = 'Bromley Council';
-my $bromley = FixMyStreet::App->model('DB::Body')->find_or_create( {
+my $bromley = FixMyStreet::DB->resultset('Body')->find_or_create( {
     id => 2482,
     name => $BROMLEY,
 } );
@@ -32,7 +32,7 @@ $bromley->body_areas->find_or_create({
 } );
 
 subtest 'check basic functionality' => sub {
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->delete();
+    FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->delete();
 
     my $service_list = get_xml_simple_object( get_standard_xml() );
 
@@ -40,14 +40,14 @@ subtest 'check basic functionality' => sub {
     $processor->_current_body( $body );
     $processor->process_services( $service_list );
 
-    my $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->count();
+    my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
 };
 
 subtest 'check non open311 contacts marked as deleted' => sub {
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->delete();
+    FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->delete();
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->create(
         {
             body_id => 1,
             email =>   'contact@example.com',
@@ -55,7 +55,7 @@ subtest 'check non open311 contacts marked as deleted' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -66,17 +66,17 @@ subtest 'check non open311 contacts marked as deleted' => sub {
     $processor->_current_body( $body );
     $processor->process_services( $service_list );
 
-    my $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->count();
+    my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 4, 'correct number of contacts';
 
-    $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1, deleted => 1 } )->count();
+    $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1, deleted => 1 } )->count();
     is $contact_count, 1, 'correct number of deleted contacts';
 };
 
 subtest 'check email changed if matching category' => sub {
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->delete();
+    FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->delete();
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->create(
         {
             body_id => 1,
             email =>   '009',
@@ -84,7 +84,7 @@ subtest 'check email changed if matching category' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -102,14 +102,14 @@ subtest 'check email changed if matching category' => sub {
     is $contact->confirmed, 1, 'contact still confirmed';
     is $contact->deleted, 0, 'contact still not deleted';
 
-    my $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->count();
+    my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
 };
 
 subtest 'check category name changed if updated' => sub {
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->delete();
+    FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->delete();
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->create(
         {
             body_id => 1,
             email =>   '001',
@@ -117,7 +117,7 @@ subtest 'check category name changed if updated' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -136,14 +136,14 @@ subtest 'check category name changed if updated' => sub {
     is $contact->confirmed, 1, 'contact still confirmed';
     is $contact->deleted, 0, 'contact still not deleted';
 
-    my $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->count();
+    my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
 };
 
 subtest 'check conflicting contacts not changed' => sub {
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->delete();
+    FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->delete();
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->create(
         {
             body_id => 1,
             email =>   'existing@example.com',
@@ -151,14 +151,14 @@ subtest 'check conflicting contacts not changed' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
 
     ok $contact, 'contact created';
 
-    my $contact2 = FixMyStreet::App->model('DB::Contact')->create(
+    my $contact2 = FixMyStreet::DB->resultset('Contact')->create(
         {
             body_id => 1,
             email =>   '001',
@@ -166,7 +166,7 @@ subtest 'check conflicting contacts not changed' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -191,7 +191,7 @@ subtest 'check conflicting contacts not changed' => sub {
     is $contact2->confirmed, 1, 'second contact contact still confirmed';
     is $contact2->deleted, 0, 'second contact contact still not deleted';
 
-    my $contact_count = FixMyStreet::App->model('DB::Contact')->search( { body_id => 1 } )->count();
+    my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 4, 'correct number of contacts';
 };
 
@@ -215,7 +215,7 @@ subtest 'check meta data population' => sub {
 </service_definition>
     ';
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->find_or_create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->find_or_create(
         {
             body_id => 1,
             email =>   '001',
@@ -223,7 +223,7 @@ subtest 'check meta data population' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -395,7 +395,7 @@ for my $test (
             $services_xml =~ s/metadata>false/metadata>true/ms;
         }
 
-        my $contact = FixMyStreet::App->model('DB::Contact')->find_or_create(
+        my $contact = FixMyStreet::DB->resultset('Contact')->find_or_create(
             {
                 body_id => 1,
                 email =>   '100',
@@ -403,7 +403,7 @@ for my $test (
                 confirmed => 1,
                 deleted => 0,
                 editor => $0,
-                whenedited => \'ms_current_timestamp()',
+                whenedited => \'current_timestamp',
                 note => 'test contact',
             }
         );
@@ -470,7 +470,7 @@ subtest 'check attribute ordering' => sub {
 </service_definition>
     ';
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->find_or_create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->find_or_create(
         {
             body_id => 1,
             email =>   '001',
@@ -478,7 +478,7 @@ subtest 'check attribute ordering' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );
@@ -572,7 +572,7 @@ subtest 'check bromely skip code' => sub {
 </service_definition>
     ';
 
-    my $contact = FixMyStreet::App->model('DB::Contact')->find_or_create(
+    my $contact = FixMyStreet::DB->resultset('Contact')->find_or_create(
         {
             body_id => 1,
             email =>   '001',
@@ -580,7 +580,7 @@ subtest 'check bromely skip code' => sub {
             confirmed => 1,
             deleted => 0,
             editor => $0,
-            whenedited => \'ms_current_timestamp()',
+            whenedited => \'current_timestamp',
             note => 'test contact',
         }
     );

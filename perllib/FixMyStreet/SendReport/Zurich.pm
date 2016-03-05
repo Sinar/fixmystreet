@@ -1,6 +1,6 @@
 package FixMyStreet::SendReport::Zurich;
 
-use Moose;
+use Moo;
 
 BEGIN { extends 'FixMyStreet::SendReport::Email'; }
 
@@ -9,16 +9,27 @@ sub build_recipient_list {
 
     # Only one body ever, most of the time with an email endpoint
     my $body = @{ $self->bodies }[0];
+
+    # we set external_message (but default to '' in case of race condition e.g.
+    # Wunsch set, but external_message hasn't yet been filled in.  TODO should
+    # we instead be holding off sending?)
     if ( $row->external_body ) {
-        $body = FixMyStreet::App->model("DB::Body")->find( { id => $row->external_body } );
+        $body = $row->result_source->schema->resultset("Body")->find( { id => $row->external_body } );
         $h->{bodies_name} = $body->name;
+        $h->{external_message} = $row->get_extra_metadata('external_message') || '';
     }
+    $h->{external_message} //= '';
+
+    my ($west, $nord) = $row->local_coords;
+    $h->{west} = $west;
+    $h->{nord} = $nord;
+
     my $body_email = $body->endpoint;
 
     my $parent = $body->parent;
     if ($parent && !$parent->parent) {
         # Division, might have an individual contact email address
-        my $contact = FixMyStreet::App->model("DB::Contact")->find( {
+        my $contact = $row->result_source->schema->resultset("Contact")->find( {
             body_id => $body->id,
             category => $row->category
         } );
@@ -39,6 +50,8 @@ sub get_template {
         $template = 'submit-in-progress.txt';
     } elsif ( $row->state eq 'planned' ) {
         $template = 'submit-feedback-pending.txt';
+    } elsif ( $row->state eq 'investigating' ) {
+        $template = 'submit-external-wish.txt';
     } elsif ( $row->state eq 'closed' ) {
         $template = 'submit-external.txt';
         if ( $row->extra->{third_personal} ) {
@@ -59,7 +72,7 @@ sub send_from {
     if ( $row->external_body ) {
         my $body = @{ $self->bodies }[0];
         my $body_email = $body->endpoint;
-        my $contact = FixMyStreet::App->model("DB::Contact")->find( {
+        my $contact = $body->result_source->schema->resultset("Contact")->find( {
             body_id => $body->id,
             category => $row->category
         } );

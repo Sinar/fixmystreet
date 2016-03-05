@@ -45,41 +45,53 @@ sub country {
     return '';
 }
 
-=head1 problems_clause
-
-Returns a hash for a query to be used by problems (and elsewhere in joined
-queries) to restrict results for a cobrand.
-
-=cut
-
-sub problems_clause {}
-
 =head1 problems
 
-Returns a ResultSet of Problems, restricted to a subset if we're on a cobrand
-that only wants some of the data.
+Returns a ResultSet of Problems, potentially restricted to a subset if we're on
+a cobrand that only wants some of the data.
 
 =cut
 
 sub problems {
     my $self = shift;
-    return $self->{c}->model('DB::Problem');
+    return $self->problems_restriction($self->{c}->model('DB::Problem'));
 }
 
-=head1 site_restriction
+=head1 updates
 
-Return a site key and a hash of extra query parameters if the cobrand uses a
-subset of the FixMyStreet data. Parameter is any extra data the cobrand needs.
-Returns a site key of 0 and an empty hash if the cobrand uses all the data.
+Returns a ResultSet of Comments, potentially restricted to a subset if we're on
+a cobrand that only wants some of the data.
 
 =cut
 
-sub site_restriction { return {}; }
+sub updates {
+    my $self = shift;
+    return $self->updates_restriction($self->{c}->model('DB::Comment'));
+}
+
+=head1 problems_restriction/updates_restriction
+
+Used to restricts reports and updates in a cobrand in a particular way. Do
+nothing by default.
+
+=cut
+
+sub problems_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+sub updates_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+
 sub site_key { return 0; }
 
 =head2 restriction
 
-Return a restriction to pull out data saved while using the cobrand site.
+Return a restriction to data saved while using this specific cobrand site.
 
 =cut
 
@@ -117,7 +129,8 @@ sub base_url { FixMyStreet->config('BASE_URL') }
 =head2 base_url_for_report
 
 Return the base url for a report (might be different in a two-tier county, but
-most of the time will be same as base_url).
+most of the time will be same as base_url). Report may be an object, or a
+hashref.
 
 =cut
 
@@ -690,7 +703,7 @@ sub get_body_sender {
 
     if ( $body->can_be_devolved ) {
         # look up via category
-        my $config = FixMyStreet::App->model("DB::Contact")->search( { body_id => $body->id, category => $category } )->first;
+        my $config = $body->result_source->schema->resultset("Contact")->search( { body_id => $body->id, category => $category } )->first;
         if ( $config->send_method ) {
             return { method => $config->send_method, config => $config };
         } else {
@@ -919,6 +932,50 @@ sub get_country_for_ip_address {
 sub jurisdiction_id_example {
     my $self = shift;
     return $self->moniker;
+}
+
+=head2 body_details_data
+
+Returns a list of bodies to create with ensure_body.  These
+are mostly just passed to ->find_or_create, but there is some
+pre-processing so that you can enter:
+
+    area_id => 123,
+    parent => 'Big Town',
+
+instead of
+
+    body_areas => [ { area_id => 123 } ],
+    parent => { name => 'Big Town' },
+
+For example:
+
+    return (
+        {
+            name => 'Big Town',
+        },
+        {
+            name => 'Small town',
+            parent => 'Big Town',
+            area_id => 1234,
+        },
+
+
+=cut
+
+sub body_details_data {
+    return ();
+}
+
+=head2 contact_details_data
+
+Returns a list of contact_data to create with setup_contacts.
+See Zurich for an example.
+
+=cut
+
+sub contact_details_data {
+    return ()
 }
 
 1;

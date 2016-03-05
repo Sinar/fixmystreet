@@ -9,6 +9,8 @@
 .clearfix { *zoom: 1; }
 
 #front-main {
+    // Undo the top margin added in base.scss
+    margin-top: 0;
     padding: 0
 }
 #front-main-container {
@@ -70,12 +72,12 @@ body.mappage {
     }
 
     #fms_pan_zoom {
-        top: 16em!important;
+        top: 18em!important;
     }
 
     #mysociety {
         margin-top: 0;
-        padding-top: 0;
+        padding-top: 16em;
         padding-bottom: 0;
         width: auto;
         background: transparent;
@@ -100,6 +102,13 @@ body.mappage {
 
     #report-a-problem-sidebar {
         top: 1em;
+    }
+
+    // Keep the headers fixed at the top on the map page
+    #site-header {
+        position: fixed;
+        width: 100%;
+        z-index: 2;
     }
 }
 
@@ -202,42 +211,6 @@ body.twothirdswidthpage .content aside {
     margin-top: 3em; /* required to push "Your Reports" visible on Safari/IE */
 }
 
-#main-nav {
-    margin-top: 106px;
-    ul {
-        margin-left: 157px;
-        float: none;
-    }
-}
-
-#main-nav ul li {
-    text-align: center;
-    text-transform: uppercase;
-    padding: 0 15px;
-    font-size: 16px;
-    border-right: solid 1px white;
-    line-height: 1.5em;
-}
-
-#main-nav ul li a {
-    padding: 0;
-    font-size: inherit;
-}
-
-#main-nav ul li:last-child {
-    border-right: none;
-}
-
-#main-nav ul li a:link, #main-nav ul li a:visited {
-    color: #fff;
-}
-
-#main-nav ul li:hover, #main-nav ul li:hover a, {
-    background-color: white;
-    color: black;
-    text-decoration: none;
-}
-
 .main-menu-wrapper {
     display: none;
 }
@@ -245,11 +218,6 @@ body.twothirdswidthpage .content aside {
 
 
 @media only screen and (max-width: 61em) {
-    #main-nav {
-        padding-left: 0px;
-        float:none;
-    }
-
     #site-header {
         height: auto;
     }

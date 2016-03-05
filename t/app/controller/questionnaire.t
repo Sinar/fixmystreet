@@ -87,7 +87,7 @@ foreach my $test (
     {
         desc => 'User goes to questionnaire URL with a bad token',
         token_extra => 'BAD',
-        content => "we couldn't validate that token",
+        content => "Sorry, that wasn&rsquo;t a valid link",
     },
     {
         desc => 'User goes to questionnaire URL for a now-hidden problem',
@@ -96,7 +96,7 @@ foreach my $test (
     },
     {
         desc => 'User goes to questionnaire URL for an already answered questionnaire',
-        answered => \'ms_current_timestamp()',
+        answered => \'current_timestamp',
         content => 'already answered this questionnaire',
     },
 ) {
@@ -191,6 +191,16 @@ foreach my $test (
         },
     },
     {
+        desc => 'Fixed report, reopened, reported before, blank update, no further questionnaire',
+        problem_state => 'fixed',
+        fields => {
+            been_fixed => 'No',
+            reported => 'Yes',
+            another => 'No',
+            update => '   ',
+        },
+    },
+    {
         desc => 'Closed report, said fixed, reported before, no update, no further questionnaire',
         problem_state => 'closed',
         fields => {
@@ -266,7 +276,7 @@ foreach my $test (
         $questionnaire->discard_changes;
         is $report->state, $result eq 'unknown' ? $test->{problem_state} : $result;
         is $report->send_questionnaire, $another;
-        ok DateTime::Format::Pg->format_datetime( $report->lastupdate) gt $report_time, 'lastupdate changed'
+        ok (DateTime::Format::Pg->format_datetime( $report->lastupdate) gt $report_time, 'lastupdate changed')
             unless $test->{fields}{been_fixed} eq 'Unknown' || $test->{lastupdate_static};
         is $questionnaire->old_state, $test->{problem_state};
         is $questionnaire->new_state, $result;
@@ -315,7 +325,7 @@ my $comment = FixMyStreet::App->model('DB::Comment')->find_or_create(
 );
 subtest 'Check updates are shown correctly on questionnaire page' => sub {
     $mech->get_ok("/Q/" . $token->token);
-    $mech->content_contains( 'updates that have been left' );
+    $mech->content_contains( 'Show all updates' );
     $mech->content_contains( 'This is some update text' );
 };
 

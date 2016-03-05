@@ -4,11 +4,10 @@ use namespace::autoclean;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
-use JSON;
+use JSON::MaybeXS;
 use DateTime;
 use DateTime::Format::ISO8601;
 use List::MoreUtils 'uniq';
-use FixMyStreet::App;
 
 =head1 NAME
 
@@ -81,7 +80,7 @@ sub problems : Local {
         $date_col = 'lastupdate';
     }
 
-    my $dt_parser = FixMyStreet::App->model('DB')->schema->storage->datetime_parser;
+    my $dt_parser = $c->model('DB')->schema->storage->datetime_parser;
 
     my $one_day = DateTime::Duration->new( days => 1 );
     my $query = {

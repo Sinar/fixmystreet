@@ -26,12 +26,10 @@ a, a:visited {
     }
 }
 
-.issue-list-a {
-  li {
-      color:#666;
-      a {
-          color:#666;
-      }
+.item-list--reports__item {
+  color: #666;
+  a {
+    color: #666;
   }
 }
 
@@ -49,8 +47,6 @@ h1.main {
     position: relative;
     background: $primary;
     height: 76px;
-    border-top-width: 4px;
-    margin-top: -4px;
 }
 #site-header .eastsussex .header {
     margin: 0 0 2px;
@@ -59,7 +55,9 @@ h1.main {
     margin: 0 0 9px;
 }
 
-.mappage .application-nav, .twothirdswidthpage .application-nav {
+// Make the navigation bar thinner on the map page so that it takes up less
+// room and doesn't push the map too far down.
+.mappage .application-nav {
     padding: 4.5px 9px;
 }
 
@@ -120,6 +118,10 @@ h1.main {
 #front-main {
 
     margin: 0;
+    // Add some margin to the top of this so that the FMS menu doesn't overlap
+    // it, because we show a menu at the top on East Sussex as well as at the
+    // bottom.
+    margin-top: 5em;
     padding: 1em;
 
     #front-main-container {
@@ -182,6 +184,20 @@ body > p {
     }
 }
 
+// Add some margin to the top of this so that the FMS menu doesn't overlap
+// it, because we show a menu at the top on East Sussex as well as at the
+// bottom.
+.content {
+    margin-top: 5em;
+}
+// Undo that top margin on the map pages, because we don't show the menu there
+// and on the front page, because we've already accounted for it with our
+// margin on #front-main above.
+.mappage .content,
+.frontpage .content {
+    margin-top: 0em;
+}
+
 footer {
     display: none;
 }
@@ -201,7 +217,8 @@ button, input[type=submit], .btn {
 /* as per email from Matt Tooke, we are using ESCC's .button-nav
 styling, but this doesn't dtrt with span, so adding ourselves */
 
-.button-nav span {
+.button-nav span,
+.main-menu ul.button-nav li span {
     float: left;
     display: block;
     margin: 5px 2px 5px 0;
@@ -252,4 +269,10 @@ styling, but this doesn't dtrt with span, so adding ourselves */
     font-size: 90%;
     padding: 2px;
     cursor: default;
+}
+
+// Stop the big green banner (it's not even green) at the top of map pages
+// overriding the header in the z-index
+.big-green-banner {
+    z-index: auto;
 }

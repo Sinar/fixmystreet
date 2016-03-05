@@ -28,75 +28,37 @@ sub string {
 
     $s = FixMyStreet::Geocode::escape($s);
 
-    my $url = 'http://maps.googleapis.com/maps/api/geocode/json?address=' . $s;
-    # my $url = 'http://maps.google.com/maps/geo?q=' . $s;
-
-    $url .=  '&latlng=' . $params->{centre} if $params->{centre};
-    # $url .= '&spn=' . $params->{span}    if $params->{span};
+    my $url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' . $s;
+    $url .= '&bounds=' . $params->{bounds}[0] . ',' . $params->{bounds}[1]
+        . '|' . $params->{bounds}[2] . ',' . $params->{bounds}[3]
+        if $params->{bounds};
     if ($params->{google_country}) {
-        $url .=  '&components=country:' . $params->{google_country};
+        $url .=  '&region=' . $params->{google_country};
     } elsif ($params->{country}) {
-        $url .=  '&components=country:' . $params->{country};
+        $url .=  '&region=' . $params->{country};
     }
     $url .=  '&language=' . $params->{lang} if $params->{lang};
-    $url .= '&sensor=false';
 
-# <<<<<<< HEAD
-#     my $cache_dir = FixMyStreet->config('GEO_CACHE') . 'google/';
-#     my $cache_file = $cache_dir . md5_hex($url);
-#     my $js;
-#     if (-s $cache_file) {
-#         $js = File::Slurp::read_file($cache_file);
-#     } else {
-#         $js = LWP::Simple::get($url);
-#         $js = encode_utf8($js) if utf8::is_utf8($js);
-#         File::Path::mkpath($cache_dir);
-#         File::Slurp::write_file($cache_file, $js) if $js && $js !~ /"code":6[12]0/;
-#     }
-
-#     if (!$js) {
-#         return { error => _('Sorry, we could not parse that location. Please try again.') };
-#     }
-
-#     $js = JSON->new->utf8->allow_nonref->decode($js);
-#     if ($js->{status} ne 'OK') {
-# =======
-    my $args = 'sensor=false&key=' . FixMyStreet->config('GOOGLE_MAPS_API_KEY');
-    my $js = FixMyStreet::Geocode::cache('google', $url, $args, qr/"code":6[12]0/);
+    my $args = 'key=' . FixMyStreet->config('GOOGLE_MAPS_API_KEY');
+    my $js = FixMyStreet::Geocode::cache('google', $url, $args, qr/"status"\s*:\s*"(OVER_QUERY_LIMIT|REQUEST_DENIED|INVALID_REQUEST|UNKNOWN_ERROR)"/);
     if (!$js) {
         return { error => _('Sorry, we could not parse that location. Please try again.') };
     }
-    if ($js->{Status}->{code} ne '200') {
-# >>>>>>> upstream/master
-        return { error => _('Sorry, we could not find that location.') };
-    }
+    return unless $js->{status} eq 'OK';
 
     my $results = $js->{results};
     my ( $error, @valid_locations, $latitude, $longitude );
     foreach (@$results) {
         my $address = $_->{formatted_address};
         next unless $c->cobrand->geocoded_string_check( $address );
-# <<<<<<< HEAD
-#         $latitude = $_->{geometry}->{location}->{lat};
-#         $longitude = $_->{geometry}->{location}->{lng};
-#         # These co-ordinates are output as query parameters in a URL, make sure they have a "."
-#         mySociety::Locale::in_gb_locale {
-#             push(@$error, {
-#                 address => $address,
-#                 latitude => sprintf('%0.6f', $latitude),
-#                 longitude => sprintf('%0.6f', $longitude)
-#             });
-#         };
-# =======
         ( $longitude, $latitude ) =
             map { Utils::truncate_coordinate($_) }
-            @{ $_->{Point}->{coordinates} };
+            ($_->{geometry}{location}{lng}, $_->{geometry}{location}{lat});
         push (@$error, {
             address => $address,
             latitude => $latitude,
             longitude => $longitude
         });
-# >>>>>>> upstream/master
         push (@valid_locations, $_);
     }
     return { latitude => $latitude, longitude => $longitude } if scalar @valid_locations == 1;

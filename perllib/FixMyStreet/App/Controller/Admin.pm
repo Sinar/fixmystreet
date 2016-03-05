@@ -10,6 +10,7 @@ use Digest::SHA qw(sha1_hex);
 use mySociety::EmailUtil qw(is_valid_email);
 use if !$ENV{TRAVIS}, 'Image::Magick';
 use DateTime::Format::Strptime;
+use List::Util 'first';
 
 
 use FixMyStreet::SendReport;
@@ -70,8 +71,6 @@ sub index : Path : Args(0) {
         return $c->cobrand->admin();
     }
 
-    my $site_restriction = $c->cobrand->site_restriction();
-
     my $problems = $c->cobrand->problems->summary_count;
 
     my %prob_counts =
@@ -85,14 +84,14 @@ sub index : Path : Args(0) {
         for ( FixMyStreet::DB::Result::Problem->visible_states() );
     $c->stash->{total_problems_users} = $c->cobrand->problems->unique_users;
 
-    my $comments = $c->model('DB::Comment')->summary_count( $site_restriction );
+    my $comments = $c->cobrand->updates->summary_count;
 
     my %comment_counts =
       map { $_->state => $_->get_column('state_count') } $comments->all;
 
     $c->stash->{comments} = \%comment_counts;
 
-    my $alerts = $c->model('DB::Alert')->summary_count( $c->cobrand->restriction );
+    my $alerts = $c->model('DB::Alert')->summary_report_alerts( $c->cobrand->restriction );
 
     my %alert_counts =
       map { $_->confirmed => $_->get_column('confirmed_count') } $alerts->all;
@@ -130,7 +129,9 @@ sub index : Path : Args(0) {
       : _('n/a');
     $c->stash->{questionnaires} = \%questionnaire_counts;
 
-    $c->stash->{categories} = $c->cobrand->problems->categories_summary();
+    if ($c->get_param('show_categories')) {
+        $c->stash->{categories} = $c->cobrand->problems->categories_summary();
+    }
 
     $c->stash->{total_bodies} = $c->model('DB::Body')->count();
 
@@ -150,7 +151,6 @@ sub config_page : Path( 'config' ) : Args(0) {
 sub timeline : Path( 'timeline' ) : Args(0) {
     my ($self, $c) = @_;
 
-    my $site_restriction = $c->cobrand->site_restriction();
     my %time;
 
     $c->model('DB')->schema->storage->sql_maker->quote_char( '"' );
@@ -171,7 +171,7 @@ sub timeline : Path( 'timeline' ) : Args(0) {
         push @{$time{$_->whenanswered->epoch}}, { type => 'quesAnswered', date => $_->whenanswered, obj => $_ } if $_->whenanswered;
     }
 
-    my $updates = $c->model('DB::Comment')->timeline( $site_restriction );
+    my $updates = $c->cobrand->updates->timeline;
 
     foreach ($updates->all) {
         push @{$time{$_->created->epoch}}, { type => 'update', date => $_->created, obj => $_} ;
@@ -359,12 +359,20 @@ sub update_contacts : Private {
         $contact->deleted( $c->get_param('deleted') ? 1 : 0 );
         $contact->non_public( $c->get_param('non_public') ? 1 : 0 );
         $contact->note( $c->get_param('note') );
-        $contact->whenedited( \'ms_current_timestamp()' );
+        $contact->whenedited( \'current_timestamp' );
         $contact->editor( $editor );
         $contact->endpoint( $c->get_param('endpoint') );
         $contact->jurisdiction( $c->get_param('jurisdiction') );
         $contact->api_key( $c->get_param('api_key') );
         $contact->send_method( $c->get_param('send_method') );
+
+        # Set the photo_required flag in extra to the appropriate value
+        if ( $c->get_param('photo_required') ) {
+            $contact->set_extra_metadata_if_undefined(  photo_required => 1 );
+        }
+        else {
+            $contact->unset_extra_metadata( 'photo_required' );
+        }
 
         if ( %errors ) {
             $c->stash->{updated} = _('Please correct the errors below');
@@ -395,7 +403,7 @@ sub update_contacts : Private {
         $contacts->update(
             {
                 confirmed => 1,
-                whenedited => \'ms_current_timestamp()',
+                whenedited => \'current_timestamp',
                 note => 'Confirmed',
                 editor => $editor,
             }
@@ -538,8 +546,6 @@ sub reports : Path('reports') {
     if (my $search = $c->get_param('search')) {
         $c->stash->{searched} = $search;
 
-        my $site_restriction = $c->cobrand->site_restriction;
-
         my $search_n = 0;
         $search_n = int($search) if $search =~ /^\d+$/;
 
@@ -616,9 +622,8 @@ sub reports : Path('reports') {
         }
 
         if (@$query) {
-            my $updates = $c->model('DB::Comment')->search(
+            my $updates = $c->cobrand->updates->search(
                 {
-                    %{ $site_restriction },
                     -or => $query,
                 },
                 {
@@ -650,8 +655,6 @@ sub reports : Path('reports') {
 sub report_edit : Path('report_edit') : Args(1) {
     my ( $self, $c, $id ) = @_;
 
-    my $site_restriction = $c->cobrand->site_restriction;
-
     my $problem = $c->cobrand->problems->search( { id => $id } )->first;
 
     $c->detach( '/page_error_404_not_found' )
@@ -675,12 +678,21 @@ sub report_edit : Path('report_edit') : Args(1) {
                 type      => 'big',
               } ]
             : [],
+            print_report => 1,
         );
     }
 
-    if ( $c->get_param('rotate_photo') ) {
-        $c->forward('rotate_photo');
-        return 1;
+    if (my $rotate_photo_param = $self->_get_rotate_photo_param($c)) {
+        $self->rotate_photo($c, $problem, @$rotate_photo_param);
+        if ( $c->cobrand->moniker eq 'zurich' ) {
+            # Clicking the photo rotation buttons should do nothing
+            # except for rotating the photo, so return the user
+            # to the report screen now.
+            $c->res->redirect( $c->uri_for( 'report_edit', $problem->id ) );
+            return;
+        } else {
+            return 1;
+        }
     }
 
     if ( $c->cobrand->moniker eq 'zurich' ) {
@@ -707,7 +719,7 @@ sub report_edit : Path('report_edit') : Args(1) {
     }
     elsif ( $c->get_param('mark_sent') ) {
         $c->forward('check_token');
-        $problem->whensent(\'ms_current_timestamp()');
+        $problem->whensent(\'current_timestamp');
         $problem->update();
         $c->stash->{status_message} = '<p><em>' . _('That problem has been marked as sent.') . '</em></p>';
         $c->forward( 'log_edit', [ $id, 'problem', 'marked sent' ] );
@@ -778,23 +790,24 @@ sub report_edit : Path('report_edit') : Args(1) {
         }
 
         # Deal with photos
-        if ( $c->get_param('remove_photo') ) {
-            $problem->photo(undef);
+        my $remove_photo_param = $self->_get_remove_photo_param($c);
+        if ($remove_photo_param) {
+            $self->remove_photo($c, $problem, $remove_photo_param);
         }
 
-        if ( $c->get_param('remove_photo') || $new_state eq 'hidden' ) {
+        if ( $remove_photo_param || $new_state eq 'hidden' ) {
             unlink glob FixMyStreet->path_to( 'web', 'photo', $problem->id . '.*' );
         }
 
         if ( $problem->is_visible() and $old_state eq 'unconfirmed' ) {
-            $problem->confirmed( \'ms_current_timestamp()' );
+            $problem->confirmed( \'current_timestamp' );
         }
 
         if ($done) {
             $problem->discard_changes;
         }
         else {
-            $problem->lastupdate( \'ms_current_timestamp()' ) if $edited || $new_state ne $old_state;
+            $problem->lastupdate( \'current_timestamp' ) if $edited || $new_state ne $old_state;
             $problem->update;
 
             if ( $new_state ne $old_state ) {
@@ -814,6 +827,85 @@ sub report_edit : Path('report_edit') : Args(1) {
     }
 
     return 1;
+}
+
+sub templates : Path('templates') : Args(0) {
+    my ( $self, $c ) = @_;
+
+    $c->detach( '/page_error_404_not_found' )
+        unless $c->cobrand->moniker eq 'zurich';
+
+    my $user = $c->user;
+
+    $self->templates_for_body($c, $user->from_body );
+}
+
+sub templates_view : Path('templates') : Args(1) {
+    my ($self, $c, $body_id) = @_;
+
+    $c->detach( '/page_error_404_not_found' )
+        unless $c->cobrand->moniker eq 'zurich';
+
+    # e.g. for admin
+
+    my $body = $c->model('DB::Body')->find($body_id)
+        or $c->detach( '/page_error_404_not_found' );
+
+    $self->templates_for_body($c, $body);
+}
+
+sub template_edit : Path('templates') : Args(2) {
+    my ( $self, $c, $body_id, $template_id ) = @_;
+
+    $c->detach( '/page_error_404_not_found' )
+        unless $c->cobrand->moniker eq 'zurich';
+
+    my $body = $c->model('DB::Body')->find($body_id)
+        or $c->detach( '/page_error_404_not_found' );
+    $c->stash->{body} = $body;
+
+    my $template;
+    if ($template_id eq 'new') {
+        $template = $body->response_templates->new({});
+    }
+    else {
+        $template = $body->response_templates->find( $template_id )
+            or $c->detach( '/page_error_404_not_found' );
+    }
+
+    if ($c->req->method eq 'POST') {
+        if ($c->get_param('delete_template') eq _("Delete template")) {
+            $template->delete;
+        } else {
+            $template->title( $c->get_param('title') );
+            $template->text ( $c->get_param('text') );
+            $template->update_or_insert;
+        }
+
+        $c->res->redirect( $c->uri_for( 'templates', $body->id ) );
+    }
+
+    $c->stash->{response_template} = $template;
+
+    $c->stash->{template} = 'admin/template_edit.html';
+}
+
+
+sub templates_for_body {
+    my ( $self, $c, $body ) = @_;
+
+    $c->stash->{body} = $body;
+
+    my @templates = $body->response_templates->search(
+        undef,
+        {
+            order_by => 'title'
+        }
+    );
+
+    $c->stash->{response_templates} = \@templates;
+
+    $c->stash->{template} = 'admin/templates.html';
 }
 
 sub users: Path('users') : Args(0) {
@@ -874,13 +966,7 @@ sub users: Path('users') : Args(0) {
 sub update_edit : Path('update_edit') : Args(1) {
     my ( $self, $c, $id ) = @_;
 
-    my $site_restriction = $c->cobrand->site_restriction;
-    my $update = $c->model('DB::Comment')->search(
-        {
-            id => $id,
-            %{$site_restriction},
-        }
-    )->first;
+    my $update = $c->cobrand->updates->search({ id => $id })->first;
 
     $c->detach( '/page_error_404_not_found' )
       unless $update;
@@ -888,6 +974,11 @@ sub update_edit : Path('update_edit') : Args(1) {
     $c->forward('get_token');
 
     $c->stash->{update} = $update;
+
+    if (my $rotate_photo_param = $self->_get_rotate_photo_param($c)) {
+        $self->rotate_photo($c, $update, @$rotate_photo_param);
+        return 1;
+    }
 
     $c->forward('check_email_for_abuse', [ $update->user->email ] );
 
@@ -918,13 +1009,14 @@ sub update_edit : Path('update_edit') : Args(1) {
           || $c->get_param('anonymous') ne $update->anonymous
           || $c->get_param('text') ne $update->text ) {
               $edited = 1;
-          }
-
-        if ( $c->get_param('remove_photo') ) {
-            $update->photo(undef);
         }
 
-        if ( $c->get_param('remove_photo') || $new_state eq 'hidden' ) {
+        my $remove_photo_param = $self->_get_remove_photo_param($c);
+        if ($remove_photo_param) {
+            $self->remove_photo($c, $update, $remove_photo_param);
+        }
+
+        if ( $remove_photo_param || $new_state eq 'hidden' ) {
             unlink glob FixMyStreet->path_to( 'web', 'photo', 'c', $update->id . '.*' );
         }
 
@@ -943,10 +1035,10 @@ sub update_edit : Path('update_edit') : Args(1) {
         }
 
         if ( $new_state eq 'confirmed' and $old_state eq 'unconfirmed' ) {
-            $update->confirmed( \'ms_current_timestamp()' );
+            $update->confirmed( \'current_timestamp' );
             if ( $update->problem_state && $update->created > $update->problem->lastupdate ) {
                 $update->problem->state( $update->problem_state );
-                $update->problem->lastupdate( \'ms_current_timestamp()' );
+                $update->problem->lastupdate( \'current_timestamp' );
                 $update->problem->update;
             }
         }
@@ -987,16 +1079,18 @@ sub user_add : Path('user_edit') : Args(0) {
     $c->forward('get_token');
     $c->forward('fetch_all_bodies');
 
-    return 1 unless $c->get_param('submit');
+    return unless $c->get_param('submit');
 
     $c->forward('check_token');
 
-    if ( $c->cobrand->moniker eq 'zurich' and $c->get_param('email') eq '' ) {
+    unless ($c->get_param('email')) {
         $c->stash->{field_errors}->{email} = _('Please enter a valid email');
-        return 1;
+        return;
     }
-
-    return unless $c->get_param('name') && $c->get_param('email');
+    unless ($c->get_param('name')) {
+        $c->stash->{field_errors}->{name} = _('Please enter a name');
+        return;
+    }
 
     my $user = $c->model('DB::User')->find_or_create( {
         name => $c->get_param('name'),
@@ -1044,12 +1138,16 @@ sub user_edit : Path('user_edit') : Args(1) {
         $user->from_body( $c->get_param('body') || undef );
         $user->flagged( $c->get_param('flagged') || 0 );
 
-        if ( $c->cobrand->moniker eq 'zurich' and $user->email eq '' ) {
+        unless ($user->email) {
             $c->stash->{field_errors}->{email} = _('Please enter a valid email');
-            return 1;
+            return;
         }
-        $user->update;
+        unless ($user->name) {
+            $c->stash->{field_errors}->{name} = _('Please enter a name');
+            return;
+        }
 
+        $user->update;
         if ($edited) {
             $c->forward( 'log_edit', [ $id, 'user', 'edit' ] );
         }
@@ -1064,7 +1162,7 @@ sub user_edit : Path('user_edit') : Args(1) {
 sub flagged : Path('flagged') : Args(0) {
     my ( $self, $c ) = @_;
 
-    my $problems = $c->model('DB::Problem')->search( { flagged => 1 } );
+    my $problems = $c->cobrand->problems->search( { flagged => 1 } );
 
     # pass in as array ref as using same template as search_reports
     # which has to use an array ref for sql quoting reasons
@@ -1121,9 +1219,6 @@ sub stats : Path('stats') : Args(0) {
 
         my $bymonth = $c->get_param('bymonth');
         $c->stash->{bymonth} = $bymonth;
-        my ( %body, %dates );
-        $body{bodies_str} = { like => $c->get_param('body') }
-            if $c->get_param('body');
 
         $c->stash->{selected_body} = $c->get_param('body');
 
@@ -1154,14 +1249,12 @@ sub stats : Path('stats') : Args(0) {
             );
         }
 
-        my $p = $c->model('DB::Problem')->search(
+        my $p = $c->cobrand->problems->to_body($c->get_param('body'))->search(
             {
                 -AND => [
                     $field => { '>=', $start_date},
                     $field => { '<=', $end_date + $one_day },
                 ],
-                %body,
-                %dates,
             },
             \%select,
         );
@@ -1232,9 +1325,9 @@ Generate a token based on user and secret
 sub get_token : Private {
     my ( $self, $c ) = @_;
 
-    my $secret = $c->model('DB::Secret')->search()->first;
+    my $secret = $c->model('DB::Secret')->get;
     my $user = $c->forward('get_user');
-    my $token = sha1_hex($user . $secret->secret);
+    my $token = sha1_hex($user . $secret);
     $c->stash->{token} = $token;
 
     return 1;
@@ -1266,13 +1359,24 @@ Adds an entry into the admin_log table using the current user.
 =cut
 
 sub log_edit : Private {
-    my ( $self, $c, $id, $object_type, $action ) = @_;
+    my ( $self, $c, $id, $object_type, $action, $time_spent ) = @_;
+
+    $time_spent //= 0;
+    $time_spent = 0 if $time_spent < 0;
+
+    my $user_object = do {
+        my $auth_user = $c->user;
+        $auth_user ? $auth_user->get_object : undef;
+    };
+
     $c->model('DB::AdminLog')->create(
         {
             admin_user => $c->forward('get_user'),
+            $user_object ? ( user => $user_object ) : (), # as (rel => undef) doesn't work
             object_type => $object_type,
             action => $action,
             object_id => $id,
+            time_spent => $time_spent,
         }
     )->insert();
 }
@@ -1385,37 +1489,54 @@ Rotate a photo 90 degrees left or right
 
 =cut
 
-sub rotate_photo : Private {
-    my ( $self, $c ) =@_;
+# returns index of photo to rotate, if any
+sub _get_rotate_photo_param {
+    my ($self, $c) = @_;
+    my $key = first { /^rotate_photo/ } keys %{ $c->req->params } or return;
+    my ($index) = $key =~ /(\d+)$/;
+    my $direction = $c->get_param($key);
+    return [ $index || 0, $direction ];
+}
 
-    my $direction = $c->get_param('rotate_photo');
+sub rotate_photo : Private {
+    my ( $self, $c, $object, $index, $direction ) = @_;
+
     return unless $direction eq _('Rotate Left') or $direction eq _('Rotate Right');
 
-    my $photo = $c->stash->{problem}->photo;
-    my $file;
+    my $fileid = $object->get_photoset->rotate_image(
+        $index,
+        $direction eq _('Rotate Left') ? -90 : 90
+    ) or return;
 
-    # If photo field contains a hash
-    if ( length($photo) == 40 ) {
-        $file = file( $c->config->{UPLOAD_DIR}, "$photo.jpeg" );
-        $photo = $file->slurp;
+    $object->update({ photo => $fileid });
+
+    return 1;
+}
+
+=head2 remove_photo
+
+Remove a photo from a report
+
+=cut
+
+# Returns index of photo(s) to remove, if any
+sub _get_remove_photo_param {
+    my ($self, $c) = @_;
+
+    return 'ALL' if $c->get_param('remove_photo');
+
+    my @keys = map { /(\d+)$/ } grep { /^remove_photo_/ } keys %{ $c->req->params } or return;
+    return \@keys;
+}
+
+sub remove_photo : Private {
+    my ($self, $c, $object, $keys) = @_;
+    if ($keys eq 'ALL') {
+        $object->photo(undef);
+    } else {
+        my $fileids = $object->get_photoset->remove_images($keys);
+        $object->photo($fileids);
     }
-
-    $photo = _rotate_image( $photo, $direction eq _('Rotate Left') ? -90 : 90 );
-    return unless $photo;
-
-    # Write out to new location
-    my $fileid = sha1_hex($photo);
-    $file = file( $c->config->{UPLOAD_DIR}, "$fileid.jpeg" );
-
-    my $fh = $file->open('w');
-    print $fh $photo;
-    close $fh;
-
-    unlink glob FixMyStreet->path_to( 'web', 'photo', $c->stash->{problem}->id . '.*' );
-
-    $c->stash->{problem}->photo( $fileid );
-    $c->stash->{problem}->update();
-
     return 1;
 }
 
@@ -1463,18 +1584,6 @@ sub trim {
     $e =~ s/\s+$//;
     return $e;
 }
-
-sub _rotate_image {
-    my ($photo, $direction) = @_;
-    my $image = Image::Magick->new;
-    $image->BlobToImage($photo);
-    my $err = $image->Rotate($direction);
-    return 0 if $err;
-    my @blobs = $image->ImageToBlob();
-    undef $image;
-    return $blobs[0];
-}
-
 
 =head1 AUTHOR
 

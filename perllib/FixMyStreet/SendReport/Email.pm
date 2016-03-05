@@ -1,6 +1,7 @@
 package FixMyStreet::SendReport::Email;
 
-use Moose;
+use Moo;
+use FixMyStreet::Email;
 
 BEGIN { extends 'FixMyStreet::SendReport'; }
 
@@ -10,7 +11,7 @@ sub build_recipient_list {
     my $all_confirmed = 1;
     foreach my $body ( @{ $self->bodies } ) {
 
-        my $contact = FixMyStreet::App->model("DB::Contact")->find( {
+        my $contact = $row->result_source->schema->resultset("Contact")->find( {
             deleted => 0,
             body_id => $body->id,
             category => $row->category
@@ -74,7 +75,7 @@ sub send {
     my $recips = $self->build_recipient_list( $row, $h );
 
     # on a staging server send emails to ourselves rather than the bodies
-    if (mySociety::Config::get('STAGING_SITE') && !mySociety::Config::get('SEND_REPORTS_ON_STAGING') && !FixMyStreet->test_mode) {
+    if (FixMyStreet->config('STAGING_SITE') && !FixMyStreet->config('SEND_REPORTS_ON_STAGING') && !FixMyStreet->test_mode) {
         $recips = 1;
         @{$self->to} = [ $row->user->email, $self->to->[0][1] || $row->name ];
     }
@@ -92,13 +93,22 @@ sub send {
         To => $self->to,
         From => $self->send_from( $row ),
     };
+
+    $cobrand->munge_sendreport_params($row, $h, $params) if $cobrand->can('munge_sendreport_params');
+
     $params->{Bcc} = $self->bcc if @{$self->bcc};
-    my $result = FixMyStreet::App->send_email_cron(
-        $params,
-        mySociety::Config::get('CONTACT_EMAIL'),
-        $nomail,
-        $cobrand
+
+    my $sender = sprintf('<fms-%s@%s>',
+        FixMyStreet::Email::generate_verp_token('report', $row->id),
+        FixMyStreet->config('EMAIL_DOMAIN')
     );
+
+    if (FixMyStreet::Email::test_dmarc($params->{From}[0])) {
+        $params->{'Reply-To'} = [ $params->{From} ];
+        $params->{From} = [ $sender, $params->{From}[1] ];
+    }
+
+    my $result = FixMyStreet::Email::send_cron($row->result_source->schema, $params, $sender, $nomail, $cobrand);
 
     unless ($result) {
         $self->success(1);

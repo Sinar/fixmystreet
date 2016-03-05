@@ -1,62 +1,44 @@
-[%
+[% 
+    SET bodyclass = 'mappage';
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html";
 
     problem_title = problem.title_safe _ ' - ' _ loc('Viewing a problem');
-    SET rss = [ loc('Updates to this problem, FixMyStreet'), "/rss/$problem.id" ] IF c.cobrand.moniker != 'emptyhomes';
-    SET robots = 'index, nofollow';
-    SET robots = 'noindex, nofollow' IF c.cobrand.moniker == 'emptyhomes';
     INCLUDE 'header.html'
         title = problem_title
+        rss = [ tprintf(loc('Updates to this problem, %s', "%s is the site name"), site_name), "/rss/$problem.id" ]
+        robots = 'index, nofollow';
 %]
 
-[% IF c.cobrand.moniker != 'emptyhomes' %]
-    [% map_html %]
-    </div>
-[% END %]
-
-<div id="side">
+[% map_html %]
+</div>
 
 [% IF login_success %]
     <p class='form-success'>[% loc('You have successfully signed in; please check and confirm your details are accurate:') %]</p>
+    [% INCLUDE 'report/update-form.html' %]
+    [% SET shown_form = 1 %]
+[% ELSIF oauth_failure %]
+    <p class="form-error">[% loc('Sorry, we could not log you in. Please fill in the form below.') %]</p>
+    [% INCLUDE 'report/update-form.html' %]
+    [% SET shown_form = 1 %]
+[% ELSIF oauth_need_email %]
+    <p class="form-error">
+        [% loc('Please note your update has <strong>not yet been posted</strong>.') %]
+        [% loc('We need your email address, please give it below.') %]
+    </p>
+    [% INCLUDE 'report/update-form.html' %]
+    [% SET shown_form = 1 %]
 [% END %]
-
-[% INCLUDE 'report/_extras_top.html' %]
 
 [% INCLUDE 'report/banner.html' %]
 [% INCLUDE 'report/_main.html' %]
-
-<p align="right">
-    <small>
-        <a rel="nofollow" href="[% c.uri_for( '/contact', { id => problem.id } ) %]">[% loc('Offensive? Unsuitable? Tell us' ) %]</a>
-    </small>
-</p>
-
-[% IF c.cobrand.moniker != 'emptyhomes' %]
-<p style="padding-bottom: 0.5em; border-bottom: dotted 1px #999999;" align="right">
-    <a href="[% c.uri_for( '/around', { lat => latitude, lon => longitude } ) %]">[% loc( 'More problems nearby' ) %]</a>
-</p>
-
-<div id="alert_links">
-    <a rel="nofollow" id="email_alert" href="[% c.uri_for( '/alert/subscribe', { id => problem.id } ) %]">[% loc('Email me updates' ) %]</a>
-
-    <form action="[% c.uri_for( '/alert/subscribe' ) %]" method="post" id="email_alert_box">
-        <p>[% loc('Receive email when updates are left on this problem.' ) %]</p>
-        <label class="n" for="alert_rznvy">[% loc('Email:') %]</label>
-        <input type="email" name="rznvy" id="alert_rznvy" value="[% email | html %]" size="30">
-        <input type="hidden" name="id" value="[% problem.id %]">
-        <input type="hidden" name="type" value="updates">
-        <input type="submit" value="[% loc('Subscribe') %]">
-    </form>
-    &nbsp;
-    <a href="[% c.uri_for( '/rss', problem.id ) %]">
-        <img src="/i/feed.png" width="16" height="16" title="[% loc('RSS feed') %]" alt="[% loc('RSS feed of updates to this problem' ) %]" border="0" style="vertical-align: middle">
-    </a>
-</div>
-
+[% TRY %][% INCLUDE 'report/_message_manager.html' %][% CATCH file %][% END %]
+[% INCLUDE 'report/display_tools.html' %]
+[% TRY %][% INCLUDE 'report/sharing.html' %][% CATCH file %][% END %]
 [% INCLUDE 'report/updates.html' %]
-[% INCLUDE 'report/update-form.html' %]
-[% END %]
 
-</div>
+[% IF NOT shown_form %]
+    [% INCLUDE 'report/update-form.html' %]
+[% END %]
 
 [% INCLUDE 'footer.html' %]

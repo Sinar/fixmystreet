@@ -1,0 +1,25 @@
+<ul class='item-list item-list--reports full-width'>
+    [% IF problems.size %]
+        [% FOREACH problem = problems %]
+            [% INCLUDE 'reports/_list-entry.html' no_fixed = 1 %]
+        [% END %]
+    [% ELSE %]
+        <li class="item-list__item item-list__item--empty">
+            <p>[% loc('There are no reports to show.') %]</p>
+        </li>
+    [% END %]
+</ul>
+
+[% IF ! problems.size %]
+<!-- Preserve behaviour of map filters despite map not being shown -->
+<script type="text/javascript">
+    (function($) {
+        $(function() {
+            $(".report-list-filters [type=submit]").hide();
+            $(".report-list-filters select").change(function() {
+                $(this).closest("form").submit();
+            });
+        })
+    })(window.jQuery);
+</script>
+[% END %]

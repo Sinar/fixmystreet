@@ -31,8 +31,9 @@ __PACKAGE__->add_columns(
   "created",
   {
     data_type     => "timestamp",
-    default_value => \"ms_current_timestamp()",
+    default_value => \"current_timestamp",
     is_nullable   => 0,
+    original      => { default_value => \"now()" },
   },
   "confirmed",
   { data_type => "timestamp", is_nullable => 1 },
@@ -88,15 +89,14 @@ __PACKAGE__->belongs_to(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2014-07-31 15:59:43
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:08AtJ6CZFyUe7qKMF50MHg
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-08-13 16:33:38
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:ZR+YNA1Jej3s+8mr52iq6Q
 #
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 
-use Image::Size;
-use Moose;
+use Moo;
 use namespace::clean -except => [ 'meta' ];
 
 with 'FixMyStreet::Roles::Abuser';
@@ -144,18 +144,47 @@ sub confirm {
     my $self = shift;
 
     $self->state( 'confirmed' );
-    $self->confirmed( \'ms_current_timestamp()' );
+    $self->confirmed( \'current_timestamp' );
 }
 
-=head2 get_photo_params
+=head2 get_photoset
 
-Returns a hashref of details of any attached photo for use in templates.
+Return a PhotoSet object for all photos attached to this field
+
+    my $photoset = $obj->get_photoset;
+    print $photoset->num_images;
+    return $photoset->get_image_data(num => 0, size => 'full');
 
 =cut
 
-sub get_photo_params {
+sub get_photoset {
+    my ($self) = @_;
+    my $class = 'FixMyStreet::App::Model::PhotoSet';
+    eval "use $class";
+    return $class->new({
+        db_data => $self->photo,
+        object => $self,
+    });
+}
+
+sub photos {
     my $self = shift;
-    return FixMyStreet::App::get_photo_params($self, 'c');
+    my $photoset = $self->get_photoset;
+    my $i = 0;
+    my $id = $self->id;
+    my @photos = map {
+        my $format = 'jpeg';
+        my $cachebust = substr($_, 0, 8);
+        {
+            id => $_,
+            url_temp => "/photo/$_.temp.$format",
+            url_temp_full => "/photo/$_.fulltemp.$format",
+            url => "/photo/c/$id.$i.$format?$cachebust",
+            url_full => "/photo/c/$id.$i.full.$format?$cachebust",
+            idx => $i++,
+        }
+    } $photoset->all_ids;
+    return \@photos;
 }
 
 =head2 meta_problem_state
@@ -212,8 +241,5 @@ __PACKAGE__->might_have(
   },
   { cascade_copy => 0, cascade_delete => 1 },
 );
-
-# we need the inline_constructor bit as we don't inherit from Moose
-__PACKAGE__->meta->make_immutable( inline_constructor => 0 );
 
 1;

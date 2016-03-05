@@ -22,10 +22,6 @@ sub path_to_web_templates {
     ];
 }
 
-sub site_restriction {
-    my $self = shift;
-    return { bodies_str => sprintf('%d', $self->council_id) };
-}
 sub site_key {
     my $self = shift;
     return $self->council_url;
@@ -35,28 +31,19 @@ sub restriction {
     return { cobrand => shift->moniker };
 }
 
-# Different function to site_restriction due to two-tier use
-sub problems_clause {
-    my $self = shift;
-
-    if ($self->is_two_tier) {
-        return { bodies_str => {
-            like => ('%' . $self->council_id . '%')
-        }};
-    }
-    else {
-        return { bodies_str => sprintf('%d', $self->council_id) };
-    }
+sub problems_restriction {
+    my ($self, $rs) = @_;
+    return $rs->to_body($self->council_id);
 }
 
-sub problems {
-    my $self = shift;
-    return $self->{c}->model('DB::Problem')->search( $self->problems_clause );
+sub updates_restriction {
+    my ($self, $rs) = @_;
+    return $rs->to_body($self->council_id);
 }
 
 sub base_url {
     my $self = shift;
-    my $base_url = mySociety::Config::get('BASE_URL');
+    my $base_url = FixMyStreet->config('BASE_URL');
     my $u = $self->council_url;
     if ( $base_url !~ /$u/ ) {
         # council cobrands are not https so transform to http as well
@@ -122,8 +109,15 @@ sub recent_photos {
 # Returns true if the cobrand owns the problem.
 sub owns_problem {
     my ($self, $report) = @_;
-    my $bodies = $report->bodies;
-    my %areas = map { %{$_->areas} } values %$bodies;
+    my @bodies;
+    if (ref $report eq 'HASH') {
+        return unless $report->{bodies_str};
+        @bodies = split /,/, $report->{bodies_str};
+        @bodies = FixMyStreet::DB->resultset('Body')->search({ id => \@bodies })->all;
+    } else { # Object
+        @bodies = values %{$report->bodies};
+    }
+    my %areas = map { %{$_->areas} } @bodies;
     return $areas{$self->council_id} ? 1 : undef;
 }
 

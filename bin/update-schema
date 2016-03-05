@@ -39,20 +39,19 @@ BEGIN {
     require "$bin_dir/../setenv.pl";
 }
 
-use mySociety::Config;
+use FixMyStreet;
 use mySociety::DBHandle qw(dbh);
 use mySociety::MaPit;
 use Getopt::Long;
 use Pod::Usage;
 
-mySociety::Config::set_file("$bin_dir/../conf/general");
 my %args = (
-    Name => mySociety::Config::get('FMS_DB_NAME'),
-    User => mySociety::Config::get('FMS_DB_USER'),
-    Password => mySociety::Config::get('FMS_DB_PASS'),
+    Name => FixMyStreet->config('FMS_DB_NAME'),
+    User => FixMyStreet->config('FMS_DB_USER'),
+    Password => FixMyStreet->config('FMS_DB_PASS'),
 );
-$args{Host} = mySociety::Config::get('FMS_DB_HOST', undef) if mySociety::Config::get('FMS_DB_HOST');
-$args{Port} = mySociety::Config::get('FMS_DB_PORT', undef) if mySociety::Config::get('FMS_DB_PORT');
+$args{Host} = FixMyStreet->config('FMS_DB_HOST', undef) if FixMyStreet->config('FMS_DB_HOST');
+$args{Port} = FixMyStreet->config('FMS_DB_PORT', undef) if FixMyStreet->config('FMS_DB_PORT');
 mySociety::DBHandle::configure( %args );
 
 my ($commit, $version, $downgrade, $help);
@@ -95,8 +94,8 @@ sub get_statements {
         next if /^--/; # Ignore comments
         $s .= $_;
         # Functions may have semicolons within them
-        $in_function = 1 if /create function/i;
-        $in_function = 0 if /language 'plpgsql'/i;
+        $in_function = 1 if /create (or replace )?function/i;
+        $in_function = 0 if /language (sql|'plpgsql')/i;
         if ($s =~ /;/ && !$in_function) {
             push @statements, $s;
             $s = '';
@@ -195,6 +194,13 @@ else {
 # By querying the database schema, we can see where we're currently at
 # (assuming schema change files are never half-applied, which should be the case)
 sub get_db_version {
+    return '0039' if column_exists('users', 'facebook_id');
+    return '0038' if column_exists('admin_log', 'time_spent');
+    return '0037' if table_exists('response_templates');
+    return '0036' if constraint_contains('problem_cobrand_check', 'a-z0-9_');
+    return '0035' if column_exists('problem', 'bodies_missing');
+    return '0034' if ! function_exists('ms_current_timestamp');
+    return '0033' if ! function_exists('angle_between');
     return '0032' if table_exists('moderation_original_data');
     return '0031' if column_exists('body', 'external_url');
     return '0030' if ! constraint_exists('admin_log_action_check');
@@ -254,3 +260,15 @@ sub constraint_exists {
     return dbh()->selectrow_array('select count(*) from pg_constraint where conname = ?', {}, $constraint);
 }
 
+# Returns true if a check constraint contains a certain string
+sub constraint_contains {
+    my ( $constraint, $check ) = @_;
+    my ($consrc) = dbh()->selectrow_array('select consrc from pg_constraint where conname = ?', {}, $constraint);
+    return $consrc =~ /$check/;
+}
+
+# Returns true if a function exists
+sub function_exists {
+    my $fn = shift;
+    return dbh()->selectrow_array('select count(*) from pg_proc where proname = ?', {}, $fn);
+}

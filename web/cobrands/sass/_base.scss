@@ -1,10 +1,16 @@
-
 /* HEADINGS and TYPOGRAPHY */
 
 $body-font: MuseoSans, Helmet, Freesans, sans-serif !default;
 $meta-font: Helmet, Freesans, sans-serif !default;
 $heading-font: 'Museo300-display', MuseoSans, Helmet, Freesans, sans-serif !default;
-$image-sprite: '/cobrands/baiki/images/sprite.png' !default;
+$image-sprite: '/cobrands/fixmystreet/images/sprite.png' !default;
+$menu-image: 'menu-white' !default;
+
+$itemlist_item_background: #f6f6f6 !default;
+$itemlist_item_background_hover: #e6e6e6 !default;
+
+@import "_mixins";
+@import "_report_list";
 
 body {
   font-family: $body-font;
@@ -19,7 +25,7 @@ body {
 p {
   font-size: 1em;
   font-weight: normal;
-  margin:0 0 1em 0;
+  margin: 0 0 1em;
 }
 
 small{
@@ -72,7 +78,7 @@ h4 {
 ul, ol {
   font-size: 1em;
   margin-bottom: 2em;
-  margin-left: 2em;
+  margin-#{$left}: 2em;
   padding:0;
 }
 
@@ -97,13 +103,13 @@ ol.big-numbers {
   > li {
     position: relative;
     list-style: none;
-    padding:0 0 0 2.5em;
+    padding: flip(0 0 0 2.5em, 0 2.5em 0 0);
     margin-bottom:2em;
     &:before {
       content: counter(li); // set the content to be whatever the 'li' var is
       counter-increment: li; // add to the counter var
       position: absolute;
-      left: 0;
+      #{$left}: 0;
       top:-0.2em;
       color:#ccc;
       line-height:1;
@@ -127,7 +133,7 @@ dl {
   dd {
     font-weight: 1em;
     line-height: 1.5em;
-    margin:0 0 1em 0;
+    margin: 0 0 1em;
   }
 }
 
@@ -296,14 +302,14 @@ label{
   font-weight: bold;
   &.inline{
     display: inline;
-    padding: 0 2em 0 1em;
+    padding: flip(0 2em 0 1em, 0 1em 0 2em);
     font-weight: normal;
   }
 }
 
 // grey background, full width box
 .form-box {
-  margin: 0 -1em 0.25em -1em;
+  margin: 0 -1em 0.25em;
   background: #eee;
   padding: 1em;
   > input[type=text], input[type=email] {
@@ -313,6 +319,9 @@ label{
     font-size:1.25em;
     margin:0.5em 0;
   }
+  h2 {
+    margin: 0 0 0.5em;
+  }
   h5 {
     margin:0 0 1em;
     font: {
@@ -321,7 +330,7 @@ label{
     }
     strong {
       font-size:2em;
-      margin-right:0.25em;
+      margin-#{$right}: 0.25em;
     }
   }
 }
@@ -329,21 +338,22 @@ label{
 // the password box falls off screen for some reason. Just have boring margins,
 // it looks okay.
 .ie6 .form-box {
-    margin: 0 0 0.25em 0;
+    margin: 0 0 0.25em;
     padding: 1em;
 }
 // Prevent grey displaying oddly by giving it a width, and stop odd left margin issue
 .ie7 .form-box {
     width: 100%;
     > input[type=text], input[type=email] {
-        margin-left: 2em;
+        margin-#{$left}: 2em;
     }
 }
 
 .change_location {
     color: #666;
-    padding-left: 24px;
-    background: transparent url(/cobrands/fixmystreet/images/wrong-location.png) 4px 50% no-repeat;
+    padding-#{$left}: 20px;
+    background: transparent url(/cobrands/fixmystreet/images/wrong-location.png) $left 50% no-repeat;
+    border-#{$left}: solid 4px #fff;
     margin-top: -0.5em;
 }
 
@@ -353,12 +363,12 @@ label{
   input[type=text],
   input[type=email] {
     width: 65%;
-    float:left;
+    float: $left;
   }
   input[type=submit] {
-    float:right;
+    float: $right;
     width:28%;
-    margin-right:0.25em;
+    margin-#{$right}: 0.25em;
     padding-top:0.7em;
     padding-bottom:0.6em;
   }
@@ -443,13 +453,8 @@ p.label-valid {
   width: 175px;
   height: 40px;
   top: 0.4em;
-/* <<<<<<< HEAD */
-/*   background: url('data:image/png;base64,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') no-repeat; */
-/*   /\* background: url($image-sprite) -3px -3px no-repeat; *\/ */
-/* ======= */
-  left: 0.5em;
+  #{$left}: 0.5em;
   background: url($image-sprite) -3px -3px no-repeat;
-/* >>>>>>> upstream/master */
   text-indent: -999999px;
   position: absolute;
   z-index:2;
@@ -462,13 +467,13 @@ p.label-valid {
 #nav-link {
   width: 3em;
   height: 3em; // same height as #site-header
-  background: transparent url(/cobrands/fixmystreet/images/menu-white.png) center center no-repeat;
-  background-image: url(/cobrands/fixmystreet/images/menu-white.svg), none;
+  background: transparent url(/cobrands/fixmystreet/images/#{$menu-image}.png) center center no-repeat;
+  background-image: inline-image("../fixmystreet/images/#{$menu-image}.svg"), none;
   background-size: 22px 18px;
   display: block;
   text-indent: -999999px;
   position: absolute;
-  right: 0;
+  #{$right}: 0;
   top: 0.25em; // same as border-top on #site-header
 }
 
@@ -477,7 +482,7 @@ p.label-valid {
   display: block;
   position: absolute;
   top: (3em / 2); // half the height of #site-header
-  right: 3.5em;
+  #{$right}: 3.5em;
   margin-top: -0.5em;
 
   font-size: 0.9em;
@@ -494,47 +499,42 @@ p.label-valid {
 }
 
 
-#main-nav{
-  ul{
-    @include list-reset-soft;
-    li{
-      a, span {
-        display: block;
-        padding: 0.5em 1em;
-        background:#f6f6f6;
-        color:#333;
-        font-size: 1.25em;
-        border-bottom: 0.25em solid #333;
-      }
-      a:hover, span.hover {
-        background:  #333;
-        color:#fff;
-        text-decoration: none;
-      }
-      span {
-        background-color: #ccc;
-      }
-    }
-    &#mysoc-menu{
-      li {
-        a {
-          color: $primary_text;
-          background: $primary;
-          &#mysoc-logo {
-            background-position: 20px 13px;
-            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHQAAAAYCAYAAAArrNkGAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABBtJREFUaN7tmT2u1DAQx/cIPgBCQUJCICH5BuQIPkIq6hzBB0AyiAP4ABQ5ghtEm54mEtVrICUNkpmsJjBvdvyR1S7hPa2lv1aJs5PEP894xjkc/tMWY+xADhRQA8iC9I7PtD6PP9xa9aC1oCnmm9lpgtHW3WiVB03HuqYeA9DlPZbJuXj8o5wgGM5os+ixLb74MeTt+Hz+kiGXva99jEDjJV7w+5Pn3aIHNoEvB/Tu7s6iejzuQAEUQRPIgxT2KTwesX+5rkvYs7yP2KDXLN7XXCKkAUgHiii3MaQuideI9x/x2GB/gxFjVZMIoY6AmtBGJ+QJluUKgdheI1LpfveuoQMciTw7XrUAbEFzot8Re4GcnwWghv23Ezx0PiejBYiBAA0/Pz7VoOV3AKnEup1LwhyBQFsr2Jkzdjy51hZyBIuwaOuFZ6fPPaaA5jQX+hvi4fS8YUC9BBzXqJOB4INXAGpAM8oAxBEUUbYSQiCD1ZWACnZGhDJIUacGaBbY34ghAxfAdHheCxBHAs6yvp7YpP/zDOgk9WHIGhMvOZ5TrjCgfUUSptigqQqg1M7A7kHhTVvWUAF8Q/r6ZObPQy4bfMf62wycoeSFOEmoPS2sQ74mdFUC1RhuHQ25QonkKurjE6CCpzTC+9CmNwBNeiHz/oGvabnweG+9E9ZDul6GDDiD53tybsoMYIMJhhQSjy/28YVzoAgKoGRt+uvHMwUaQRHkS7N/I1AjhGuuGs+2ifsOPOwKk6TLAeUe2J4DFPtG7vnsnK3MQPngTwg0ErUZoC3CPEqyWbmDJQG1cVvbCpRPmIadm6Wy5VpAeXKkpCRqQ1F/DwBAnAlQnQHaEKDzlYGGgvQWoEJy1LOx8P8SqOLJEU2uNhbhvQC0AVn76n3/9vWHpIe++/Km/fxVL17aL3ATSYU5E2h77rbkBqA2kYFHsbS7FlAhOTrJpIXwkirYRynMAEgDiignwHSgiGozCceUg5EBqs5N2hhQX8gnpDaldoquCVQn6lmV2foLbJdkSmWkANESoNPLT98UyKMUgbnIFsqWGRMxQ0JbW1G2eCHsdmQferWlMwlPxHuLnwiFa9NefU2gQiJ0UholBixm6lGV8lAEGVFDykMr6l5e5OeA1tg5ASB8wcmVMEa4rtkLqM3VnqQuDJnBmHnhT6A2oKPNBSIFuq6hoCbzCatY91Zs/ZXspED5Ws+rDu0IbZUSEps//YmQuvbrCg8NFd8I1zBl8bd66w8galBA6Q3rmWKb3YZlpIqE0Da13pLrVjtd6flxMtP7qorvse1hjyYkRfs8yMP/8E83WMIeII2wdrobnk0gG6HOnUu7WteAqRKf39QN0yagTlhf9/lwz9fNG8yzgBrmmWa3h8Ftv0HaQLi1TYlaSGX3UvsNzdBKw+waoEEAAAAASUVORK5CYII=');
-            background-repeat:no-repeat;
-            text-indent:-999999px;
-          }
-        }
-      }
-    }
+.nav-menu {
+  @include list-reset-soft;
+  a, span {
+    display: block;
+    padding: 0.5em 1em;
+    background: #f6f6f6;
+    color: #333;
+    font-size: 1.25em;
+    border-bottom: 0.25em solid #333;
+  }
+  a:hover, span.hover {
+    background: #333;
+    color: #fff;
+    text-decoration: none;
+  }
+  span {
+    background: #ccc;
   }
 }
-.ie6 #main-nav ul#mysoc-menu li a#mysoc-logo {
+.nav-menu--mysoc {
+  a {
+    color: $primary_text;
+    background: $primary;
+  }
+}
+#mysoc-logo {
+  background-origin: content-box;
+  background-position: $left 3px;
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHQAAAAYCAYAAAArrNkGAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABBtJREFUaN7tmT2u1DAQx/cIPgBCQUJCICH5BuQIPkIq6hzBB0AyiAP4ABQ5ghtEm54mEtVrICUNkpmsJjBvdvyR1S7hPa2lv1aJs5PEP894xjkc/tMWY+xADhRQA8iC9I7PtD6PP9xa9aC1oCnmm9lpgtHW3WiVB03HuqYeA9DlPZbJuXj8o5wgGM5os+ixLb74MeTt+Hz+kiGXva99jEDjJV7w+5Pn3aIHNoEvB/Tu7s6iejzuQAEUQRPIgxT2KTwesX+5rkvYs7yP2KDXLN7XXCKkAUgHiii3MaQuideI9x/x2GB/gxFjVZMIoY6AmtBGJ+QJluUKgdheI1LpfveuoQMciTw7XrUAbEFzot8Re4GcnwWghv23Ezx0PiejBYiBAA0/Pz7VoOV3AKnEup1LwhyBQFsr2Jkzdjy51hZyBIuwaOuFZ6fPPaaA5jQX+hvi4fS8YUC9BBzXqJOB4INXAGpAM8oAxBEUUbYSQiCD1ZWACnZGhDJIUacGaBbY34ghAxfAdHheCxBHAs6yvp7YpP/zDOgk9WHIGhMvOZ5TrjCgfUUSptigqQqg1M7A7kHhTVvWUAF8Q/r6ZObPQy4bfMf62wycoeSFOEmoPS2sQ74mdFUC1RhuHQ25QonkKurjE6CCpzTC+9CmNwBNeiHz/oGvabnweG+9E9ZDul6GDDiD53tybsoMYIMJhhQSjy/28YVzoAgKoGRt+uvHMwUaQRHkS7N/I1AjhGuuGs+2ifsOPOwKk6TLAeUe2J4DFPtG7vnsnK3MQPngTwg0ErUZoC3CPEqyWbmDJQG1cVvbCpRPmIadm6Wy5VpAeXKkpCRqQ1F/DwBAnAlQnQHaEKDzlYGGgvQWoEJy1LOx8P8SqOLJEU2uNhbhvQC0AVn76n3/9vWHpIe++/Km/fxVL17aL3ATSYU5E2h77rbkBqA2kYFHsbS7FlAhOTrJpIXwkirYRynMAEgDiignwHSgiGozCceUg5EBqs5N2hhQX8gnpDaldoquCVQn6lmV2foLbJdkSmWkANESoNPLT98UyKMUgbnIFsqWGRMxQ0JbW1G2eCHsdmQferWlMwlPxHuLnwiFa9NefU2gQiJ0UholBixm6lGV8lAEGVFDykMr6l5e5OeA1tg5ASB8wcmVMEa4rtkLqM3VnqQuDJnBmHnhT6A2oKPNBSIFuq6hoCbzCatY91Zs/ZXspED5Ws+rDu0IbZUSEps//YmQuvbrCg8NFd8I1zBl8bd66w8galBA6Q3rmWKb3YZlpIqE0Da13pLrVjtd6flxMtP7qorvse1hjyYkRfs8yMP/8E83WMIeII2wdrobnk0gG6HOnUu7WteAqRKf39QN0yagTlhf9/lwz9fNG8yzgBrmmWa3h8Ftv0HaQLi1TYlaSGX3UvsNzdBKw+waoEEAAAAASUVORK5CYII=');
+  background-repeat: no-repeat;
+  text-indent: -999999px;
+}
+.ie6 #mysoc-logo {
   background: url('/cobrands/fixmystreet/images/ie_mysoc_logo.gif') center no-repeat;
 }
-.ie7 #main-nav ul#mysoc-menu li a#mysoc-logo {
+.ie7 #mysoc-logo {
   background: url($image-sprite) -240px -38px no-repeat;
 }
 
@@ -542,18 +542,27 @@ p.label-valid {
 .wrapper {
   width:100%;
   display:table;
-  caption-side:bottom;
+  // The 'caption' at large widths will be top, moving the menu up magically
+  caption-side: bottom;
+  // This is so absolutely positioned header stuff doesn't overlap banner...
+  position: relative;
 }
+// ...however position: relative stops the map being clickable (?), so better
+// revert it there
+body.mappage .wrapper {
+  position: static;
+}
+
 // this is the user's logged in details or the login link etc
 #user-meta {
   p {
     position: relative;
     color: $primary_text;
     background: $primary;
-    padding:1em 6em 1em 1em;
+    padding: flip(1em 6em 1em 1em, 1em 1em 1em 6em);
     a {
       position: absolute;
-      right:1em;
+      #{$right}: 1em;
       @include inline-block;
       text-transform:uppercase;
       font-size:0.75em;
@@ -578,9 +587,9 @@ p.label-valid {
       display: table-cell;
       vertical-align: bottom;
       text-align: center;
-      border-right:0.25em solid #fff;
+      border-#{$right}: 0.25em solid #fff;
       &:last-child {
-        border-right:none;
+        border-#{$right}: none;
       }
       input[type=submit] {
           width: 100%;
@@ -591,7 +600,7 @@ p.label-valid {
         background-color: #f5f5f5;
         background-repeat: no-repeat;
         color:#333;
-        padding:4em 2em 1em 2em;
+        padding:4em 2em 1em;
         text-transform:uppercase;
         font: {
           size:0.6875em;
@@ -615,8 +624,9 @@ p.label-valid {
           background-position: center 25%;
         }
         &.chevron {
-          background-image:url($image-sprite);
-          background-position:center -2716px;
+          background-image: inline-image("../fixmystreet/images/chevron-grey-#{$right}.svg");
+          background-position: center 25%;
+          background-size: 20px 25px;
         }
         &.hover {
           background-image:url($image-sprite);
@@ -633,10 +643,10 @@ p.label-valid {
     ul#key-tools{
       background:#f5f5f5;
       li{
-        float:left;
+        float: $left;
         a {
-          padding-left:1.5em;
-          padding-right:3em;
+          padding-#{$left}: 1.5em;
+          padding-#{$right}: 3em;
         }
       }
     }
@@ -645,23 +655,25 @@ p.label-valid {
 .ie6 .shadow-wrap ul#key-tools li a {
   &.abuse {
     background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right 0px;
+    background-position: $right 0px;
   }
   &.feed {
     background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right -58px;
-  }
-  &.chevron {
-    background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right -116px;
+    background-position: $right -58px;
   }
   &:hover {
     background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite_dark.gif');
   }
 }
+.iel8 {
+  .shadow-wrap ul#key-tools li a.chevron {
+    background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
+    background-position: $right -116px;
+  }
+}
 
 #report-updates-data img {
-    float: right;
+    float: $right;
 }
 
 #report-share iframe {
@@ -675,7 +687,7 @@ footer {
 
 #footer-mobileapps {
   @extend .full-width;
-  padding:1em 1em 0 1em;
+  padding: 1em 1em 0;
   h4 {
     margin:0;
   }
@@ -695,7 +707,7 @@ footer {
         border-bottom:none;
       }
       h4 {
-        margin:0.75em 0 0.25em 0;
+        margin:0.75em 0 0.25em;
       }
       p {
         font-size:0.75em;
@@ -728,14 +740,47 @@ input.red-btn{
 
 .final-submit,
 input.final-submit {
-  margin:1em 0.5em;
-  float:right;
+  margin: 1em 0.5em;
+  float: $right;
 }
 
-.button-right,
-.button-left,
-a.button-right,
-a.button-left {
+.btn--facebook {
+    @include button-reset(#3b5998, darken(#3b5998, 10%), #3b5998, #fff, darken(#3b5998, 5%), darken(#3b5998, 10%), #3b5998, #fff);
+
+    &:visited {
+        color: #fff;
+    }
+
+    img {
+        margin-right: 0.5em;
+        vertical-align: -0.2em;
+        height: 1.3em;
+        width: auto;
+    }
+}
+
+// Under the button to override its text transform and width
+.btn--social {
+    display: block;
+    width: 100%;
+    text-transform: none;
+    text-align: center;
+}
+
+.js #js-social-email-hide {
+    display: none;
+}
+
+.button-fwd {
+  padding: flip(1em 3em 1em 1em, 1em 1em 1em 3em);
+  background: inline-image("../fixmystreet/images/chevron-grey-#{$right}.svg") $right 50% no-repeat;
+}
+.button-back {
+  padding: flip(1em 1em 1em 3em, 1em 3em 1em 1em);
+  background: inline-image("../fixmystreet/images/chevron-grey-#{$left}.svg") $left 50% no-repeat;
+}
+.button-fwd,
+.button-back {
   @include inline-block;
   cursor:pointer;
   font-size: 1em;
@@ -743,33 +788,27 @@ a.button-left {
   margin:0;
   border:1px solid #999;
   color:#333;
-  background: #eee;
+  background-color: #eee;
+  background-size: 20px+16px 25px;
   @include border-radius(4px);
   &:hover{
     color:#fff;
-    background:#777;
+    background-color: #777;
     text-decoration: none;
     border:1px solid #666;
   }
 }
-.button-right,
-a.button-right,
-:hover.button-right,
-a:hover.button-right {
-  padding:1em 3em 1em 1em;
-  background-image: url($image-sprite);
-  background-repeat:no-repeat;
-  background-position:right -686px;
-}
-
-.button-left,
-a.button-left,
-:hover.button-left,
-a:hover.button-left {
-  padding:1em 1em 1em 3em;
-  background-image: url($image-sprite);
-  background-repeat:no-repeat;
-  background-position:-18px -802px;
+.iel8 {
+  .button-fwd, .button-back {
+    background-image: url($image-sprite);
+    background-repeat: no-repeat;
+  }
+  .button-fwd {
+    background-position: right -686px;
+  }
+  .button-back {
+    background-position: -18px -802px;
+  }
 }
 
 .big-green-banner {
@@ -785,12 +824,12 @@ a:hover.button-left {
   font-size:0.875em;
   &:before {
     content: "";
-    left:-0.5em;
+    #{$left}: -0.5em;
     top:0;
     position: absolute;
     width: 0;
     height: 0;
-    border-left: 0.5em solid transparent;
+    border-#{$left}: 0.5em solid transparent;
     border-bottom: 0.5em solid $col_click_map_dark;
   }
 }
@@ -800,7 +839,7 @@ a:hover.button-left {
   p {
     position: absolute;
     top:-1.95em;
-    right:0;
+    #{$right}: 0;
     @include inline-block;
     font-size:0.6875em;//11px
     line-height:1em;
@@ -814,12 +853,12 @@ a:hover.button-left {
     }
     &:before {
       content: "";
-      left:-0.5em;
+      #{$left}: -0.5em;
       top:0;
       position: absolute;
       width: 0;
       height: 0;
-      border-left: 0.5em solid transparent;
+      border-#{$left}: 0.5em solid transparent;
       border-bottom: 0.5em solid #888;
     }
     &#fixed {
@@ -841,126 +880,98 @@ a:hover.button-left {
   }
 }
 
-.issue-list{
-  margin: 0 0 1em 0;
+.item-list {
+  margin: 0 0 1em;
   padding: 0;
   border-bottom: 0.25em solid $primary;
-  li{
-    list-style: none;
-    background: #f6f6f6;
-    margin: 0.25em 0 0 0;
-    padding: 0.5em 1em;
-    display:block;
-    .update-wrap {
-      @include clearfix;
-    }
-    .update-text p {
-      margin-bottom: 0.5em;
-    }
-    .update-img {
-      float: right;
-      margin: 0.5em 0 0.5em 1em; // gutter between text and floated image
-    }
+  .update-img {
+    float: $right;
+    margin: flip(0.5em 0 0.5em 1em, 0.5em 1em 0.5em 0); // gutter between text and floated image
   }
 }
 
-.issue-list-a {
-  margin: 0 0 1em 0;
+.item-list__item {
+  list-style: none;
+  background-color: $itemlist_item_background;
+  margin: 0.25em 0 0;
+  padding: 0.5em 1em;
+  display: block;
+}
+
+.item-list__update-wrap {
+  @include clearfix;
+}
+
+.item-list__update-text p {
+  margin-bottom: 0.5em;
+}
+
+.item-list__item--link {
   padding: 0;
-  border-bottom: 0.25em solid $primary;
-  li {
-    list-style: none;
-    margin:0;
-    padding:0;
-      margin: 0.25em 0 0 0;
-      /* see note below about this */
-      display:table;
-      background: #f6f6f6;
-      color:#222222;
-      width:100%;
-      &:hover {
-        text-decoration:none;
-        color:#222222;
-        background:#e6e6e6;
-      }
-      a {
-          color:#222222;
-      }
-      a:hover {
-          color:#222222;
-          background:#e6e6e6;
-          text-decoration: none;
-      }
-      .text {
-        /* this is and the display:table above are required otherwise
-           on iphone the rows end up being slightly wider than the screen */
-        display: table-cell;
-        width: 100%;
-        vertical-align:top;
-        padding: 0px 0px 0px 1em;
-        .img {
-          width: 90px;
-          float: right;
-          height:auto;
-        }
-        h4 {
-          padding-right: 1em;
-          padding-top: 0.25em;
-          margin:0;
-        }
-        small {
-          color:#666;
-          display: block;
-          padding-right: 1em;
-          padding-top: 0.25em;
-          padding-bottom: 0.25em;
-        }
-      }
-    >p {
-      margin: 0.25em 0 0 0;
-      padding: 0.5em 1em;
-      background: #f6f6f6;
-    }
-  }
-}
-.list-a {
-  @extend .issue-list-a;
   a {
-    padding:0.5em 1em;
-    font-weight:bold;
+    color: #222222;
+    display: block;
+    padding: 0.5em 1em;
+  }
+  a:hover, a:focus, &.hovered a {
+    background-color: $itemlist_item_background_hover;
+    text-decoration: none;
   }
 }
-//display:table fixes
-.ie6, .ie7 {
-  .issue-list-a {
-    overflow:hidden;
-    li {
-      clear:both;
-      width:100%;
-      display:block;
-      overflow:hidden;
-      .text {
-        float:left;
-      }
-    }
-  }
+
+.item-list--wards__item {
+  @extend .item-list__item--link;
 }
-.ie6 .issue-list-a li a {
-  height:5.5em;
+
+.item-list--reports__item {
+  @extend .item-list__item--link;
+  a {
+    @include clearfix;
+    padding: flip(0 0 0 1em, 0 1em 0 0);
+  }
   .img {
-    height:60px;
+    width: 90px;
+    float: $right;
+    height: auto;
+    margin-#{$left}: 1em;
+  }
+  h4 {
+    padding-top: 0.25em;
+    margin: 0;
+  }
+  small {
+    color: #666;
+    display: block;
+    padding: 0.25em 0;
+  }
+}
+
+.item-list__item--empty p {
+  margin: 0;
+}
+
+.item-list--front-page {
+  border-bottom: none;
+}
+
+.ie6 .item-list--reports__item {
+  a {
+    height: 5.5em;
+  }
+  .img {
+    height: 60px;
   }
 }
 
 // fancybox gallery images have a magnifying glass in the corner
 .update-img {
   a {
-    @include inline-block;
-    position:relative;
+    display: block;
+    position: relative;
     span {
       position:absolute;
       top:0;
-      right:0;
+      #{$right}: 0;
       display:block;
       width:20px;
       height:20px;
@@ -980,8 +991,8 @@ a:hover.button-left {
   margin-bottom:1em;
 }
 .problem-header .update-img {
-    float: right;
-    margin-left: 0.5em;
+    float: $right;
+    margin-#{$left}: 0.5em;
     margin-bottom: 0.5em;
 }
 
@@ -1013,16 +1024,23 @@ a:hover.button-left {
   }
 }
 
+// The map's static image fallback is visible by default.
+// Hide it if javascript has loaded. (We show it again when
+// the page is printed.)
+html.js #map .noscript {
+  display: none;
+}
+
 // OpenLayers fix for navigation being top right
 // Left and right so that zoom can be left, pan right.
 #fms_pan_zoom {
-  right: 0.5em !important;
   top: 0.5em;
-  left: 0.5em !important;
+  #{$left}: 0.5em !important;
+  #{$right}: 0.5em !important;
 }
 // The left and right of the above causes the navigation to move off-screen left in IE6.
 .ie6 #fms_pan_zoom {
-  left: auto !important;
+  #{$left}: auto !important;
 }
 
 // Openlayers map controls (overrides)
@@ -1034,7 +1052,7 @@ a:hover.button-left {
 #fms_pan_zoom_zoomout {
   width:36px !important;
   height:36px !important;
-  text-indent:-999999px;
+  text-indent: flip(-999999px, 999999px); // text-align from OL style makes this necessary
   background:url($image-sprite) no-repeat;
   filter: none !important; // Override OpenLayers PNG handling of the navigation
 }
@@ -1046,48 +1064,48 @@ a:hover.button-left {
 
 #fms_pan_zoom_panup {
   background-position:-42px -222px;
-  right:30px !important;
-  left: auto !important;
+  #{$right}: 30px !important;
+  #{$left}: auto !important;
   top:0 !important;
 }
 #fms_pan_zoom_pandown {
   background-position:-42px -282px;
-  right:30px !important;
-  left: auto !important;
+  #{$right}: 30px !important;
+  #{$left}: auto !important;
   top:72px !important;
 }
 #fms_pan_zoom_panleft {
   background-position:-12px -252px;
   width:48px !important;
-  right:48px !important;
-  left: auto !important;
+  #{$right}: flip(48px, 0) !important;
+  #{$left}: auto !important;
   top:36px !important;
 }
 #fms_pan_zoom_panright {
   background-position:-60px -252px;
   width:48px !important;
-  right:0 !important;
-  left: auto !important;
+  #{$right}: flip(0, 48px) !important;
+  #{$left}: auto !important;
   top:36px !important;
 }
 #fms_pan_zoom_zoomin {
   background-position:-152px -223px;
   height:44px !important;
-  left:0 !important;
+  #{$left}: 0 !important;
   top:0 !important;
 }
 #fms_pan_zoom_zoomout {
   background-position:-152px -259px;
   height:44px !important;
-  left:0 !important;
+  #{$left}: 0 !important;
   top:44px !important;
 }
 
 //hide pins, show old reports etc
 #sub_map_links {
   position: absolute;
-  left: 0;
-  right:0;
+  #{$left}: 0;
+  #{$right}: 0;
   bottom: 0;
   background:#333;
   background:rgba(0, 0, 0, 0.7);
@@ -1096,23 +1114,23 @@ a:hover.button-left {
     @include inline-block;
     font-size:0.6875em;
     color:#fff;
-    padding:0.6em 3em 0.5em 1em;
+    padding: flip(0.6em 3em 0.5em 1em, 0.6em 1em 0.5em 3em);
     background-repeat:no-repeat;
     &#hide_pins_link {
       background-image:url($image-sprite);
-      background-position: right -3976px;
+      background-position: flip(right, -341px) -3976px;
     }
     &#all_pins_link {
       background-image:url($image-sprite);
-      background-position: right -4022px;
+      background-position: flip(right, -337px) -4022px;
     }
     &#map_permalink {
       background-image:url($image-sprite);
-      background-position: right -4070px;
+      background-position: flip(right, -341px) -4070px;
     }
     &.feed {
       background-image:url($image-sprite);
-      background-position: right -3936px;
+      background-position: flip(right, -341px) -3936px;
     }
     &:hover {
       background-color:#000;
@@ -1124,15 +1142,15 @@ a:hover.button-left {
 .ie6 #sub_map_links a {
   &#hide_pins_link {
     background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right 1px;
+    background-position: $right 1px;
   }
   &#all_pins_link {
     background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right -45px;
+    background-position: $right -45px;
   }
   &#map_permalink {
     background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right -93px;
+    background-position: $right -93px;
   }
 }
 
@@ -1163,7 +1181,7 @@ a:hover.button-left {
     a#try_again {
       position: absolute;
       display: block;
-      left: 25%;
+      left: 25%; // along with width of 50%, centres it
       bottom: 0;
       margin-bottom: 6em;
       background: rgba(0, 0, 0, 0.8);
@@ -1172,7 +1190,7 @@ a:hover.button-left {
     a#mob_ok {
       position: absolute;
       display: block;
-      right: 1em;
+      #{$right}: 1em;
       bottom: 0;
       height: 20px;
       padding-top: 30px;
@@ -1187,8 +1205,8 @@ a:hover.button-left {
   margin:0;
   position: absolute;
   top:0;
-  left:0;
-  right:0;
+  #{$left}: 0;
+  #{$right}: 0;
   font-size:0.75em;
   background:rgba(0, 0, 0, 0.7);
   padding:0.75em 30px;
@@ -1201,15 +1219,15 @@ a:hover.button-left {
     line-height:1;
     padding:0.5em 0.75em;
     position:absolute;
-    left:0.3em;
+    #{$left}: 0.3em;
     top:0.3em;
   }
 }
 
 .olControlAttribution {
     bottom: 3.25em !important;
-    right: 0.25em !important;
-    left: 0.25em !important;
+    #{$right}: 0.25em !important;
+    #{$left}: 0.25em !important;
     color: #222222;
     font-size:0.75em !important;
 }
@@ -1218,7 +1236,7 @@ a:hover.button-left {
 }
 .olControlPermalink {
     bottom: 3px !important;
-    right: 3px;
+    #{$right}: 3px;
 }
 
 /* Drag is only present in noscript form. XXX Copy from core. */
@@ -1250,8 +1268,8 @@ a.rap-notes-trigger,
 a:hover.rap-notes-trigger {
   display:block;
   width:90%;
-  padding-left:5%;
-  padding-right:5%;
+  padding-#{$left}: 5%;
+  padding-#{$right}: 5%;
 }
 .rap-notes {
   margin:1em 0;
@@ -1268,9 +1286,9 @@ a:hover.rap-notes-trigger {
     width:100%;
     li {
       display:table-cell;
-      border-right:0.25em solid #fff;
+      border-#{$right}: 0.25em solid #fff;
       &:last-child {
-        border-right:none;
+        border-#{$right}: none;
       }
       a {
         display:block;
@@ -1301,7 +1319,7 @@ a:hover.rap-notes-trigger {
     margin:0;
     padding:0;
     ul li {
-      float:left;
+      float: $left;
     }
   }
 }
@@ -1324,16 +1342,17 @@ label .muted {
   ul {
     width: 49%;
     margin: 0;
-    float: left;
+    float: $left;
     font-size: 14px;
     line-height: 20px;
   }
 
   li {
     margin-bottom: 0;
-    padding-left: 20px;
+    padding-#{$left}: 16px;
     list-style: none;
-    background: transparent url(/cobrands/fixmystreet/images/tick-10px-8px.png) 4px 5px no-repeat;
+    background: transparent url(/cobrands/fixmystreet/images/tick-10px-8px.png) $left 5px no-repeat;
+    border-#{$left}: solid 4px #fff;
   }
 
   .do {
@@ -1341,12 +1360,14 @@ label .muted {
   }
 
   .dont {
-    float: right;
+    float: $right;
     color: #881111;
 
     li {
       background-image: url(/cobrands/fixmystreet/images/cross-7px-7px.png);
-      background-position: 6px 6px;
+      background-position: $left 6px;
+      padding-#{$left}: 14px;
+      border-#{$left}: solid 6px #fff;
     }
   }
 }
@@ -1387,7 +1408,7 @@ table.nicetable {
     }
   }
   .title {
-    text-align:left;
+    text-align: $left;
   }
   .data {
     width:12%;
@@ -1405,7 +1426,7 @@ table.nicetable {
   .close-promo {
     position:absolute;
     top:0.5em;
-    right:0.5em;
+    #{$right}: 0.5em;
     display:block;
     width:16px;
     height:16px;
@@ -1436,18 +1457,18 @@ table.nicetable {
   position:relative;
   .prev {
     position:absolute;
-    left:0.5em;
+    #{$left}: 0.5em;
   }
   .next {
     position:absolute;
-    right:0.5em;
+    #{$right}: 0.5em;
   }
   a {
     @include inline-block;
     color: $primary_text;
     background: $primary;
-    padding-left:0.5em;
-    padding-right:0.5em;
+    padding-#{$left}: 0.5em;
+    padding-#{$right}: 0.5em;
     &:hover {
       text-decoration:none;
       background:$primary/1.1;
@@ -1571,12 +1592,6 @@ table.nicetable {
   }
 }
 
-#front-recently {
-  .issue-list-a {
-    border-bottom:none;
-  }
-}
-
 #alerts {
     ul {
         margin-bottom: 1em;
@@ -1589,7 +1604,27 @@ table.nicetable {
         background: #f6f6f6;
     }
     img[width="16"] {
-        float: right;
+        float: $right;
+    }
+}
+
+.alerts__nearby-activity {
+    background-color: #f6f6f6;
+    margin: 1em -1em;
+    padding: 1em;
+
+    & > :first-child {
+        margin-top: 0;
+    }
+}
+
+.alerts__nearby-activity__photos {
+    white-space: nowrap;
+    overflow: hidden;
+
+    a {
+        margin-right: 0.5em;
+        text-decoration: none; // avoid underline showing between images
     }
 }
 
@@ -1598,8 +1633,13 @@ table.nicetable {
   text-align: center;
 
   background: transparent url(/cobrands/fixmystreet/images/tick-in-circle-100px.png) center 1em no-repeat;
+
   &.confirmation-header--failure {
     background-image: url(/cobrands/fixmystreet/images/sad-face-in-circle-100px.png);
+  }
+
+  &.confirmation-header--inbox {
+    background-image: url(/cobrands/fixmystreet/images/inbox-in-circle-100px.png);
   }
 
   h1, h2 {
@@ -1636,5 +1676,145 @@ table.nicetable {
   }
 }
 
+/* Questionnaire page */
+
+.questionnaire-report-header {
+  font-family: inherit;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.questionnaire-report-reminder {
+  @include clearfix(); // clear the floated image, in case there is no update-header to do it
+  background: #f3f3f3;
+  border-radius: 3px;
+  padding: 1em 1em 1px 1em; // basically no padding-bottom, as children have their own margin-bottom instead
+  margin-bottom: 2em;
+
+  .update-img {
+    width: 120px;
+    float: left;
+    margin: 0.1em 1em 1em 0;
+  }
+}
+
+.questionnaire-report-reminder__report-title {
+  margin: 0 0 0.3em 0;
+}
+
+.questionnaire-report-reminder__report-meta {
+  color: #666;
+  line-height: 1.4em;
+}
+
+.questionnaire-report-reminder__last-update-header {
+  border-top: 1px solid #ddd;
+  margin: 0;
+  padding: 0.8em 0 0.5em 0;
+  clear: left; // clear the floated image above
+
+  a {
+    float: right;
+  }
+}
+
+.questionnaire-errors {
+  margin-left: 0;
+}
+
+.radio-segmented-control {
+  overflow: auto; // clear floats (if browser doesn't support flexbox)
+  display: flex; // fancy full-width buttons for browsers that support flexbox
+
+  input {
+    display: none;
+  }
+
+  label {
+    display: block;
+    margin: 0;
+    padding: 0.75em 1.5em;
+    text-align: center;
+    background: #fff linear-gradient(to bottom, #fff 0%, #eee 100%) 0 0 no-repeat;
+    border: 1px solid #ddd;
+    border-right-width: 0; // avoid double border between items
+    font-weight: bold;
+    float: left; // float fallback for browsers that don't support flexbox
+    flex: 1 0 auto;
+
+    &:hover, &:focus {
+      background: #f3f3f3 linear-gradient(to bottom, #f9f9f9 0%, #e9e9e9 100%) 0 0 no-repeat;
+    }
+  }
+
+  input:checked + label {
+    color: $primary_text;
+    background: $primary;
+    border-color: darken($primary, 5%);
+    background-image: none; // remove gradient
+    box-shadow: inset 0 0.1em 0.2em rgba(0,0,0,0.2);
+    border-right-width: 1px; // add a realistic coloured border to all sides
+  }
+
+  input:checked + label + input + label {
+    border-left-width: none; // in favour of the realistic coloured border on the selected item
+  }
+
+  input:first-child + label {
+    border-radius: 0.25em 0 0 0.25em;
+  }
+
+  label:last-child {
+    border-radius: 0 0.25em 0.25em 0;
+    border-right-width: 1px; // reinstate border on last item
+  }
+}
+
+
+@media screen {
+  .print-only {
+    display: none !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 3em;
+  }
+
+  #main-nav,
+  #nav-link,
+  .admin-nav,
+  .olControlAttribution,
+  .olControlPanZoom,
+  #sub_map_links,
+  #fms_pan_zoom,
+  .screen-only,
+  .olMapViewport {
+    display: none !important;
+  }
+
+  #map_box {
+    position: static !important;
+    height: 256px !important;
+    width: auto !important;
+    background: #f1eee9 !important; // cream colour to match OSM image
+  }
+
+  #map {
+    -webkit-transform: scale(0.5);
+    -ms-transform: scale(0.5);
+    transform: scale(0.5);
+    -webkit-transform-origin: 0 0;
+    -ms-transform-origin: 0 0;
+    transform-origin: 0 0;
+  }
+
+  html.js #map .noscript {
+    display: block;
+  }
+}
+
 @import "_admin";
 @import "_fixedthead";
+@import "_dropzone";

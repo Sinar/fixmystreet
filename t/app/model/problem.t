@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-
 use strict;
 use warnings;
 
@@ -7,13 +5,13 @@ use Test::More;
 
 use FixMyStreet::TestMech;
 use FixMyStreet;
-use FixMyStreet::App;
+use FixMyStreet::DB;
 use mySociety::Locale;
 use Sub::Override;
 
 mySociety::Locale::gettext_domain('FixMyStreet');
 
-my $problem_rs = FixMyStreet::App->model('DB::Problem');
+my $problem_rs = FixMyStreet::DB->resultset('Problem');
 
 my $problem = $problem_rs->new(
     {
@@ -147,7 +145,7 @@ for my $test (
     };
 }
 
-my $user = FixMyStreet::App->model('DB::User')->find_or_create(
+my $user = FixMyStreet::DB->resultset('User')->find_or_create(
     {
         email => 'system_user@example.com'
     }
@@ -161,7 +159,7 @@ $problem->insert;
 
 my $tz_local = DateTime::TimeZone->new( name => 'local' );
 
-my $body = FixMyStreet::App->model('DB::Body')->new({
+my $body = FixMyStreet::DB->resultset('Body')->new({
     name => 'Edinburgh City Council'
 });
 
@@ -457,7 +455,8 @@ foreach my $test ( {
         email_count   => 1,
         to            => qr'Gloucestershire County Council" <2226@example',
         dear          => qr'Dear Gloucestershire County Council,',
-        body          => $body_ids{2226}  . '|' . $body_ids{2649},
+        body          => $body_ids{2226},
+        body_missing  => $body_ids{2649},
         missing       => qr'problem might be the responsibility of Fife.*Council'ms,
     }, {
         %common,
@@ -520,18 +519,19 @@ foreach my $test ( {
 
         $mech->clear_emails_ok;
 
-        FixMyStreet::App->model('DB::Problem')->search(
+        $problem_rs->search(
             {
                 whensent => undef
             }
-        )->update( { whensent => \'ms_current_timestamp()' } );
+        )->update( { whensent => \'current_timestamp' } );
 
         $problem->discard_changes;
         $problem->update( {
             bodies_str => $test->{ body },
+            bodies_missing => $test->{ body_missing },
             state => 'confirmed',
-            confirmed => \'ms_current_timestamp()',
-            whensent => $test->{ unset_whendef } ? undef : \'ms_current_timestamp()',
+            confirmed => \'current_timestamp',
+            whensent => $test->{ unset_whendef } ? undef : \'current_timestamp',
             category => $test->{ category } || 'potholes',
             name => $test->{ name },
             cobrand => $test->{ cobrand } || 'fixmystreet',
@@ -539,7 +539,7 @@ foreach my $test ( {
         } );
 
         FixMyStreet::override_config $override, sub {
-            FixMyStreet::App->model('DB::Problem')->send_reports();
+            $problem_rs->send_reports();
         };
 
         $mech->email_count_is( $test->{ email_count } );
@@ -594,17 +594,17 @@ subtest 'check can set mutiple emails as a single contact' => sub {
 
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
         bodies_str => $contact->{ body_id },
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'trees',
         name => 'Test User',
@@ -613,7 +613,7 @@ subtest 'check can set mutiple emails as a single contact' => sub {
     } );
 
     FixMyStreet::override_config $override, sub {
-        FixMyStreet::App->model('DB::Problem')->send_reports();
+        $problem_rs->send_reports();
     };
 
     $mech->email_count_is(1);
@@ -628,17 +628,17 @@ subtest 'check can turn on report sent email alerts' => sub {
     );
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
         bodies_str => $body_ids{2651},
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         name => 'Test User',
@@ -646,7 +646,7 @@ subtest 'check can turn on report sent email alerts' => sub {
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 2 );
     my @emails = $mech->get_email;
@@ -673,24 +673,24 @@ subtest 'check can turn on report sent email alerts' => sub {
 subtest 'check iOS app store test reports not sent' => sub {
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
         bodies_str => $body_ids{2651},
         title => 'App store test',
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 0 );
 
@@ -702,24 +702,24 @@ subtest 'check iOS app store test reports not sent' => sub {
 subtest 'check reports from abuser not sent' => sub {
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
         bodies_str => $body_ids{2651},
         title => 'Report',
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 1 );
 
@@ -728,14 +728,14 @@ subtest 'check reports from abuser not sent' => sub {
 
     $problem->update( {
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
     } );
 
-    my $abuse = FixMyStreet::App->model('DB::Abuse')->create( { email => $problem->user->email } );
+    my $abuse = FixMyStreet::DB->resultset('Abuse')->create( { email => $problem->user->email } );
 
     $mech->clear_emails_ok;
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 0 );
 

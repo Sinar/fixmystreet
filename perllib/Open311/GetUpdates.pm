@@ -1,8 +1,8 @@
 package Open311::GetUpdates;
 
-use Moose;
+use Moo;
 use Open311;
-use FixMyStreet::App;
+use FixMyStreet::Cobrand;
 
 has body_list => ( is => 'ro' );
 has system_user => ( is => 'ro' );
@@ -17,9 +17,8 @@ sub get_updates {
             api_key      => $body->api_key
         );
 
-        my $reports = FixMyStreet::App->model('DB::Problem')->search(
+        my $reports = $body->result_source->schema->resultset('Problem')->to_body($body)->search(
             {
-                bodies_str => { like => "\%" . $body->id . "\%" },
                 state => { 'IN', [qw/confirmed fixed/] },
                 -and => [
                     external_id => { '!=', undef },
@@ -63,8 +62,7 @@ sub update_reports {
 
         my $request_id = $request->{service_request_id};
 
-        my $problem =
-          FixMyStreet::App->model('DB::Problem')
+        my $problem = $body->result_source->schema->resultset('Problem')
           ->search( { external_id => $request_id, } );
 
         if (my $p = $problem->first) {

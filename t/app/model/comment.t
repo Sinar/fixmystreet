@@ -1,14 +1,12 @@
-#!/usr/bin/perl
-
 use strict;
 use warnings;
 
 use Test::More tests => 2;
 
 use FixMyStreet;
-use FixMyStreet::App;
+use FixMyStreet::DB;
 
-my $comment_rs = FixMyStreet::App->model('DB::Comment');
+my $comment_rs = FixMyStreet::DB->resultset('Comment');
 
 my $comment = $comment_rs->new(
     {

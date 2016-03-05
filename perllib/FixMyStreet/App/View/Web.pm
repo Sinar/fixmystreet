@@ -11,7 +11,7 @@ use Utils;
 
 __PACKAGE__->config(
     TEMPLATE_EXTENSION => '.html',
-    INCLUDE_PATH       => [          #
+    INCLUDE_PATH       => [
         FixMyStreet->path_to( 'templates', 'web', 'base' ),
     ],
     ENCODING       => 'utf8',
@@ -38,17 +38,26 @@ TT View for FixMyStreet::App.
 
 =cut
 
+# Override parent function so that errors are only logged once.
+sub _rendering_error {
+    my ($self, $c, $err) = @_;
+    my $error = qq/Couldn't render template "$err"/;
+    # $c->log->error($error);
+    $c->error($error);
+    return 0;
+}
+
 =head2 loc
 
-    [% loc('Some text to localize') %]
+    [% loc('Some text to localize', 'Optional comment for translator') %]
 
 Passes the text to the localisation engine for translations.
 
 =cut
 
 sub loc {
-    my ( $self, $c, @args ) = @_;
-    return _(@args);
+    my ( $self, $c, $msgid ) = @_;
+    return _($msgid);
 }
 
 =head2 nget
@@ -133,6 +142,9 @@ sub escape_js {
         '>'  => 'u003e',
     );
     $text =~ s/([\\"'<>])/\\$lookup{$1}/g;
+
+    $text =~ s/(?:\r\n|\n|\r)/\\n/g; # replace newlines
+
     return $text;
 }
 

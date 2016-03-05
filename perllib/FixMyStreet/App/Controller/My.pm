@@ -31,16 +31,13 @@ sub my : Path : Args(0) {
     $c->forward( '/reports/stash_report_filter_status' );
 
     my $pins = [];
-    my $problems = {};
+    my $problems = [];
 
     my $states = $c->stash->{filter_problem_states};
     my $params = {
         state => [ keys %$states ],
+        user_id => $c->user->id,
     };
-    $params = {
-        %{ $c->cobrand->problems_clause },
-        %$params
-    } if $c->cobrand->problems_clause;
 
     my $category = $c->get_param('filter_category');
     if ( $category ) {
@@ -48,7 +45,7 @@ sub my : Path : Args(0) {
         $c->stash->{filter_category} = $category;
     }
 
-    my $rs = $c->user->problems->search( $params, {
+    my $rs = $c->cobrand->problems->search( $params, {
         order_by => { -desc => 'confirmed' },
         rows => 50
     } )->page( $p_page );
@@ -62,9 +59,7 @@ sub my : Path : Args(0) {
             id        => $problem->id,
             title     => $problem->title,
         };
-        my $state = $problem->is_fixed ? 'fixed' : $problem->is_closed ? 'closed' : 'confirmed';
-        push @{ $problems->{$state} }, $problem;
-        push @{ $problems->{all} }, $problem;
+        push @$problems, $problem;
     }
     $c->stash->{problems_pager} = $rs->pager;
     $c->stash->{problems} = $problems;
@@ -81,7 +76,7 @@ sub my : Path : Args(0) {
     $c->stash->{updates} = \@updates;
     $c->stash->{updates_pager} = $rs->pager;
 
-    my @categories = $c->user->problems->search( undef, {
+    my @categories = $c->cobrand->problems->search( { user_id => $c->user->id }, {
         columns => [ 'category' ],
         distinct => 1,
         order_by => [ 'category' ],

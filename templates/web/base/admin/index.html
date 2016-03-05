@@ -1,7 +1,8 @@
 [% INCLUDE 'admin/header.html' title=loc('Summary') -%]
+[% PROCESS 'admin/report_blocks.html' %]
 
 <div class="fms-admin-info fms-admin-floated">
-This is the administration interface for [% PROCESS 'site-name.html' -%]. If you
+This is the administration interface for [% site_name %]. If you
 need any help or guidance, there is <a href="http://fixmystreet.org/">plenty of
 online documentation</a>. The FixMyStreet Platform is
 <a href="https://github.com/mysociety/fixmystreet">actively supported</a> by
@@ -20,23 +21,14 @@ and to receive notices of updates.
 [% END %]
 
 [%- BLOCK states -%]
-<h2>[% title %]</h2>
-
-[%- FOREACH state IN object.keys.sort %]
+[%- FOREACH state IN list %]
 [%- '<ul>' IF loop.first %]
-    <li>[% object.$state %] [% state %]</li>
+    <li>[% object.$state %] [% state_pretty.$state %]</li>
 [%- "\n</ul>" IF loop.last %]
 [%- END %]
 [% END -%]
 
-    <ul>
-        <li>[% tprintf( loc('<strong>%d</strong> live problems'), total_problems_live ) %];
-        [% tprintf( loc('from %d different users'), total_problems_users ) %]</li>
-        <li>[% tprintf( loc('%d live updates'), comments.confirmed || 0 ) %]</li>
-        <li>[% tprintf( loc('%d confirmed alerts, %d unconfirmed'), alerts.1, alerts.0) %]</li>
-        <li>[% tprintf( loc('%d questionnaires sent &ndash; %d answered (%s%%)'), questionnaires.total, questionnaires.1, questionnaires_pc) %]</li>
-        <li>[% tprintf( loc('%d council contacts &ndash; %d confirmed, %d unconfirmed'), contacts.total, contacts.1, contacts.0) %]</li>
-    </ul>
+[% INCLUDE 'status/stats.html' admin_include_users=1 %]
 
 [% IF c.cobrand.admin_show_creation_graph -%]
     <p>
@@ -44,18 +36,28 @@ and to receive notices of updates.
     </p>
 [% END -%]
 
-[% PROCESS states title=loc('Problem breakdown by state') object=problems %]
+<h2>[% loc('Problem breakdown by state') %]</h2>
+[% FOREACH group IN state_groups %]
+[%- '<ul>' IF loop.first %]
+    <li><strong>[% group.0 %]</strong>
+        [% PROCESS states object=problems list=group.1 %]
+    </li>
+[%- "\n</ul>" IF loop.last %]
+[%- END %]
 
-[% PROCESS states title=loc('Update breakdown by state') object=comments %]
+<h2>[% loc('Update breakdown by state') %]</h2>
+[% PROCESS states object=comments list=comments.keys.sort %]
 
-[% FOREACH category IN categories %]
-    [% IF loop.first %]
-    <h2>[% loc('Category fix rate for problems > 4 weeks old') %]</h2>
+[% IF categories.size %]
+    <h2 id="category-fix-rate">[% loc('Category fix rate for problems > 4 weeks old') %]</h2>
     <table>
         <tr><th>[% loc('Category') %]</th><th>[% loc('Total') %]</th><th>[% loc('Fixed') %]</th></tr>
-    [% END %]
+[% FOREACH category IN categories %]
         <tr><td>[% category.key %]</td><td>[% category.value.total %]</td><td>[% category.value.fixed / category.value.total * 100 | format('%.1f') %]%</td></tr>
-    [% '</table>' IF loop.last %]
+[% END %]
+    </table>
+[% ELSE %]
+<p><a href="?show_categories=1#category-fix-rate">[% loc('Category fix rate for problems > 4 weeks old') %]</a></p>
 [% END %]
 
 [% INCLUDE 'admin/footer.html' %]
