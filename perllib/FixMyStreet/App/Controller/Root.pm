@@ -47,7 +47,7 @@ sub index : Path : Args(0) {
     my %old_params = ();
 
     foreach my $key (@old_param_keys) {
-        my $val = $c->req->param($key);
+        my $val = $c->get_param($key);
         next unless $val;
         $old_params{$key} = $val;
     }
@@ -82,6 +82,13 @@ Display a 404 (not found) or 410 (gone) page. Pass in an optional error message 
 
 sub page_error_404_not_found : Private {
     my ( $self, $c, $error_msg ) = @_;
+
+    # Try getting static content that might be given under an admin proxy.
+    # First the special generated JavaScript file
+    $c->go('/js/translation_strings', [ $1 ], []) if $c->req->path =~ m{^admin/js/translation_strings\.(.*?)\.js$};
+    # Then a generic static file
+    $c->serve_static_file("web/$1") && return if $c->req->path =~ m{^admin/(.*)};
+
     $c->stash->{template}  = 'errors/page_error_404_not_found.html';
     $c->stash->{error_msg} = $error_msg;
     $c->response->status(404);
@@ -96,8 +103,8 @@ sub page_error_410_gone : Private {
 
 sub page_error_403_access_denied : Private {
     my ( $self, $c, $error_msg ) = @_;
-    $c->stash->{template}  = 'index.html';
-    $c->stash->{error} = $error_msg;
+    $c->stash->{template}  = 'errors/generic.html';
+    $c->stash->{message} = $error_msg || _("Sorry, you don't have permission to do that.");
     $c->response->status(403);
 }
 

@@ -1,16 +1,29 @@
 [% IF problem.whensent || problem.can_display_external_id %]
-    <small class="council_sent_info"><br>
-        [% IF problem.whensent %]
-        [% problem.duration_string(c) %]<br>
-        [% END %]
-        <strong>
-        [% IF problem.can_display_external_id %]
-            [% IF problem.whensent %]
-                Council ref:&nbsp;[% problem.external_id %]
-            [% ELSE %]
-                [% problem.external_body %] ref:&nbsp;[% problem.external_id %]
-            [% END %]
-        [% END %]
-        </strong>
-    </small>
+    <div class="council_info_box">
+      [% IF problem.can_display_external_id %]
+        <h3>
+          [% IF problem.whensent %]
+              Council ref:&nbsp;[% problem.external_id %]
+          [% ELSE %]
+              [% problem.external_body %] ref:&nbsp;[% problem.external_id %]
+          [% END %]
+        </h3>
+      [% END %]
+
+      [% IF c.cobrand.problem_response_days(problem) == 'emergency' %]
+        <p>
+          Thank you for contacting Oxfordshire County Council [% problem.category %], unfortunately we are currently only available to respond to emergency situations which may have an impact on the health and safety of members of the public, these will be dealt with within a 24 hour period.<br />
+          Reported faults will continue to be registered on our management system and these will be tackled in coming months.
+        </p>
+      [% ELSIF c.cobrand.problem_response_days(problem) > 0 %]
+        <p>
+            Problems in the
+            [% problem.category %]
+            category are generally responded to within
+            [% c.cobrand.problem_response_days(problem) %]
+            working days.
+        </p>
+      [% END %]
+
+    </div>
 [% END %]

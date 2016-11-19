@@ -5,7 +5,8 @@
     [% loc("User search finds matches in users' names and email addresses.") %]
 </div>
 <form method="get" action="[% c.uri_for('users') %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
-    <p><label for="search">[% loc('Search:') %]</label> <input type="text" name="search"  size="30" id="search" value="[% searched | html %]">
+    <p><label for="search">[% loc('Search:') %]</label>
+        <input class="form-control" type="text" name="search"  size="30" id="search" value="[% searched | html %]">
 </form>
 
 [% IF users.size %]
@@ -24,7 +25,9 @@
     <tr>
         <td>[% PROCESS value_or_nbsp value=user.name %]</td> 
         <td><a href="[% c.uri_for( 'reports', search => user.email ) %]">[% PROCESS value_or_nbsp value=user.email %]</a></td> 
-        <td>[% PROCESS value_or_nbsp value=user.from_body.name %]</td>
+        <td>[% PROCESS value_or_nbsp value=user.from_body.name %]
+            [% IF user.has_body_permission_to('moderate') %] * [% END %]
+        </td>
       [% IF c.cobrand.moniker != 'zurich' %]
         <td>[% user.flagged == 2 ? loc('(Email in abuse table)') : user.flagged ? loc('Yes') : '&nbsp;' %]</td>
       [% END %]

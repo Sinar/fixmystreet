@@ -9,17 +9,18 @@ use DateTime;
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
 $mech->create_body_ok(2514, 'Birmingham City Council');
-$mech->create_body_ok(2651, 'City of Edinburgh Council');
-$mech->create_body_ok(2504, 'Westminster City Council');
-$mech->create_body_ok(2649, 'Fife Council');
+my $body_edin_id = $mech->create_body_ok(2651, 'City of Edinburgh Council')->id;
+my $body_west_id = $mech->create_body_ok(2504, 'Westminster City Council')->id;
+my $body_fife_id = $mech->create_body_ok(2649, 'Fife Council')->id;
+my $body_slash_id = $mech->create_body_ok(10000, 'Electricity/Gas Council')->id;
 
-$mech->delete_problems_for_body( 2504 );
-$mech->delete_problems_for_body( 2651 );
-$mech->delete_problems_for_body( 2649 );
+$mech->delete_problems_for_body( $body_west_id );
+$mech->delete_problems_for_body( $body_edin_id );
+$mech->delete_problems_for_body( $body_fife_id );
 
-my @edinburgh_problems = $mech->create_problems_for_body(3, 2651, 'All reports');
-my @westminster_problems = $mech->create_problems_for_body(5, 2504, 'All reports');
-my @fife_problems = $mech->create_problems_for_body(15, 2649, 'All reports');
+my @edinburgh_problems = $mech->create_problems_for_body(3, $body_edin_id, 'All reports');
+my @westminster_problems = $mech->create_problems_for_body(5, $body_west_id, 'All reports');
+my @fife_problems = $mech->create_problems_for_body(15, $body_fife_id, 'All reports');
 
 is scalar @westminster_problems, 5, 'correct number of westminster problems created';
 is scalar @edinburgh_problems, 3, 'correct number of edinburgh problems created';
@@ -85,7 +86,7 @@ $fife_problems[10]->update( {
 });
 
 # Run the cron script that makes the data for /reports so we don't get an error.
-system( "bin/cron-wrapper update-all-reports" );
+system( "bin/update-all-reports" );
 
 # check that we can get the page
 $mech->get_ok('/reports');
@@ -114,7 +115,7 @@ FixMyStreet::override_config {
 
 $mech->title_like(qr/Westminster City Council/);
 $mech->content_contains('Westminster City Council');
-$mech->content_contains('All reports Test 3 for 2504', 'problem to be marked non public visible');
+$mech->content_contains('All reports Test 3 for ' . $body_west_id, 'problem to be marked non public visible');
 
 my $problems = $mech->extract_problem_list;
 is scalar @$problems, 5, 'correct number of problems displayed';
@@ -122,6 +123,10 @@ is scalar @$problems, 5, 'correct number of problems displayed';
 FixMyStreet::override_config {
     MAPIT_URL => 'http://mapit.mysociety.org/',
 }, sub {
+    $mech->get_ok('/reports');
+    $mech->follow_link_ok({ url_regex => qr{/reports/Electricity_Gas\+Council} });
+    is $mech->uri->path, '/reports/Electricity_Gas+Council', 'Path is correct';
+
     $mech->get_ok('/reports/City+of+Edinburgh?t=new');
 };
 $problems = $mech->extract_problem_list;
@@ -185,22 +190,11 @@ FixMyStreet::override_config {
 $problems = $mech->extract_problem_list;
 is scalar @$problems, 4, 'only public problems are displayed';
 
-$mech->content_lacks('All reports Test 3 for 2504', 'non public problem is not visible');
+$mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible');
 
 $mech->get_ok('/reports');
 $stats = $mech->extract_report_stats;
 is $stats->{'Westminster City Council'}->[1], 5, 'non public reports included in stats';
-
-subtest "test emptyhomes all reports page" => sub {
-    FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ 'emptyhomes' ],
-    }, sub {
-        ok $mech->host("reportemptyhomes.com"), 'change host to reportemptyhomes';
-        $mech->get_ok('/reports');
-        # EHA lacks one column the others have
-        $mech->content_lacks('state unknown');
-    };
-};
 
 subtest "test fiksgatami all reports page" => sub {
     FixMyStreet::override_config {
@@ -213,6 +207,29 @@ subtest "test fiksgatami all reports page" => sub {
         # There should only be one Oslo
         $mech->content_contains('Oslo');
         $mech->content_unlike(qr{Oslo">Oslo.*Oslo}s);
+    }
+};
+
+subtest "test greenwich all reports page" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'greenwich' ],
+        MAPIT_URL => 'http://mapit.mysociety.org/'
+    }, sub {
+        my $body = $mech->create_body_ok(2493, 'Royal Borough of Greenwich');
+        my $deleted_contact = $mech->create_contact_ok(
+            body_id => $body->id,
+            category => 'Deleted',
+            email => 'deleted@example.com',
+            deleted => 1
+        );
+        ok $mech->host("greenwich.fixmystreet.com"), 'change host to greenwich';
+        $mech->get_ok('/reports/Royal+Borough+of+Greenwich');
+        # There should not be deleted categories in the list
+        my $category_select = $mech->forms()->[0]->find_input('filter_category');
+        is $category_select, undef, 'deleted categories are not shown';
+
+        # Clean up after the test
+        $deleted_contact->delete;
     }
 };
 

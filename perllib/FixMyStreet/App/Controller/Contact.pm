@@ -4,6 +4,9 @@ use namespace::autoclean;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
+use mySociety::EmailUtil;
+use FixMyStreet::Email;
+
 =head1 NAME
 
 FixMyStreet::App::Controller::Contact - Catalyst Controller
@@ -39,6 +42,11 @@ Handle contact us form submission
 sub submit : Path('submit') : Args(0) {
     my ( $self, $c ) = @_;
 
+    if (my $testing = $c->get_param('_test_')) {
+        $c->stash->{success} = $c->get_param('success');
+        return;
+    }
+
     $c->res->redirect( '/contact' ) and return unless $c->req->method eq 'POST';
 
     return
@@ -59,33 +67,24 @@ generic contact request and set up things accordingly
 sub determine_contact_type : Private {
     my ( $self, $c ) = @_;
 
-    my $id        = $c->req->param('id');
-    my $update_id = $c->req->param('update_id');
+    my $id = $c->get_param('id');
+    my $update_id = $c->get_param('update_id');
+    my $token = $c->get_param('m');
     $id        = undef unless $id        && $id        =~ /^[1-9]\d*$/;
     $update_id = undef unless $update_id && $update_id =~ /^[1-9]\d*$/;
 
-    if ($id) {
-
-        # if we're moderating, then we don't show errors in every case, e.g.
-        # for hidden reports
-        if ($c->req->param('m')) {
-            my $problem
-            = ( !$id || $id =~ m{\D} ) # is id non-numeric?
-            ? undef                    # ...don't even search
-            : $c->cobrand->problems->find( { id => $id } );
-
-            if ($problem) {
-                $c->stash->{problem} = $problem;
-                $c->stash->{moderation_complaint} = 1;
-            }
-            else {
-                $c->forward( '/report/load_problem_or_display_error', [ $id ] );
-            }
-        }
-        else {
+    if ($token) {
+        my $token_obj = $c->forward('/tokens/load_auth_token', [ $token, 'moderation' ]);
+        my $problem = $c->cobrand->problems->find( { id => $token_obj->data->{id} } );
+        if ($problem) {
+            $c->stash->{problem} = $problem;
+            $c->stash->{moderation_complaint} = $token;
+        } else {
             $c->forward( '/report/load_problem_or_display_error', [ $id ] );
         }
 
+    } elsif ($id) {
+        $c->forward( '/report/load_problem_or_display_error', [ $id ] );
         if ($update_id) {
             my $update = $c->model('DB::Comment')->find(
                 { id => $update_id }
@@ -118,12 +117,12 @@ sub validate : Private {
 
     foreach my $field ( keys %required ) {
         $field_errors{$field} = $required{$field}
-          unless $c->req->param($field) =~ /\S/;
+          unless $c->get_param($field) =~ /\S/;
     }
 
     unless ( $field_errors{em} ) {
         $field_errors{em} = _('Please enter a valid email address')
-          if !mySociety::EmailUtil::is_valid_email( $c->req->param('em') );
+          if !mySociety::EmailUtil::is_valid_email( $c->get_param('em') );
     }
 
     %field_errors = (
@@ -132,12 +131,11 @@ sub validate : Private {
     );
 
     push @errors, _('Illegal ID')
-      if $c->req->param('id') && $c->req->param('id') !~ /^[1-9]\d*$/
-          or $c->req->param('update_id')
-          && $c->req->param('update_id') !~ /^[1-9]\d*$/;
+      if $c->get_param('id') && !$c->stash->{problem}
+          or $c->get_param('update_id') && !$c->stash->{update};
 
     push @errors, _('There was a problem showing this page. Please try again later.')
-      if $c->req->params->{message} && $c->req->params->{message} =~ /\[url=|<a/;
+      if $c->get_param('message') && $c->get_param('message') =~ /\[url=|<a/;
 
     unshift @errors,
       _('There were problems with your report. Please see below.')
@@ -170,31 +168,34 @@ sub prepare_params_for_email : Private {
 
     if ( $c->stash->{update} ) {
 
-        my $problem_url = $base_url . '/report/' . $c->stash->{update}->problem_id
+        $c->stash->{problem_url} = $base_url . '/report/' . $c->stash->{update}->problem_id
             . '#update_' . $c->stash->{update}->id;
-        my $admin_url = " - $admin_url" . '/update_edit/' . $c->stash->{update}->id
-            if $admin_url;
-        $c->stash->{message} .= sprintf(
-            " \n\n[ Complaint about update %d on report %d - %s%s ]",
+        $c->stash->{admin_url} = $admin_url . '/update_edit/' . $c->stash->{update}->id;
+        $c->stash->{complaint} = sprintf(
+            "Complaint about update %d on report %d",
             $c->stash->{update}->id,
             $c->stash->{update}->problem_id,
-            $problem_url, $admin_url
         );
     }
     elsif ( $c->stash->{problem} ) {
 
-        my $problem_url = $base_url . '/report/' . $c->stash->{problem}->id;
-        $admin_url = " - $admin_url" . '/report_edit/' . $c->stash->{problem}->id
-            if $admin_url;
-        $c->stash->{message} .= sprintf(
-            " \n\n[ Complaint about report %d - %s%s ]",
+        $c->stash->{problem_url} = $base_url . '/report/' . $c->stash->{problem}->id;
+        $c->stash->{admin_url} = $admin_url . '/report_edit/' . $c->stash->{problem}->id;
+        $c->stash->{complaint} = sprintf(
+            "Complaint about report %d",
             $c->stash->{problem}->id,
-            $problem_url, $admin_url
         );
 
         # flag this so it's automatically listed in the admin interface
         $c->stash->{problem}->flagged(1);
         $c->stash->{problem}->update;
+    }
+
+    my @extra = grep { /^extra\./ } keys %{$c->req->params};
+    foreach (@extra) {
+        my $param = $c->get_param($_);
+        my ($field_name) = /extra\.(.*)/;
+        $c->stash->{message} = "\u$field_name: $param\n\n" . $c->stash->{message};
     }
 
     return 1;
@@ -214,11 +215,11 @@ sub setup_request : Private {
     $c->stash->{contact_email} =~ s/\@/&#64;/;
 
     for my $param (qw/em subject message/) {
-        $c->stash->{$param} = $c->req->param($param);
+        $c->stash->{$param} = $c->get_param($param);
     }
 
     # name is already used in the stash for the app class name
-    $c->stash->{form_name} = $c->req->param('name');
+    $c->stash->{form_name} = $c->get_param('name');
 
     return 1;
 }
@@ -235,6 +236,10 @@ sub send_email : Private {
     my $recipient      = $c->cobrand->contact_email;
     my $recipient_name = $c->cobrand->contact_name();
 
+    if (my $localpart = $c->get_param('recipient')) {
+        $recipient = join('@', $localpart, FixMyStreet->config('EMAIL_DOMAIN'));
+    }
+
     $c->stash->{host} = $c->req->header('HOST');
     $c->stash->{ip}   = $c->req->address;
     $c->stash->{ip} .=
@@ -242,11 +247,18 @@ sub send_email : Private {
       ? ' ( forwarded from ' . $c->req->header('X-Forwarded-For') . ' )'
       : '';
 
-    $c->send_email( 'contact.txt', {
-        to      => [ [ $recipient, _($recipient_name) ] ],
-        from    => [ $c->stash->{em}, $c->stash->{form_name} ],
-        subject => 'FMS message: ' . $c->stash->{subject},
-    });
+    my $from = [ $c->stash->{em}, $c->stash->{form_name} ];
+    my $params = {
+        to => [ [ $recipient, _($recipient_name) ] ],
+    };
+    if (FixMyStreet::Email::test_dmarc($c->stash->{em})) {
+        $params->{'Reply-To'} = [ $from ];
+        $params->{from} = [ $recipient, $c->stash->{form_name} ];
+    } else {
+        $params->{from} = $from;
+    }
+
+    $c->send_email('contact.txt', $params);
 
     # above is always succesful :(
     $c->stash->{success} = 1;

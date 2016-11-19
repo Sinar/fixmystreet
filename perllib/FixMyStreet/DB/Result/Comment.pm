@@ -31,8 +31,9 @@ __PACKAGE__->add_columns(
   "created",
   {
     data_type     => "timestamp",
-    default_value => \"ms_current_timestamp()",
+    default_value => \"current_timestamp",
     is_nullable   => 0,
+    original      => { default_value => \"now()" },
   },
   "confirmed",
   { data_type => "timestamp", is_nullable => 1 },
@@ -88,32 +89,24 @@ __PACKAGE__->belongs_to(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2014-07-31 15:59:43
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:08AtJ6CZFyUe7qKMF50MHg
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-08-13 16:33:38
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:ZR+YNA1Jej3s+8mr52iq6Q
 #
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 
-use DateTime::TimeZone;
-use Image::Size;
-use Moose;
+use Moo;
 use namespace::clean -except => [ 'meta' ];
 
-with 'FixMyStreet::Roles::Abuser';
-
-my $tz = DateTime::TimeZone->new( name => "local" );
-
-my $tz_f;
-$tz_f = DateTime::TimeZone->new( name => FixMyStreet->config('TIME_ZONE') )
-    if FixMyStreet->config('TIME_ZONE');
+with 'FixMyStreet::Roles::Abuser',
+     'FixMyStreet::Roles::PhotoSet';
 
 my $stz = sub {
     my ( $orig, $self ) = ( shift, shift );
     my $s = $self->$orig(@_);
     return $s unless $s && UNIVERSAL::isa($s, "DateTime");
-    $s->set_time_zone($tz);
-    $s->set_time_zone($tz_f) if $tz_f;
+    FixMyStreet->set_time_zone($s);
     return $s;
 };
 
@@ -152,28 +145,37 @@ sub confirm {
     my $self = shift;
 
     $self->state( 'confirmed' );
-    $self->confirmed( \'ms_current_timestamp()' );
+    $self->confirmed( \'current_timestamp' );
 }
 
-=head2 get_photo_params
-
-Returns a hashref of details of any attached photo for use in templates.
-
-=cut
-
-sub get_photo_params {
+sub photos {
     my $self = shift;
-    return FixMyStreet::App::get_photo_params($self, 'c');
+    my $photoset = $self->get_photoset;
+    my $i = 0;
+    my $id = $self->id;
+    my @photos = map {
+        my $cachebust = substr($_, 0, 8);
+        my ($hash, $format) = split /\./, $_;
+        {
+            id => $hash,
+            url_temp => "/photo/temp.$hash.$format",
+            url_temp_full => "/photo/fulltemp.$hash.$format",
+            url => "/photo/c/$id.$i.$format?$cachebust",
+            url_full => "/photo/c/$id.$i.full.$format?$cachebust",
+            idx => $i++,
+        }
+    } $photoset->all_ids;
+    return \@photos;
 }
 
-=head2 meta_problem_state
+=head2 problem_state_display
 
 Returns a string suitable for display lookup in the update meta section.
 Removes the '- council/user' bit from fixed states.
 
 =cut
 
-sub meta_problem_state {
+sub problem_state_display {
     my $self = shift;
 
     my $state = $self->problem_state;
@@ -190,7 +192,7 @@ Return most recent ModerationLog object
 
 sub latest_moderation_log_entry {
     my $self = shift;
-    return $self->admin_log_entries->search({ action => 'moderation' }, { order_by => 'id desc' })->first;
+    return $self->admin_log_entries->search({ action => 'moderation' }, { order_by => { -desc => 'id' } })->first;
 }
 
 __PACKAGE__->has_many(
@@ -220,8 +222,5 @@ __PACKAGE__->might_have(
   },
   { cascade_copy => 0, cascade_delete => 1 },
 );
-
-# we need the inline_constructor bit as we don't inherit from Moose
-__PACKAGE__->meta->make_immutable( inline_constructor => 0 );
 
 1;

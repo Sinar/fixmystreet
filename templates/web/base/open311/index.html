@@ -1,16 +1,6 @@
 [% INCLUDE 'header.html', title = 'Open311', bodyclass = 'twothirdswidthpage' %]
 
-<div class="sticky-sidebar">
-    <aside>
-        <ul class="plain-list">
-            <li><a href="/faq">Frequently Asked Questions</a></li>
-            <li><a href="/faq#practical">Practical Questions</a></li>
-            <li><a href="/faq#organisation">Organisation Questions</a></li>
-            <li><a href="/privacy">Privacy and cookies</a></li>
-            <li><a href="/contact">Contact FixMyStreet</a></li>
-        </ul>
-    </aside>
-</div>
+[% INCLUDE 'about/_sidebar.html' %]
 
 <h1>FixMyStreet support for Open311</h1>
 
@@ -83,7 +73,7 @@ for council problem-reporting systems.</p>
 <li><a rel="nofollow" href="http://wiki.open311.org/GeoReport_v2">[% loc('Open311 specification') %]</a></li>
 </ul>
 
-<p>[% tprintf( loc('At most %d requests are returned in each query.  The returned requests are ordered by requested_datetime, so to get all requests, do several searches with rolling start_date and end_date.'), c.config.RSS_LIMIT ) %]</p>
+<p>[% tprintf( loc('At most %d requests are returned in each query.  The returned requests are ordered by requested_datetime, so to get all requests, do several searches with rolling start_date and end_date.'), c.config.OPEN311_LIMIT ) %]</p>
 
 <p>[% loc('The following Open311 v2 attributes are returned for each request: service_request_id, description, lat, long, media_url, status, requested_datetime, updated_datetime, service_code and service_name.') %]</p>
 
@@ -97,7 +87,7 @@ for council problem-reporting systems.</p>
 
 <ul>
 
-[% jurisdiction_id = 'fiksgatami.no' %]
+[% jurisdiction_id = c.cobrand.jurisdiction_id_example %]
 [% examples = [
     {
         url = c.cobrand.base_url _ "/open311/v2/discovery.xml?jurisdiction_id=$jurisdiction_id",
@@ -134,9 +124,6 @@ for council problem-reporting systems.</p>
 ] %]
 [% FOREACH examples %]
     <li><a href="[% url %]">[% info %]</a>
-    [% IF url.match('/requests.xml') %]
-        [ <a href="http://maps.google.com/?q=[% url.replace('.xml', '.rss') | uri %]">[% loc('GeoRSS on Google Maps') %]</a> ]
-    [% END %]
     <br>[% url | html %]</li>
 [% END %]
 

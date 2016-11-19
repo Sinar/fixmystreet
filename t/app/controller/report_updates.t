@@ -13,15 +13,11 @@ my $mech = FixMyStreet::TestMech->new;
 $mech->delete_user('commenter@example.com');
 $mech->delete_user('test@example.com');
 
-my $user =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
-ok $user, "created test user";
+my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
-my $user2 =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'commenter@example.com', name => 'Commenter' } );
-ok $user2, "created comment user";
+my $user2 = $mech->create_user_ok('commenter@example.com', name => 'Commenter');
+
+my $body = $mech->create_body_ok(2504, 'Westminster City Council');
 
 my $dt = DateTime->new(
     year   => 2011,
@@ -35,7 +31,7 @@ my $dt = DateTime->new(
 my $report = FixMyStreet::App->model('DB::Problem')->find_or_create(
     {
         postcode           => 'SW1A 1AA',
-        bodies_str         => '2504',
+        bodies_str         => $body->id,
         areas              => ',105255,11806,11828,2247,2504,',
         category           => 'Other',
         title              => 'Test 2',
@@ -197,7 +193,9 @@ for my $test (
             rznvy  => '',
             update => '',
             name   => '',
-            photo  => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
@@ -214,7 +212,9 @@ for my $test (
             rznvy  => 'test',
             update => '',
             name   => '',
-            photo  => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
@@ -231,7 +231,9 @@ for my $test (
             rznvy  => 'test @ example. com',
             update => '',
             name   => '',
-            photo  => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
@@ -250,7 +252,9 @@ for my $test (
             rznvy  => 'test@EXAMPLE.COM',
             update => '',
             name   => '',
-            photo  => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
@@ -290,7 +294,9 @@ for my $test (
             rznvy         => '',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
             remember_me => undef,
@@ -314,7 +320,9 @@ for my $test (
             rznvy         => '',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
             remember_me => undef,
@@ -351,13 +359,14 @@ for my $test (
             'submit update'
         );
 
-        $mech->content_contains('Nearly Done! Now check your email');
+        $mech->content_contains('Nearly done! Now check your email');
 
         my $email = $mech->get_email;
-        ok $email, "got an email";
-        like $email->body, qr/confirm your update on/i, "Correct email text";
+        my $body = $mech->get_text_body_from_email($email);
+        like $body, qr/confirm your update on/i, "Correct email text";
 
-        my ( $url, $url_token ) = $email->body =~ m{(http://\S+/C/)(\S+)};
+        my $url = $mech->get_link_from_email($email);
+        my ($url_token) = $url =~ m{/C/(\S+)};
         ok $url, "extracted confirm url '$url'";
 
         my $token = FixMyStreet::App->model('DB::Token')->find(
@@ -384,7 +393,7 @@ for my $test (
         is $update->text, $details->{update}, 'update text';
         is $add_alerts, $details->{add_alert} ? 1 : 0, 'do not sign up for alerts';
 
-        $mech->get_ok( $url . $url_token );
+        $mech->get_ok( $url );
         $mech->content_contains("/report/$report_id#update_$update_id");
 
         my $unreg_user = FixMyStreet::App->model( 'DB::User' )->find( { email => $details->{rznvy} } );
@@ -415,7 +424,9 @@ for my $test (
             rznvy         => '',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
             remember_me => undef,
@@ -455,6 +466,8 @@ for my $test (
             },
             'submit update'
         );
+        $mech->content_contains("/report/$report_id");
+        $mech->get_ok("/report/$report_id");
 
         $mech->content_contains('Test 2');
         $mech->content_contains('Update no email confirm');
@@ -492,18 +505,14 @@ subtest 'check non authority user cannot change set state' => sub {
     $user->update;
 
     $mech->get_ok("/report/$report_id");
-    $mech->post_ok( "/report/update", {
-                submit_update => 1,
-                id => $report_id,
-                name => $user->name,
-                may_show_name => 1,
-                add_alert => undef,
-                photo => '',
-                update => 'this is a forbidden update',
-                state => 'fixed - council',
+    $mech->submit_form_ok( {
+        form_id => 'form_update_form',
+        fields => {
+            may_show_name => 1,
+            update => 'this is a forbidden update',
+            state => 'fixed - council',
         },
-        'submitted with state',
-    );
+    }, 'submitted with state');
 
     is $mech->uri->path, "/report/update", "at /report/update";
 
@@ -513,27 +522,21 @@ subtest 'check non authority user cannot change set state' => sub {
     is $report->state, 'confirmed', 'state unchanged';
 };
 
-$mech->create_body_ok(2504, 'Westminster City Council');
-
 for my $state ( qw/unconfirmed hidden partial/ ) {
     subtest "check that update cannot set state to $state" => sub {
         $mech->log_in_ok( $user->email );
-        $user->from_body( 2504 );
+        $user->from_body( $body->id );
         $user->update;
 
         $mech->get_ok("/report/$report_id");
-        $mech->post_ok( "/report/update", {
-                    submit_update => 1,
-                    id => $report_id,
-                    name => $user->name,
-                    may_show_name => 1,
-                    add_alert => undef,
-                    photo => '',
-                    update => 'this is a forbidden update',
-                    state => $state,
+        $mech->submit_form_ok( {
+            form_id => 'form_update_form',
+            fields => {
+                may_show_name => 1,
+                update => 'this is a forbidden update',
+                state => $state,
             },
-            'submitted with state',
-        );
+        }, 'submitted with state');
 
         is $mech->uri->path, "/report/update", "at /report/update";
 
@@ -550,8 +553,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to investigating',
             state => 'investigating',
         },
@@ -562,8 +563,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to in progress',
             state => 'in progress',
         },
@@ -574,8 +573,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to fixed',
             state => 'fixed',
         },
@@ -586,8 +583,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to action scheduled',
             state => 'action scheduled',
         },
@@ -598,8 +593,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to unable to fix',
             state => 'unable to fix',
         },
@@ -610,8 +603,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to internal referral',
             state => 'internal referral',
         },
@@ -623,8 +614,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to not responsible',
             state => 'not responsible',
         },
@@ -636,8 +625,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to duplicate',
             state => 'duplicate',
         },
@@ -649,8 +636,6 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to internal referral',
             state => 'internal referral',
         },
@@ -662,13 +647,11 @@ for my $test (
         fields => {
             name => $user->name,
             may_show_name => 1,
-            add_alert => undef,
-            photo => '',
             update => 'Set state to fixed',
             state => 'fixed',
         },
         state => 'fixed - council',
-        report_bodies => '2504,2505',
+        report_bodies => $body->id . ',2505',
     },
 ) {
     subtest $test->{desc} => sub {
@@ -679,7 +662,7 @@ for my $test (
         }
 
         $mech->log_in_ok( $user->email );
-        $user->from_body( 2504 );
+        $user->from_body( $body->id );
         $user->update;
 
         $mech->get_ok("/report/$report_id");
@@ -690,6 +673,7 @@ for my $test (
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         my $update = $report->comments->first;
@@ -719,7 +703,8 @@ subtest 'check meta correct for comments marked confirmed but not marked open' =
             user          => $user,
             problem_id    => $report->id,
             text          => 'update text',
-            confirmed     => DateTime->now( time_zone => 'local' ),
+            # Subtract a day to deal with any code/db timezone difference
+            confirmed     => DateTime->now( time_zone => 'local' ) - DateTime::Duration->new( days => 1 ),
             problem_state => 'confirmed',
             anonymous     => 0,
             mark_open     => 0,
@@ -780,12 +765,15 @@ subtest "check comment with no status change has not status in meta" => sub {
                     name => $user->name,
                     may_show_name => 1,
                     add_alert => undef,
-                    photo => '',
+                    photo1 => '',
+                    photo2 => '',
+                    photo3 => '',
                     update => 'Comment that does not change state',
                 },
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         my @updates = $report->comments->all;
@@ -798,7 +786,7 @@ subtest "check comment with no status change has not status in meta" => sub {
         my $update_meta = $mech->extract_update_metas;
         unlike $update_meta->[1], qr/marked as/, 'update meta does not include state change';
 
-        $user->from_body( 2504 );
+        $user->from_body( $body->id );
         $user->update;
 
         $mech->get_ok("/report/$report_id");
@@ -809,13 +797,16 @@ subtest "check comment with no status change has not status in meta" => sub {
                     name => $user->name,
                     may_show_name => 1,
                     add_alert => undef,
-                    photo => '',
+                    photo1 => '',
+                    photo2 => '',
+                    photo3 => '',
                     update => 'Comment that sets state to investigating',
                     state => 'investigating',
                 },
             },
             'submit update'
         );
+        $mech->get_ok("/report/$report_id");
 
         $report->discard_changes;
         @updates = $report->comments->search(undef, { order_by => 'created' })->all;;
@@ -905,7 +896,7 @@ $user->from_body(undef);
 $user->update;
 
 $report->state('confirmed');
-$report->bodies_str('2504');
+$report->bodies_str($body->id);
 $report->update;
 
 for my $test (
@@ -932,9 +923,7 @@ for my $test (
             add_alert     => undef,
             password_sign_in => 'secret2',
         },
-        field_errors => [
-            'You have successfully signed in; please check and confirm your details are accurate:',
-        ],
+        message => 'You have successfully signed in; please check and confirm your details are accurate:',
     }
 ) {
     subtest $test->{desc} => sub {
@@ -955,7 +944,10 @@ for my $test (
             'submit update'
         );
 
-        is_deeply $mech->page_errors, $test->{field_errors}, 'check there were errors';
+        $mech->content_contains($test->{message}) if $test->{message};
+
+        is_deeply $mech->page_errors, $test->{field_errors}, 'check there were errors'
+            if $test->{field_errors};
 
         SKIP: {
             skip( "Incorrect password", 5 ) unless $test->{form_values}{password_sign_in} eq $pw;
@@ -970,7 +962,7 @@ for my $test (
                 "submit good details"
             );
 
-            is $mech->uri->path, "/report/" . $report_id, "redirected to report page";
+            $mech->content_contains('Thank you for updating this issue');
             $mech->email_count_is(0);
 
             my $update = $report->comments->first;
@@ -1001,7 +993,7 @@ subtest 'submit an update for a registered user, creating update by email' => su
         },
     }, 'submit update' );
 
-    $mech->content_contains('Nearly Done! Now check your email');
+    $mech->content_contains('Nearly done! Now check your email');
 
     # No change to user yet.
     $user->discard_changes;
@@ -1009,10 +1001,11 @@ subtest 'submit an update for a registered user, creating update by email' => su
     is $user->name, 'Mr Reg', 'name unchanged';
 
     my $email = $mech->get_email;
-    ok $email, "got an email";
-    like $email->body, qr/confirm your update on/i, "Correct email text";
+    my $body = $mech->get_text_body_from_email($email);
+    like $body, qr/confirm your update on/i, "Correct email text";
 
-    my ( $url, $url_token ) = $email->body =~ m{(http://\S+/C/)(\S+)};
+    my $url = $mech->get_link_from_email($email);
+    my ($url_token) = $url =~ m{/C/(\S+)};
     ok $url, "extracted confirm url '$url'";
 
     my $token = FixMyStreet::App->model('DB::Token')->find( {
@@ -1030,7 +1023,7 @@ subtest 'submit an update for a registered user, creating update by email' => su
     is $update->user->email, 'registered@example.com', 'update email';
     is $update->text, 'Update from a user', 'update text';
 
-    $mech->get_ok( $url . $url_token );
+    $mech->get_ok( $url );
     $mech->content_contains("/report/$report_id#update_$update_id");
 
     # User should have new name and password
@@ -1043,6 +1036,9 @@ subtest 'submit an update for a registered user, creating update by email' => su
     $mech->delete_user( $user );
 };
 
+my $sample_file = file(__FILE__)->parent->file("sample.jpg")->stringify;
+ok -e $sample_file, "sample file $sample_file exists";
+
 for my $test (
     {
         desc => 'submit update for registered user',
@@ -1050,7 +1046,9 @@ for my $test (
             name => 'Test User',
             may_show_name => 1,
             add_alert => 1,
-            photo => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update => '',
             fixed => undef,
         },
@@ -1060,6 +1058,7 @@ for my $test (
             update => 'update from a registered user',
             add_alert => undef,
             fixed => undef,
+            photo1 => [ [ $sample_file, undef, Content_Type => 'image/jpeg' ], 1 ],
         },
         changed => {
             update => 'Update from a registered user'
@@ -1075,7 +1074,9 @@ for my $test (
             name => 'Test User',
             may_show_name => 1,
             add_alert => 1,
-            photo => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update => '',
             fixed => undef,
         },
@@ -1101,7 +1102,9 @@ for my $test (
             name => 'Test User',
             may_show_name => 1,
             add_alert => 1,
-            photo => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update => '',
             fixed => undef,
         },
@@ -1126,7 +1129,9 @@ for my $test (
             name => 'Commenter',
             may_show_name => 1,
             add_alert => 1,
-            photo => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update => '',
             fixed => undef,
         },
@@ -1151,7 +1156,9 @@ for my $test (
             name => 'Commenter',
             may_show_name => 1,
             add_alert => 1,
-            photo => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update => '',
         },
         email  => 'commenter@example.com',
@@ -1200,7 +1207,14 @@ for my $test (
             'submit update'
         );
 
-        is $mech->uri->path, "/report/" . $report_id, "redirected to report page";
+        $mech->content_contains('Thank you for updating this issue');
+        $mech->content_contains("/report/" . $report_id);
+        $mech->get_ok("/report/" . $report_id);
+
+        my $update = $report->comments->first;
+        ok $update, 'found update';
+
+        $mech->content_contains("/photo/c/" . $update->id . ".0.jpeg") if $test->{fields}->{photo1};
 
         if ( !defined( $test->{endstate_banner} ) ) {
             is $mech->extract_problem_banner->{text}, undef, 'endstate banner';
@@ -1215,8 +1229,6 @@ for my $test (
             %{ $test->{changed} },
         };
 
-        my $update = $report->comments->first;
-        ok $update, 'found update';
         is $update->text, $results->{update}, 'update text';
         is $update->user->email, $test->{email}, 'update user';
         is $update->state, 'confirmed', 'update confirmed';
@@ -1237,7 +1249,9 @@ foreach my $test (
             name          => 'Test User',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
         },
@@ -1254,7 +1268,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 0,
-        path => '/report/update',
         content =>
 "Thanks, glad to hear it's been fixed! Could we just ask if you have ever reported a problem to a council before?",
     },
@@ -1264,7 +1277,9 @@ foreach my $test (
             name          => 'Test User',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
         },
@@ -1281,7 +1296,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 0,
-        path => '/report/update',
         content =>
 "Thanks, glad to hear it's been fixed! Could we just ask if you have ever reported a problem to a council before?",
     },
@@ -1292,7 +1306,9 @@ foreach my $test (
             name          => 'Test User',
             may_show_name => 1,
             add_alert     => 1,
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             update        => '',
             fixed         => undef,
         },
@@ -1309,7 +1325,6 @@ foreach my $test (
         alert     => 1,    # we signed up for alerts before, do not unsign us
         anonymous => 0,
         answered  => 1,
-        path    => '/report/' . $report->id,
         content => $report->title,
     },
   )
@@ -1334,7 +1349,7 @@ foreach my $test (
                 {
                     problem_id    => $report_id,
                     ever_reported => 'y',
-                    whensent      => \'ms_current_timestamp()',
+                    whensent      => \'current_timestamp',
                 }
               );
 
@@ -1362,7 +1377,7 @@ foreach my $test (
         $mech->submit_form_ok( { with_fields => $test->{fields}, },
             'submit update' );
 
-        is $mech->uri->path, $test->{path}, "page after submission";
+        is $mech->uri->path, '/report/update', "page after submission";
 
         $mech->content_contains( $test->{content} );
 
@@ -1392,7 +1407,8 @@ foreach my $test (
 
             $mech->submit_form_ok( { with_fields => { reported => 'Yes' } } );
 
-            $mech->content_contains( 'Thank you &mdash; you can' );
+            $mech->content_contains( $report->title );
+            $mech->content_contains( 'Thank you for updating this issue' );
 
             $questionnaire = FixMyStreet::App->model( 'DB::Questionnaire' )->find(
                 { problem_id => $report_id }
@@ -1451,7 +1467,7 @@ for my $test (
         anonymous => 0,
         answered  => 1,
         path    => '/report/update',
-        content => "You have successfully confirmed your update",
+        content => "Thank you for updating this issue",
     },
   )
 {
@@ -1475,7 +1491,7 @@ for my $test (
                 {
                     problem_id    => $report_id,
                     ever_reported => 'y',
-                    whensent      => \'ms_current_timestamp()',
+                    whensent      => \'current_timestamp',
                 }
               );
 
@@ -1500,8 +1516,6 @@ for my $test (
 
         $mech->content_contains( 'Now check your email' );
 
-        $mech->email_count_is(1);
-
         my $results = { %{ $test->{fields} }, %{ $test->{changed} }, };
 
         my $update = $report->comments->first;
@@ -1512,10 +1526,11 @@ for my $test (
         is $update->anonymous, $test->{anonymous}, 'user anonymous';
 
         my $email = $mech->get_email;
-        ok $email, "got an email";
-        like $email->body, qr/confirm your update on/i, "Correct email text";
+        my $body = $mech->get_text_body_from_email($email);
+        like $body, qr/confirm your update on/i, "Correct email text";
 
-        my ( $url, $url_token ) = $email->body =~ m{(http://\S+/C/)(\S+)};
+        my $url = $mech->get_link_from_email($email);
+        my ($url_token) = $url =~ m{/C/(\S+)};
         ok $url, "extracted confirm url '$url'";
 
         my $token = FixMyStreet::App->model('DB::Token')->find(
@@ -1541,7 +1556,8 @@ for my $test (
 
             $mech->submit_form_ok( { with_fields => { reported => 'Yes' } } );
 
-            $mech->content_contains( 'Thank you &mdash; you can' );
+            $mech->content_contains( $report->title );
+            $mech->content_contains( 'Thank you for updating this issue' );
 
             $questionnaire = FixMyStreet::App->model( 'DB::Questionnaire' )->find(
                 { problem_id => $report_id }
@@ -1764,7 +1780,9 @@ for my $test (
         my %standard_fields = (
             name => $report->user->name,
             update => 'update text',
-            photo         => '',
+            photo1 => '',
+            photo2 => '',
+            photo3 => '',
             may_show_name => 1,
             add_alert => 1,
         );

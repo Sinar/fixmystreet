@@ -12,15 +12,9 @@ my $mech = FixMyStreet::TestMech->new;
 
 # create a test user and report
 $mech->delete_user('test@example.com');
-my $user =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
-ok $user, "created test user";
+my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
-my $user2 =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test2@example.com', name => 'Other User' } );
-ok $user2, "created test user";
+my $user2 = $mech->create_user_ok('test2@example.com', name => 'Other User');
 
 my $dt = DateTime->new(
     year   => 2011,
@@ -95,19 +89,6 @@ subtest "change report to unconfirmed and check for 404 status" => sub {
     ok $report->update( { state => 'confirmed' } ), 'confirm report again';
 };
 
-
-subtest "Zurich unconfirmeds are 200" => sub {
-    FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ 'zurich' ],
-    }, sub {
-        $mech->host( 'zurich.example.com' );
-        ok $report->update( { state => 'unconfirmed' } ), 'unconfirm report';
-        $mech->get_ok("/report/$report_id");
-        $mech->content_contains( '&Uuml;berpr&uuml;fung ausstehend' );
-        ok $report->update( { state => 'confirmed' } ), 'confirm report again';
-        $mech->host( 'www.fixmystreet.com' );
-    };
-};
 
 subtest "change report to hidden and check for 410 status" => sub {
     ok $report->update( { state => 'hidden' } ), 'hide report';
@@ -400,9 +381,72 @@ for my $test (
     };
 }
 
+my $body_westminster = $mech->create_body_ok(2504, 'Westminster City Council');
+my $body_camden = $mech->create_body_ok(2505, 'Camden Borough Council');
+
+for my $test ( 
+    {
+        desc => 'no state dropdown if user not from authority',
+        from_body => undef,
+        no_state => 1,
+        report_body => $body_westminster->id,
+    },
+    {
+        desc => 'state dropdown if user from authority',
+        from_body => $body_westminster->id,
+        no_state => 0,
+        report_body => $body_westminster->id,
+    },
+    {
+        desc => 'no state dropdown if user not from same body as problem',
+        from_body => $body_camden->id,
+        no_state => 1,
+        report_body => $body_westminster->id,
+    },
+    {
+        desc => 'state dropdown if user from authority and problem sent to multiple bodies',
+        from_body => $body_westminster->id,
+        no_state => 0,
+        report_body => $body_westminster->id . ',2506',
+    },
+) {
+    subtest $test->{desc} => sub {
+        $mech->log_in_ok( $user->email );
+        $user->from_body( $test->{from_body} );
+        $user->update;
+
+        $report->discard_changes;
+        $report->bodies_str( $test->{report_body} );
+        $report->update;
+
+        $mech->get_ok("/report/$report_id");
+        my $fields = $mech->visible_form_values( 'updateForm' );
+        if ( $test->{no_state} ) {
+            ok !$fields->{state};
+        } else {
+            ok $fields->{state};
+        }
+    };
+}
+
+subtest "Zurich unconfirmeds are 200" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'zurich' ],
+        MAP_TYPE => 'Zurich,OSM',
+    }, sub {
+        $mech->host( 'zurich.example.com' );
+        ok $report->update( { state => 'unconfirmed' } ), 'unconfirm report';
+        $mech->get_ok("/report/$report_id");
+        $mech->content_contains( '&Uuml;berpr&uuml;fung ausstehend' );
+        ok $report->update( { state => 'confirmed' } ), 'confirm report again';
+        $mech->host( 'www.fixmystreet.com' );
+    };
+};
+
 subtest "Zurich banners are displayed correctly" => sub {
   FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'zurich' ],
+    MAP_TYPE => 'Zurich,OSM',
   }, sub {
     $mech->host( 'zurich.example.com' );
 
@@ -428,8 +472,8 @@ subtest "Zurich banners are displayed correctly" => sub {
         {
             description => 'closed report',
             state => 'closed',
-            banner_id => 'fixed',
-            banner_text => 'Beantwortet',
+            banner_id => 'closed',
+            banner_text => _('Extern'),
         },
         {
             description => 'in progress report',
@@ -442,6 +486,21 @@ subtest "Zurich banners are displayed correctly" => sub {
             state => 'planned',
             banner_id => 'progress',
             banner_text => 'In Bearbeitung',
+        },
+        {
+            description => 'planned report',
+            state => 'planned',
+            banner_id => 'progress',
+            banner_text => 'In Bearbeitung',
+        },
+        {
+            description => 'jurisdiction unknown',
+            state => 'unable to fix',
+            banner_id => 'fixed',
+            # We can't use _('Jurisdiction Unknown') here because
+            # TestMech::extract_problem_banner decodes the HTML entities before
+            # the string is passed back.
+            banner_text => 'Zust\x{e4}ndigkeit unbekannt',
         },
     ) {
         subtest "banner for $test->{description}" => sub {
@@ -470,58 +529,8 @@ subtest "Zurich banners are displayed correctly" => sub {
   };
 };
 
-$mech->create_body_ok(2504, 'Westminster City Council');
-$mech->create_body_ok(2505, 'Camden Borough Council');
 
-for my $test ( 
-    {
-        desc => 'no state dropdown if user not from authority',
-        from_body => undef,
-        no_state => 1,
-        report_body => '2504',
-    },
-    {
-        desc => 'state dropdown if user from authority',
-        from_body => 2504,
-        no_state => 0,
-        report_body => '2504',
-    },
-    {
-        desc => 'no state dropdown if user not from same body as problem',
-        from_body => 2505,
-        no_state => 1,
-        report_body => '2504',
-    },
-    {
-        desc => 'state dropdown if user from authority and problem sent to multiple bodies',
-        from_body => 2504,
-        no_state => 0,
-        report_body => '2504,2506',
-    },
-) {
-    subtest $test->{desc} => sub {
-        $mech->log_in_ok( $user->email );
-        $user->from_body( $test->{from_body} );
-        $user->update;
-
-        $report->discard_changes;
-        $report->bodies_str( $test->{report_body} );
-        $report->update;
-
-        $mech->get_ok("/report/$report_id");
-        my $fields = $mech->visible_form_values( 'updateForm' );
-        if ( $test->{no_state} ) {
-            ok !$fields->{state};
-        } else {
-            ok $fields->{state};
-        }
-    };
+END {
+    $mech->delete_user('test@example.com');
+    done_testing();
 }
-
-$report->discard_changes;
-$report->bodies_str( 2504 );
-$report->update;
-
-# tidy up
-$mech->delete_user('test@example.com');
-done_testing();

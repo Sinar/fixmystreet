@@ -32,9 +32,21 @@ __PACKAGE__->add_columns(
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "title",
   { data_type => "text", is_nullable => 1 },
+  "twitter_id",
+  { data_type => "bigint", is_nullable => 1 },
+  "facebook_id",
+  { data_type => "bigint", is_nullable => 1 },
+  "is_superuser",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "area_id",
+  { data_type => "integer", is_nullable => 1 },
+  "extra",
+  { data_type => "text", is_nullable => 1 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->add_unique_constraint("users_email_key", ["email"]);
+__PACKAGE__->add_unique_constraint("users_facebook_id_key", ["facebook_id"]);
+__PACKAGE__->add_unique_constraint("users_twitter_id_key", ["twitter_id"]);
 __PACKAGE__->has_many(
   "admin_logs",
   "FixMyStreet::DB::Result::AdminLog",
@@ -82,10 +94,27 @@ __PACKAGE__->has_many(
   { "foreign.user_id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+__PACKAGE__->has_many(
+  "user_planned_reports",
+  "FixMyStreet::DB::Result::UserPlannedReport",
+  { "foreign.user_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2014-07-29 13:54:07
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:Y41/jGp93IxSpyJ/o6Q1gQ
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2016-09-16 14:22:10
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:7wfF1VnZax2QTXCIPXr+vg
+
+__PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
+__PACKAGE__->rabx_column('extra');
+
+use Moo;
+use mySociety::EmailUtil;
+use namespace::clean -except => [ 'meta' ];
+
+with 'FixMyStreet::Roles::Extra';
+
+__PACKAGE__->many_to_many( planned_reports => 'user_planned_reports', 'report' );
 
 __PACKAGE__->add_columns(
     "password" => {
@@ -96,11 +125,19 @@ __PACKAGE__->add_columns(
     },
 );
 
-use mySociety::EmailUtil;
+sub latest_anonymity {
+    my $self = shift;
+    my $p = $self->problems->search(undef, { order_by => { -desc => 'id' } } )->first;
+    my $c = $self->comments->search(undef, { order_by => { -desc => 'id' } } )->first;
+    my $p_created = $p ? $p->created->epoch : 0;
+    my $c_created = $c ? $c->created->epoch : 0;
+    my $obj = $p_created >= $c_created ? $p : $c;
+    return $obj ? $obj->anonymous : 0;
+}
 
 =head2 check_for_errors
 
-    $error_hashref = $problem->check_for_errors();
+    $error_hashref = $user->check_for_errors();
 
 Look at all the fields and return a hashref with all errors found, keyed on the
 field name. This is intended to be passed back to the form to display the
@@ -119,10 +156,6 @@ sub check_for_errors {
     if ( !$self->name || $self->name !~ m/\S/ ) {
         $errors{name} = _('Please enter your name');
     }
-
-    # if ( !$self->phone) {
-    #     $errors{phone} = _('Please enter your phone number');
-    # }
 
     if ( $self->email !~ /\S/ ) {
         $errors{email} = _('Please enter your email');
@@ -189,10 +222,11 @@ sub belongs_to_body {
     my $self = shift;
     my $bodies = shift;
 
+    return 0 unless $bodies && $self->from_body;
+
     my %bodies = map { $_ => 1 } split ',', $bodies;
 
-    return 1 if $self->from_body && $bodies{ $self->from_body->id };
-
+    return 1 if $bodies{ $self->from_body->id };
     return 0;
 }
 
@@ -214,21 +248,162 @@ sub split_name {
     return { first => $first || '', last => $last || '' };
 }
 
-sub has_permission_to {
-    my ($self, $permission_type, $body_id) = @_;
+sub permissions {
+    my ($self, $c, $body_id) = @_;
+
+    if ($self->is_superuser) {
+        my $perms = $c->cobrand->available_permissions;
+        return { map { %$_ } values %$perms };
+    }
 
     return unless $self->belongs_to_body($body_id);
 
-    my $permission = $self->user_body_permissions->find({ 
-            permission_type => $permission_type,
-            body_id => $self->from_body->id,
-        });
-    return $permission ? 1 : undef;
+    my @permissions = $self->user_body_permissions->search({
+        body_id => $self->from_body->id,
+    })->all;
+    return { map { $_->permission_type => 1 } @permissions };
 }
 
-sub print {
-    my $self = shift;
-    return '[' . (join '-', @_) . ']';
+sub has_permission_to {
+    my ($self, $permission_type, $body_ids) = @_;
+
+    return 1 if $self->is_superuser;
+    return 0 unless $body_ids;
+
+    my $permission = $self->user_body_permissions->find({
+            permission_type => $permission_type,
+            body_id => $body_ids,
+        });
+    return $permission ? 1 : 0;
 }
+
+=head2 has_body_permission_to
+
+Checks if the User has a from_body set, and the specified permission on that body.
+
+Instead of saying:
+
+    ($user->from_body && $user->has_permission_to('user_edit', $user->from_body->id))
+
+You can just say:
+
+    $user->has_body_permission_to('user_edit')
+
+NB unlike has_permission_to, this doesn't blindly return 1 if the user is a superuser.
+
+=cut
+
+sub has_body_permission_to {
+    my ($self, $permission_type) = @_;
+    return unless $self->from_body;
+
+    return $self->has_permission_to($permission_type, $self->from_body->id);
+}
+
+=head2 admin_user_body_permissions
+
+Some permissions aren't managed in the normal way via the admin, e.g. the
+'trusted' permission. This method returns a query that excludes such exceptional
+permissions.
+
+=cut
+
+sub admin_user_body_permissions {
+    my $self = shift;
+
+    return $self->user_body_permissions->search({
+        permission_type => { '!=' => 'trusted' },
+    });
+}
+
+sub contributing_as {
+    my ($self, $other, $c, $bodies) = @_;
+    $bodies = [ keys %$bodies ] if ref $bodies eq 'HASH';
+    my $form_as = $c->get_param('form_as') || '';
+    return 1 if $form_as eq $other && $self->has_permission_to("contribute_as_$other", $bodies);
+}
+
+sub adopt {
+    my ($self, $other) = @_;
+
+    return if $self->id == $other->id;
+
+    # Move most things from $other to $self
+    foreach (qw(Problem Comment Alert AdminLog )) {
+        $self->result_source->schema->resultset($_)
+            ->search({ user_id => $other->id })
+            ->update({ user_id => $self->id });
+    }
+
+    # It's possible the user permissions for the other user exist, so
+    # try updating, and then delete anyway.
+    foreach ($self->result_source->schema->resultset("UserBodyPermission")
+                ->search({ user_id => $other->id })->all) {
+        eval {
+            $_->update({ user_id => $self->id });
+        };
+        $_->delete if $@;
+    }
+
+    # Delete the now empty user
+    $other->delete;
+}
+
+# Planned reports / shortlist
+
+# Override the default auto-created function as we only want one live entry so
+# we need to delete it anywhere else and return an existing one if present.
+around add_to_planned_reports => sub {
+    my ( $orig, $self ) = ( shift, shift );
+    my ( $report_col ) = @_;
+
+    $self->result_source->schema->resultset("UserPlannedReport")
+        ->active
+        ->for_report($report_col->id)
+        ->search_rs({ user_id => { '!=', $self->id } })
+        ->remove();
+    my $existing = $self->user_planned_reports->active->for_report($report_col->id)->first;
+    return $existing if $existing;
+    return $self->$orig(@_);
+};
+
+# Override the default auto-created function as we don't want to ever delete anything
+around remove_from_planned_reports => sub {
+    my ($orig, $self, $report) = @_;
+    $self->user_planned_reports->active->for_report($report->id)->remove();
+};
+
+sub active_planned_reports {
+    my $self = shift;
+    $self->planned_reports->search({ removed => undef });
+}
+
+sub is_planned_report {
+    my ($self, $problem) = @_;
+    return $self->active_planned_reports->find({ id => $problem->id });
+}
+
+sub update_reputation {
+    my ( $self, $change ) = @_;
+
+    my $reputation = $self->get_extra_metadata('reputation') || 0;
+    $self->set_extra_metadata( reputation => $reputation + $change);
+    $self->update;
+}
+
+has categories => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        return [] unless $self->get_extra_metadata('categories');
+        my @categories = $self->result_source->schema->resultset("Contact")->search({
+            id => $self->get_extra_metadata('categories'),
+        }, {
+            order_by => 'category',
+        })->get_column('category')->all;
+        return \@categories;
+    },
+);
 
 1;

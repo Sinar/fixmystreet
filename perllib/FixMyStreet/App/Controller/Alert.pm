@@ -5,6 +5,7 @@ use namespace::autoclean;
 BEGIN { extends 'Catalyst::Controller'; }
 
 use mySociety::EmailUtil qw(is_valid_email);
+use FixMyStreet::Gaze;
 
 =head1 NAME
 
@@ -35,6 +36,8 @@ sub index : Path('') : Args(0) {
 sub list : Path('list') : Args(0) {
     my ( $self, $c ) = @_;
 
+    $c->forward('/auth/get_csrf_token');
+
     return
       unless $c->forward('setup_request')
           && $c->forward('prettify_pc')
@@ -53,14 +56,14 @@ Target for subscribe form
 sub subscribe : Path('subscribe') : Args(0) {
     my ( $self, $c ) = @_;
 
-    $c->detach('rss') if $c->req->param('rss');
+    $c->detach('rss') if $c->get_param('rss');
 
     # if it exists then it's been submitted so we should
     # go to subscribe email and let it work out the next step
     $c->detach('subscribe_email')
-        if exists $c->req->params->{'rznvy'} || $c->req->params->{'alert'};
+        if $c->get_param('rznvy') || $c->get_param('alert');
 
-    $c->go('updates') if $c->req->params->{'id'};
+    $c->go('updates') if $c->get_param('id');
 
     # shouldn't get to here but if we have then do something sensible
     $c->go('index');
@@ -74,7 +77,7 @@ Redirects to relevant RSS feed
 
 sub rss : Private {
     my ( $self, $c ) = @_;
-    my $feed = $c->req->params->{feed};
+    my $feed = $c->get_param('feed');
 
     unless ($feed) {
         $c->stash->{errors} = [ _('Please select the feed you want') ];
@@ -111,27 +114,24 @@ Sign up to email alerts
 sub subscribe_email : Private {
     my ( $self, $c ) = @_;
 
+    $c->forward('/auth/check_csrf_token');
+
     $c->stash->{errors} = [];
     $c->forward('process_user');
 
-    my $type = $c->req->param('type');
-    push @{ $c->stash->{errors} }, _('Please select the type of alert you want')
-      if $type && $type eq 'local' && !$c->req->param('feed');
-    if (@{ $c->stash->{errors} }) {
-        $c->go('updates') if $type && $type eq 'updates';
-        $c->go('list') if $type && $type eq 'local';
-        $c->go('index');
-    }
-
+    my $type = $c->get_param('type') || "";
     if ( $type eq 'updates' ) {
         $c->forward('set_update_alert_options');
-    }
-    elsif ( $type eq 'local' ) {
+    } elsif ( $type eq 'local' ) {
         $c->forward('set_local_alert_options');
-    }
-    else {
+    } else {
         $c->detach( '/page_error_404_not_found', [ 'Invalid type' ] );
     }
+
+    push @{ $c->stash->{errors} }, _('Please select the type of alert you want')
+      if !$c->stash->{alert_options};
+
+    $c->go($type eq 'updates' ? 'updates' : 'list') if @{ $c->stash->{errors} };
 
     $c->forward('create_alert');
     if ( $c->stash->{alert}->confirmed ) {
@@ -145,8 +145,10 @@ sub subscribe_email : Private {
 sub updates : Path('updates') : Args(0) {
     my ( $self, $c ) = @_;
 
-    $c->stash->{email} = $c->req->param('rznvy');
-    $c->stash->{problem_id} = $c->req->param('id');
+    $c->forward('/auth/get_csrf_token');
+
+    $c->stash->{email} = $c->get_param('rznvy');
+    $c->stash->{problem_id} = $c->get_param('id');
 }
 
 =head2 confirm
@@ -209,7 +211,8 @@ Set up the options in the stash required to create a problem update alert
 sub set_update_alert_options : Private {
     my ( $self, $c ) = @_;
 
-    my $report_id = $c->req->param('id');
+    my $report_id = $c->get_param('id');
+    return unless $report_id =~ /^[1-9]\d*$/;
 
     my $options = {
         user       => $c->stash->{alert_user},
@@ -229,7 +232,7 @@ Set up the options in the stash required to create a local problems alert
 sub set_local_alert_options : Private {
     my ( $self, $c ) = @_;
 
-    my $feed = $c->req->param('feed');
+    my $feed = $c->get_param('feed');
 
     my ( $type, @params, $alert );
     if ( $feed =~ /^area:(?:\d+:)?(\d+)/ ) {
@@ -250,6 +253,7 @@ sub set_local_alert_options : Private {
         $type = 'local_problems';
         push @params, $2, $1; # Note alert parameters are lon,lat
     }
+    return unless $type;
 
     my $options = {
         user       => $c->stash->{alert_user},
@@ -305,12 +309,12 @@ This will canonicalise and prettify the postcode and stick a pretty_pc and prett
 sub prettify_pc : Private {
     my ( $self, $c ) = @_;
 
-    my $pretty_pc = $c->req->params->{'pc'};
+    my $pretty_pc = $c->get_param('pc');
 
-    if ( mySociety::PostcodeUtil::is_valid_postcode( $c->req->params->{'pc'} ) )
+    if ( mySociety::PostcodeUtil::is_valid_postcode( $c->get_param('pc') ) )
     {
         $pretty_pc = mySociety::PostcodeUtil::canonicalise_postcode(
-            $c->req->params->{'pc'} );
+            $c->get_param('pc') );
         my $pretty_pc_text = $pretty_pc;
         $pretty_pc_text =~ s/ //g;
         $c->stash->{pretty_pc_text} = $pretty_pc_text;
@@ -336,7 +340,7 @@ sub process_user : Private {
     }
 
     # Extract all the params to a hash to make them easier to work with
-    my %params = map { $_ => scalar $c->req->param($_) }
+    my %params = map { $_ => $c->get_param($_) }
       ( 'rznvy' ); # , 'password_register' );
 
     # cleanup the email address
@@ -350,7 +354,7 @@ sub process_user : Private {
     $c->stash->{alert_user} = $alert_user;
 
 #    # The user is trying to sign in. We only care about email from the params.
-#    if ( $c->req->param('submit_sign_in') ) {
+#    if ( $c->get_param('submit_sign_in') ) {
 #        unless ( $c->forward( '/auth/sign_in', [ $email ] ) ) {
 #            $c->stash->{field_errors}->{password} = _('There was a problem with your email/password combination. Please try again.');
 #            return 1;
@@ -441,16 +445,7 @@ sub determine_location : Private {
         $c->go('index');
     }
 
-    # truncate the lat,lon for nicer urls
-    ( $c->stash->{latitude}, $c->stash->{longitude} ) =
-      map { Utils::truncate_coordinate($_) }
-      ( $c->stash->{latitude}, $c->stash->{longitude} );
-
-    my $dist =
-      mySociety::Gaze::get_radius_containing_population( $c->stash->{latitude},
-        $c->stash->{longitude}, 200000 );
-    $dist                          = int( $dist * 10 + 0.5 );
-    $dist                          = $dist / 10.0;
+    my $dist = FixMyStreet::Gaze::get_radius_containing_population($c->stash->{latitude}, $c->stash->{longitude});
     $c->stash->{population_radius} = $dist;
 
     return 1;
@@ -503,14 +498,14 @@ Setup the variables we need for the rest of the request
 sub setup_request : Private {
     my ( $self, $c ) = @_;
 
-    $c->stash->{rznvy}         = $c->req->param('rznvy');
-    $c->stash->{selected_feed} = $c->req->param('feed');
+    $c->stash->{rznvy} = $c->get_param('rznvy');
+    $c->stash->{selected_feed} = $c->get_param('feed');
 
     if ( $c->user ) {
         $c->stash->{rznvy} ||= $c->user->email;
     }
 
-    $c->stash->{template} = 'alert/list-ajax.html' if $c->req->param('ajax');
+    $c->stash->{template} = 'alert/list-ajax.html' if $c->get_param('ajax');
 
     return 1;
 }

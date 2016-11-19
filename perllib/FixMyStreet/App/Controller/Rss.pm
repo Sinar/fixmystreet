@@ -6,7 +6,9 @@ use POSIX qw(strftime);
 use URI::Escape;
 use XML::RSS;
 
-use mySociety::Gaze;
+use FixMyStreet::App::Model::PhotoSet;
+
+use FixMyStreet::Gaze;
 use mySociety::Locale;
 use mySociety::MaPit;
 use mySociety::Sundries qw(ordinal);
@@ -141,10 +143,10 @@ sub local_problems_ll : Private {
         $c->stash->{qs} .= ";d=$d";
         $d = 100 if $d > 100;
     } else {
-        $d = mySociety::Gaze::get_radius_containing_population( $lat, $lon, 200000 );
-        $d = int( $d * 10 + 0.5 ) / 10;
-        mySociety::Locale::in_gb_locale {
-            $d = sprintf("%f", $d);
+        $d = FixMyStreet::Gaze::get_radius_containing_population($lat, $lon);
+        # Needs to be with a '.' for db passing
+        $d = mySociety::Locale::in_gb_locale {
+            sprintf("%f", $d);
         }
     }
 
@@ -160,7 +162,6 @@ sub local_problems_ll : Private {
 
 sub output : Private {
     my ( $self, $c ) = @_;
-    $c->detach( '/page_error_404_not_found', [ 'Feed not found' ] ) if $c->cobrand->moniker eq 'emptyhomes';
     $c->forward( 'lookup_type' );
     $c->forward( 'query_main' );
     $c->forward( 'generate' );
@@ -206,6 +207,7 @@ sub generate : Private {
     $out =~ s{(<link>.*?</link>)}{$1<uri>$uri</uri>};
 
     $c->response->header('Content-Type' => 'application/xml; charset=utf-8');
+    $c->response->header('Access-Control-Allow-Origin' => '*');
     $c->response->body( $out );
 }
 
@@ -218,7 +220,7 @@ sub query_main : Private {
         . ($alert_type->head_table ? $alert_type->head_table . '_id=? and ' : '')
         . $alert_type->item_where . ' order by '
         . $alert_type->item_order;
-    my $rss_limit = mySociety::Config::get('RSS_LIMIT');
+    my $rss_limit = FixMyStreet->config('RSS_LIMIT');
     $query .= " limit $rss_limit" unless $c->stash->{type} =~ /^all/;
 
     my $q = $c->model('DB::Alert')->result_source->storage->dbh->prepare($query);
@@ -260,15 +262,11 @@ sub add_row : Private {
         $row->{confirmed} =~ s/^(\d+)/ordinal($1)/e if $c->stash->{lang_code} eq 'en-gb';
     }
 
-    (my $title = _($alert_type->item_title)) =~ s/{{(.*?)}}/$row->{$1}/g;
-    (my $link = $alert_type->item_link) =~ s/{{(.*?)}}/$row->{$1}/g;
-    (my $desc = _($alert_type->item_description)) =~ s/{{(.*?)}}/$row->{$1}/g;
+    (my $title = _($alert_type->item_title)) =~ s/\{\{(.*?)}}/$row->{$1}/g;
+    (my $link = $alert_type->item_link) =~ s/\{\{(.*?)}}/$row->{$1}/g;
+    (my $desc = _($alert_type->item_description)) =~ s/\{\{(.*?)}}/$row->{$1}/g;
 
-    my $hashref_restriction = $c->cobrand->site_restriction;
-    my $base_url = $c->cobrand->base_url;
-    if ( $hashref_restriction && $hashref_restriction->{bodies_str} && $row->{bodies_str} && $row->{bodies_str} ne $hashref_restriction->{bodies_str} ) {
-        $base_url = $c->config->{BASE_URL};
-    }
+    my $base_url = $c->cobrand->base_url_for_report($row);
     my $url = $base_url . $link;
 
     my %item = (
@@ -281,8 +279,13 @@ sub add_row : Private {
     $item{category} = ent($row->{category}) if $row->{category};
 
     if ($c->cobrand->allow_photo_display($row) && $row->{photo}) {
+        # Bit yucky as we don't have full objects here
+        my $photoset = FixMyStreet::App::Model::PhotoSet->new({ db_data => $row->{photo} });
+        my $first_fn = $photoset->get_id(0);
+        my ($hash, $format) = split /\./, $first_fn;
+        my $cachebust = substr($hash, 0, 8);
         my $key = $alert_type->item_table eq 'comment' ? 'c/' : '';
-        $item{description} .= ent("\n<br><img src=\"". $base_url . "/photo/$key$row->{id}.jpeg\">");
+        $item{description} .= ent("\n<br><img src=\"". $base_url . "/photo/$key$row->{id}.0.$format?$cachebust\">");
     }
 
     if ( $row->{used_map} ) {
@@ -321,9 +324,9 @@ sub add_parameters : Private {
         $row->{$_} = $c->stash->{title_params}->{$_};
     }
 
-    (my $title = _($alert_type->head_title)) =~ s/{{(.*?)}}/$row->{$1}/g;
-    (my $link = $alert_type->head_link) =~ s/{{(.*?)}}/$row->{$1}/g;
-    (my $desc = _($alert_type->head_description)) =~ s/{{(.*?)}}/$row->{$1}/g;
+    (my $title = _($alert_type->head_title)) =~ s/\{\{(.*?)}}/$row->{$1}/g;
+    (my $link = $alert_type->head_link) =~ s/\{\{(.*?)}}/$row->{$1}/g;
+    (my $desc = _($alert_type->head_description)) =~ s/\{\{(.*?)}}/$row->{$1}/g;
 
     $c->stash->{rss}->channel(
         title       => ent($title),
@@ -350,7 +353,7 @@ sub get_query_parameters : Private {
     $d = '' unless $d && $d =~ /^\d+$/;
     $c->stash->{distance} = $d;
 
-    my $state = $c->req->param('state') || 'all';
+    my $state = $c->get_param('state') || 'all';
     $state = 'all' unless $state =~ /^(all|open|fixed)$/;
     $c->stash->{state_qs} = "?state=$state" unless $state eq 'all';
 

@@ -1,6 +1,8 @@
 package FixMyStreet::Cobrand::UKCouncils;
 use base 'FixMyStreet::Cobrand::UK';
 
+# XXX Things using this cobrand base assume that a body ID === MapIt area ID
+
 use strict;
 use warnings;
 
@@ -11,10 +13,24 @@ sub is_council {
     1;
 }
 
-sub site_restriction {
+sub path_to_web_templates {
     my $self = shift;
-    return { bodies_str => sprintf('%d', $self->council_id) };
+    return [
+        FixMyStreet->path_to( 'templates/web', $self->moniker ),
+        FixMyStreet->path_to( 'templates/web/fixmystreet-uk-councils' ),
+    ];
 }
+
+sub path_to_email_templates {
+    my ( $self, $lang_code ) = @_;
+    my $paths = [
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker, $lang_code ),
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker ),
+        FixMyStreet->path_to( 'templates', 'email', 'fixmystreet.com'),
+    ];
+    return $paths;
+}
+
 sub site_key {
     my $self = shift;
     return $self->council_url;
@@ -24,33 +40,52 @@ sub restriction {
     return { cobrand => shift->moniker };
 }
 
-# Different function to site_restriction due to two-tier use
-sub problems_clause {
-    my $self = shift;
-
-    if ($self->is_two_tier) {
-        return { bodies_str => {
-            like => ('%' . $self->council_id . '%')
-        }};
-    }
-    else {
-        return { bodies_str => sprintf('%d', $self->council_id) };
-    }
+sub problems_restriction {
+    my ($self, $rs) = @_;
+    return $rs if FixMyStreet->config('STAGING_SITE') && FixMyStreet->config('SKIP_CHECKS_ON_STAGING');
+    return $rs->to_body($self->council_id);
 }
 
-sub problems {
-    my $self = shift;
-    return $self->{c}->model('DB::Problem')->search( $self->problems_clause );
+sub updates_restriction {
+    my ($self, $rs) = @_;
+    return $rs if FixMyStreet->config('STAGING_SITE') && FixMyStreet->config('SKIP_CHECKS_ON_STAGING');
+    return $rs->to_body($self->council_id);
+}
+
+sub users_restriction {
+    my ($self, $rs) = @_;
+
+    # Council admins can only see users who are members of the same council or
+    # users who have sent a report or update to that council.
+
+    my $problem_user_ids = $self->problems->search(
+        undef,
+        {
+            columns => [ 'user_id' ],
+            distinct => 1
+        }
+    )->as_query;
+    my $update_user_ids = $self->updates->search(
+        undef,
+        {
+            columns => [ 'user_id' ],
+            distinct => 1
+        }
+    )->as_query;
+
+    return $rs->search([
+        from_body => $self->council_id,
+        id => [ { -in => $problem_user_ids }, { -in => $update_user_ids } ],
+    ]);
 }
 
 sub base_url {
     my $self = shift;
-    my $base_url = mySociety::Config::get('BASE_URL');
+    my $base_url = FixMyStreet->config('BASE_URL');
     my $u = $self->council_url;
     if ( $base_url !~ /$u/ ) {
-        # council cobrands are not https so transform to http as well
-        $base_url =~ s{(https?)://(?!www\.)}{http://$u.}g;
-        $base_url =~ s{(https?)://www\.}{http://$u.}g;
+        $base_url =~ s{(https?://)(?!www\.)}{$1$u.}g;
+        $base_url =~ s{(https?://)www\.}{$1$u.}g;
     }
     return $base_url;
 }
@@ -63,6 +98,8 @@ sub enter_postcode_text {
 sub area_check {
     my ( $self, $params, $context ) = @_;
 
+    return 1 if FixMyStreet->config('STAGING_SITE') && FixMyStreet->config('SKIP_CHECKS_ON_STAGING');
+
     my $councils = $params->{all_areas};
     my $council_match = defined $councils->{$self->council_id};
     if ($council_match) {
@@ -74,11 +111,11 @@ sub area_check {
     } else {
         $url .= 'around';
     }
-    $url .= '?pc=' . URI::Escape::uri_escape( $self->{c}->req->param('pc') )
-      if $self->{c}->req->param('pc');
-    $url .= '?latitude=' . URI::Escape::uri_escape( $self->{c}->req->param('latitude') )
-         .  '&amp;longitude=' . URI::Escape::uri_escape( $self->{c}->req->param('longitude') )
-      if $self->{c}->req->param('latitude');
+    $url .= '?pc=' . URI::Escape::uri_escape( $self->{c}->get_param('pc') )
+      if $self->{c}->get_param('pc');
+    $url .= '?latitude=' . URI::Escape::uri_escape( $self->{c}->get_param('latitude') )
+         .  '&amp;longitude=' . URI::Escape::uri_escape( $self->{c}->get_param('longitude') )
+      if $self->{c}->get_param('latitude');
     my $error_msg = "That location is not covered by " . $self->council_name . ".
 Please visit <a href=\"$url\">the main FixMyStreet site</a>.";
     return ( 0, $error_msg );
@@ -111,9 +148,23 @@ sub recent_photos {
 # Returns true if the cobrand owns the problem.
 sub owns_problem {
     my ($self, $report) = @_;
-    my $bodies = $report->bodies;
-    my %areas = map { %{$_->areas} } values %$bodies;
+    my @bodies;
+    if (ref $report eq 'HASH') {
+        return unless $report->{bodies_str};
+        @bodies = split /,/, $report->{bodies_str};
+        @bodies = FixMyStreet::DB->resultset('Body')->search({ id => \@bodies })->all;
+    } else { # Object
+        @bodies = values %{$report->bodies};
+    }
+    my %areas = map { %{$_->areas} } @bodies;
     return $areas{$self->council_id} ? 1 : undef;
+}
+
+# If the council is two-tier then show pins for the other council as grey
+sub pin_colour {
+    my ( $self, $p, $context ) = @_;
+    return 'grey' if $self->is_two_tier && !$self->owns_problem( $p );
+    return $self->next::method($p, $context);
 }
 
 # If we ever link to a county problem report, needs to be to main FixMyStreet
@@ -128,6 +179,23 @@ sub base_url_for_report {
     } else {
         return $self->base_url;
     }
+}
+
+sub admin_allow_user {
+    my ( $self, $user ) = @_;
+    return 1 if $user->is_superuser;
+    return undef unless defined $user->from_body;
+    return $user->from_body->id == $self->council_id;
+}
+
+sub available_permissions {
+    my $self = shift;
+
+    my $perms = $self->next::method();
+    $perms->{Problems}->{contribute_as_body} = "Create reports/updates as " . $self->council_name;
+    $perms->{Users}->{user_assign_areas} = "Assign users to areas in " . $self->council_name;
+
+    return $perms;
 }
 
 1;

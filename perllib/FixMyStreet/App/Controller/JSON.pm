@@ -4,11 +4,10 @@ use namespace::autoclean;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
-use JSON;
+use JSON::MaybeXS;
 use DateTime;
 use DateTime::Format::ISO8601;
 use List::MoreUtils 'uniq';
-use FixMyStreet::App;
 
 =head1 NAME
 
@@ -38,9 +37,9 @@ sub problems : Local {
       :                         '';
 
     # gather the parameters
-    my $start_date = $c->req->param('start_date') || '';
-    my $end_date   = $c->req->param('end_date')   || '';
-    my $category   = $c->req->param('category')   || '';
+    my $start_date = $c->get_param('start_date') || '';
+    my $end_date = $c->get_param('end_date') || '';
+    my $category = $c->get_param('category') || '';
 
     my $yyyy_mm_dd = qr{^\d{4}-\d\d-\d\d$};
     if (   $start_date !~ $yyyy_mm_dd
@@ -81,7 +80,7 @@ sub problems : Local {
         $date_col = 'lastupdate';
     }
 
-    my $dt_parser = FixMyStreet::App->model('DB')->schema->storage->datetime_parser;
+    my $dt_parser = $c->model('DB')->schema->storage->datetime_parser;
 
     my $one_day = DateTime::Duration->new( days => 1 );
     my $query = {

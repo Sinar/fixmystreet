@@ -10,14 +10,20 @@ use strict;
 use warnings;
 require 5.8.0;
 
-use CGI; # XXX
+BEGIN {
+    use File::Basename qw(dirname);
+    use File::Spec;
+    my $d = dirname(File::Spec->rel2abs($0));
+    require "$d/../setenv.pl";
+}
+
 use CronFns;
 
-use mySociety::Config;
-use FixMyStreet::App;
+use FixMyStreet;
+use FixMyStreet::Script::Alerts;
 
-my $site = CronFns::site(mySociety::Config::get('BASE_URL'));
+my $site = CronFns::site(FixMyStreet->config('BASE_URL'));
 CronFns::language($site);
 
-FixMyStreet::App->model('DB::AlertType')->email_alerts();
+FixMyStreet::Script::Alerts::send();
 

@@ -1,38 +1,55 @@
+[%
+    SET html_att = ' lang="' _ lang_code _ '"';
+    # For a right-to-left language, use the following line in your own header:
+    # SET html_att = html_att _ ' dir="rtl"';
+-%]
 <!doctype html>
-<!--[if lt IE 7]><html class="no-js ie6 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 7]>   <html class="no-js ie7 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 8]>   <html class="no-js ie8 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if gt IE 8]><!--><html class="no-js" lang="[% lang_code %]"><!--<![endif]-->
+<!--[if IE 7]>   <html class="no-js ie7 iel8"[% html_att %]><![endif]-->
+<!--[if IE 8]>   <html class="no-js ie8 iel8"[% html_att %]><![endif]-->
+<!--[if IE 9]>   <html class="no-js ie9"[% html_att %]><![endif]-->
+<!--[if gt IE 9]><!--><html class="no-js"[% html_att %]><!--<![endif]-->
     <head>
         <meta name="viewport" content="initial-scale=1.0">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
         <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
         <meta name="HandHeldFriendly" content="true">
         <meta name="mobileoptimized" content="0">
 
-        <link rel="stylesheet" href="[% version('/css/core.css') %]">
+        [% INCLUDE 'header_opengraph.html' %]
+        [%
+           # For clarity, the 'fixmystreet' moniker (for fixmystreet.com) puts
+           # it stylesheets under fixmystreet.com
+           IF c.cobrand.moniker == 'fixmystreet';
+               SET css_dir = 'fixmystreet.com';
+           ELSE;
+               SET css_dir = c.cobrand.moniker;
+           END %]
+        <link rel="stylesheet" href="[% version('/cobrands/' _ css_dir _ '/base.css') %]">
+        <link rel="stylesheet" href="[% version('/cobrands/' _ css_dir _ '/layout.css') %]" media="(min-width:48em)">
+        [% extra_css %]
+        <!--[if (lt IE 9) & (!IEMobile)]>
+            <link rel="stylesheet" href="[% version('/cobrands/' _ css_dir _ '/layout.css') %]">
+        <![endif]-->
 
         [% INCLUDE 'common_header_tags.html' %]
-                
+
+        [% IF c.req.uri.host == 'osm.fixmystreet.com' %]
+            <link rel="canonical" href="https://www.fixmystreet.com[% c.req.uri.path_query %]">
+        [% END %]
+
+        [% TRY %][% PROCESS 'header_extra.html' %][% CATCH file %][% END %]
+
     </head>
-    <body>
+    [% TRY %][% PROCESS 'set_body_class.html' %][% CATCH file %][% END %]
+    <body class="[% bodyclass | html IF bodyclass %]">
 
-<div id="wrapper"><div id="wrapper2"><div id="wrapper3">
+    <div class="wrapper">
+        <div class="table-cell">
+            [% INCLUDE 'header_site.html' %]
 
-        [% IF NOT title AND NOT c.req.path %]<h1 id="header" role="banner">[% ELSE %]<div id="header" role="banner"><a href="/">[% END
-            %][% loc('FixMyStreet') %]
-        [%- IF NOT title AND NOT c.req.path %]</h1>[% ELSE %]</a></div>[% END %]
+            [% pre_container_extra %]
 
-        <ul id="meta">
-            [% IF c.user_exists %]
-                <li>[% tprintf(loc('Signed in as %s'), c.user.name || c.user.email) %]
-                <li class="last"><a href="/auth/sign_out">[% loc('Sign out') %]</a></li>
-            [% ELSE %]
-                <li>&nbsp;</li>
-            [% END %]
-        </ul>
+            <div class="container">
+                <div class="content[% " $mainclass" | html IF mainclass %]" role="main">
 
-    <div id="mysociety" class="container" role="main">
-
-    [% INCLUDE 'debug_header.html' %]
+        <!-- [% INCLUDE 'debug_header.html' %] -->

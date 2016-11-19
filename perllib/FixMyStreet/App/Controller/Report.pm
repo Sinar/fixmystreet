@@ -2,6 +2,10 @@ package FixMyStreet::App::Controller::Report;
 
 use Moose;
 use namespace::autoclean;
+use JSON::MaybeXS;
+use List::MoreUtils qw(any);
+use Utils;
+
 BEGIN { extends 'Catalyst::Controller'; }
 
 =head1 NAME
@@ -24,7 +28,7 @@ Redirect to homepage unless C<id> parameter in query, in which case redirect to
 sub index : Path('') : Args(0) {
     my ( $self, $c ) = @_;
 
-    my $id = $c->req->param('id');
+    my $id = $c->get_param('id');
 
     my $uri =
         $id
@@ -70,15 +74,23 @@ sub ajax : Path('ajax') : Args(1) {
 sub _display : Private {
     my ( $self, $c, $id ) = @_;
 
+    $c->forward('/auth/get_csrf_token');
     $c->forward( 'load_problem_or_display_error', [ $id ] );
     $c->forward( 'load_updates' );
     $c->forward( 'format_problem_for_display' );
+
+    my $permissions = $c->stash->{_permissions} = $c->forward( 'check_has_permission_to',
+        [ qw/report_inspect report_edit_category report_edit_priority/ ] );
+    if (any { $_ } values %$permissions) {
+        $c->stash->{template} = 'report/inspect.html';
+        $c->forward('inspect');
+    }
 }
 
 sub support : Path('support') : Args(0) {
     my ( $self, $c ) = @_;
 
-    my $id = $c->req->param('id');
+    my $id = $c->get_param('id');
 
     my $uri =
         $id
@@ -99,13 +111,21 @@ sub load_problem_or_display_error : Private {
     my $problem
       = ( !$id || $id =~ m{\D} ) # is id non-numeric?
       ? undef                    # ...don't even search
-      : $c->cobrand->problems->find( { id => $id } );
+      : $c->cobrand->problems->find( { id => $id } )
+          or $c->detach( '/page_error_404_not_found', [ _('Unknown problem ID') ] );
 
     # check that the problem is suitable to show.
-    if ( !$problem || ($problem->state eq 'unconfirmed' && !$c->cobrand->show_unconfirmed_reports) || $problem->state eq 'partial' ) {
+    # hidden_states includes partial and unconfirmed, but they have specific handling,
+    # so we check for them first.
+    if ( $problem->state eq 'partial' ) {
         $c->detach( '/page_error_404_not_found', [ _('Unknown problem ID') ] );
     }
-    elsif ( $problem->state eq 'hidden' ) {
+    elsif ( $problem->state eq 'unconfirmed' ) {
+        $c->detach( '/page_error_404_not_found', [ _('Unknown problem ID') ] )
+            unless $c->cobrand->show_unconfirmed_reports ;
+    }
+    elsif ( $problem->hidden_states->{ $problem->state } or 
+            (($problem->get_extra_metadata('closure_status')||'') eq 'hidden')) {
         $c->detach(
             '/page_error_410_gone',
             [ _('That report has been removed from FixMyStreet.') ]    #
@@ -114,12 +134,23 @@ sub load_problem_or_display_error : Private {
         if ( !$c->user || $c->user->id != $problem->user->id ) {
             $c->detach(
                 '/page_error_403_access_denied',
-                [ sprintf(_('That report cannot be viewed on %s.'), $c->cobrand->site_title) ]    #
+                [ sprintf(_('That report cannot be viewed on %s.'), $c->stash->{site_name}) ]
             );
         }
     }
 
     $c->stash->{problem} = $problem;
+    if ( $c->user_exists && $c->user->has_permission_to(moderate => $problem->bodies_str_ids) ) {
+        $c->stash->{problem_original} = $problem->find_or_new_related(
+            moderation_original_data => {
+                title => $problem->title,
+                detail => $problem->detail,
+                photo => $problem->photo,
+                anonymous => $problem->anonymous,
+            }
+        );
+    }
+
     return 1;
 }
 
@@ -150,6 +181,10 @@ sub load_updates : Private {
     @combined = map { $_->[1] } sort { $a->[0] <=> $b->[0] } @combined;
     $c->stash->{updates} = \@combined;
 
+    if ($c->sessionid && $c->flash->{alert_to_reporter}) {
+        $c->stash->{alert_to_reporter} = 1;
+    }
+
     return 1;
 }
 
@@ -158,24 +193,21 @@ sub format_problem_for_display : Private {
 
     my $problem = $c->stash->{problem};
 
-    ( $c->stash->{short_latitude}, $c->stash->{short_longitude} ) =
+    ( $c->stash->{latitude}, $c->stash->{longitude} ) =
       map { Utils::truncate_coordinate($_) }
       ( $problem->latitude, $problem->longitude );
 
-    unless ( $c->req->param('submit_update') ) {
+    unless ( $c->get_param('submit_update') ) {
         $c->stash->{add_alert} = 1;
     }
 
     $c->stash->{extra_name_info} = $problem->bodies_str && $problem->bodies_str eq '2482' ? 1 : 0;
-    if ( $c->sessionid && $c->flash->{created_report} ) {
-        $c->stash->{created_report} = $c->flash->{created_report};
-    }
 
     $c->forward('generate_map_tags');
 
     if ( $c->stash->{ajax} ) {
         $c->res->content_type('application/json; charset=utf-8');
-        my $content = JSON->new->utf8(1)->encode(
+        my $content = encode_json(
             {
                 report => $c->cobrand->problem_as_hashref( $problem, $c ),
                 updates => $c->cobrand->updates_as_hashref( $problem, $c ),
@@ -219,13 +251,15 @@ to moderation, however we'd need to inform all the other
 users too about this change, at which point we can delete:
 
  - this method
- - the call to it in templates/web/fixmystreet/report/display.html
+ - the call to it in templates/web/base/report/display_tools.html
  - the users_can_hide cobrand method, in favour of user->has_permission_to
 
 =cut
 
 sub delete :Local :Args(1) {
     my ( $self, $c, $id ) = @_;
+
+    $c->forward('/auth/check_csrf_token');
 
     $c->forward( 'load_problem_or_display_error', [ $id ] );
     my $p = $c->stash->{problem};
@@ -240,8 +274,10 @@ sub delete :Local :Args(1) {
     return $c->res->redirect($uri) unless $p->bodies->{$body->id};
 
     $p->state('hidden');
-    $p->lastupdate( \'ms_current_timestamp()' );
+    $p->lastupdate( \'current_timestamp' );
     $p->update;
+
+    $p->user->update_reputation(-1);
 
     $c->model('DB::AdminLog')->create( {
         admin_user => $c->user->email,
@@ -252,6 +288,148 @@ sub delete :Local :Args(1) {
 
     return $c->res->redirect($uri);
 }
+
+=head2 action_router
+
+A router for dispatching handlers for sub-actions on a particular report,
+e.g. /report/1/inspect
+
+=cut
+
+sub action_router : Path('') : Args(2) {
+    my ( $self, $c, $id, $action ) = @_;
+
+    $c->go( 'map', [ $id ] ) if $action eq 'map';
+
+    $c->detach( '/page_error_404_not_found', [] );
+}
+
+sub inspect : Private {
+    my ( $self, $c ) = @_;
+    my $problem = $c->stash->{problem};
+    my $permissions = $c->stash->{_permissions};
+
+    $c->stash->{categories} = $c->forward('/admin/categories_for_point');
+    $c->stash->{report_meta} = { map { $_->{name} => $_ } @{ $c->stash->{problem}->get_extra_fields() } };
+
+    if ( $c->get_param('save') ) {
+        $c->forward('/auth/check_csrf_token');
+
+        my $valid = 1;
+        my $update_text;
+        my $reputation_change = 0;
+
+        if ($permissions->{report_inspect}) {
+            foreach (qw/detailed_information traffic_information/) {
+                $problem->set_extra_metadata( $_ => $c->get_param($_) );
+            }
+
+            if ( $c->get_param('save_inspected') ) {
+                $update_text = Utils::cleanup_text( $c->get_param('public_update'), { allow_multiline => 1 } );
+                if ($update_text) {
+                    $problem->set_extra_metadata( inspected => 1 );
+                    $reputation_change = 1;
+                } else {
+                    $valid = 0;
+                    $c->stash->{errors} ||= [];
+                    push @{ $c->stash->{errors} }, _('Please provide a public update for this report.');
+                }
+            }
+
+            # Handle the state changing
+            my $old_state = $problem->state;
+            $problem->state($c->get_param('state'));
+            if ( $problem->is_visible() and $old_state eq 'unconfirmed' ) {
+                $problem->confirmed( \'current_timestamp' );
+            }
+            if ( $problem->state eq 'hidden' ) {
+                $problem->get_photoset->delete_cached;
+            }
+            if ( $problem->state ne $old_state ) {
+                $c->forward( '/admin/log_edit', [ $problem->id, 'problem', 'state_change' ] );
+            }
+        }
+
+        if ($c->get_param('priority') && ($permissions->{report_inspect} || $permissions->{report_edit_priority})) {
+            $problem->response_priority( $problem->response_priorities->find({ id => $c->get_param('priority') }) );
+        }
+
+        if ( !$c->forward( '/admin/report_edit_location', [ $problem ] ) ) {
+            # New lat/lon isn't valid, show an error
+            $valid = 0;
+            $c->stash->{errors} ||= [];
+            push @{ $c->stash->{errors} }, _('Invalid location. New location must be covered by the same council.');
+        }
+
+        if ($permissions->{report_inspect} || $permissions->{report_edit_category}) {
+            $c->forward( '/admin/report_edit_category', [ $problem ] );
+
+            # The new category might require extra metadata (e.g. pothole size), so
+            # we need to update the problem with the new values.
+            my $param_prefix = lc $problem->category;
+            $param_prefix =~ s/[^a-z]//g;
+            $param_prefix = "category_" . $param_prefix . "_";
+            my @contacts = grep { $_->category eq $problem->category } @{$c->stash->{contacts}};
+            $c->forward('/report/new/set_report_extras', [ \@contacts, $param_prefix ]);
+        }
+
+        if ($valid) {
+            if ( $reputation_change != 0 ) {
+                $problem->user->update_reputation($reputation_change);
+            }
+            $problem->update;
+            if ( defined($update_text) ) {
+                $problem->add_to_comments( {
+                    text => $update_text,
+                    created => \'current_timestamp',
+                    confirmed => \'current_timestamp',
+                    user_id => $c->user->id,
+                    name => $c->user->from_body->name,
+                    state => 'confirmed',
+                    mark_fixed => 0,
+                    anonymous => 0,
+                } );
+            }
+            # This problem might no longer be visible on the current cobrand,
+            # if its body has changed (e.g. by virtue of the category changing)
+            # so redirect to a cobrand where it can be seen if necessary
+            my $redirect_uri;
+            if ( $c->cobrand->is_council && !$c->cobrand->owns_problem($problem) ) {
+                $redirect_uri = $c->cobrand->base_url_for_report( $problem ) . $problem->url;
+            } else {
+                $redirect_uri = $c->uri_for( $problem->url );
+            }
+            $c->log->debug( "Redirecting to: " . $redirect_uri );
+            $c->res->redirect( $redirect_uri );
+        }
+    }
+};
+
+sub map : Private {
+    my ( $self, $c, $id ) = @_;
+
+    $c->forward( 'load_problem_or_display_error', [ $id ] );
+
+    my $image = $c->stash->{problem}->static_map;
+    $c->res->content_type($image->{content_type});
+    $c->res->body($image->{data});
+}
+
+
+=head2 check_has_permission_to
+
+Ensure the currently logged-in user has any of the provided permissions applied
+to the current Problem in $c->stash->{problem}. Shows the 403 page if not.
+
+=cut
+
+sub check_has_permission_to : Private {
+    my ( $self, $c, @permissions ) = @_;
+    return {} unless $c->user_exists;
+    my $bodies = $c->stash->{problem}->bodies_str_ids;
+    my %permissions = map { $_ => $c->user->has_permission_to($_, $bodies) } @permissions;
+    return \%permissions;
+};
 
 __PACKAGE__->meta->make_immutable;
 

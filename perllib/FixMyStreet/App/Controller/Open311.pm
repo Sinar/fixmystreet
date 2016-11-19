@@ -4,7 +4,7 @@ use utf8;
 use Moose;
 use namespace::autoclean;
 
-use JSON;
+use JSON::MaybeXS;
 use XML::Simple;
 use DateTime::Format::W3CDTF;
 
@@ -112,7 +112,7 @@ sub get_discovery : Private {
         'changeset' => [$prod_changeset],
         # XXX rewrite to match
         'key_service' => ["Read access is open to all according to our \u003Ca href='/open_data' target='_blank'\u003Eopen data license\u003C/a\u003E. For write access either: 1. return the 'guid' cookie on each call (unique to each client) or 2. use an api key from a user account which can be generated here: http://seeclickfix.com/register The unversioned url will always point to the latest supported version."],
-        'max_requests' => [ $c->config->{RSS_LIMIT} ],
+        'max_requests' => [ $c->config->{OPEN311_LIMIT} || 1000 ],
         'endpoints' => [
             {
                 'endpoint' => [
@@ -155,9 +155,9 @@ sub get_discovery : Private {
 sub get_services : Private {
     my ( $self, $c ) = @_;
 
-    my $jurisdiction_id = $c->req->param('jurisdiction_id') || '';
-    my $lat = $c->req->param('lat') || '';
-    my $lon = $c->req->param('long') || '';
+    my $jurisdiction_id = $c->get_param('jurisdiction_id') || '';
+    my $lat = $c->get_param('lat') || '';
+    my $lon = $c->get_param('long') || '';
 
     # Look up categories for this council or councils
     my $categories = $c->model('DB::Contact')->not_deleted;
@@ -205,8 +205,9 @@ sub get_services : Private {
 
 sub output_requests : Private {
     my ( $self, $c, $criteria, $limit ) = @_;
-    $limit = $c->config->{RSS_LIMIT}
-        unless $limit && $limit <= $c->config->{RSS_LIMIT};
+    my $default_limit = $c->config->{OPEN311_LIMIT} || 1000;
+    $limit = $default_limit
+        unless $limit && $limit <= $default_limit;
 
     my $attr = {
         order_by => { -desc => 'confirmed' },
@@ -252,7 +253,12 @@ sub output_requests : Private {
             'interface_used' => [ $problem->service ], # Not in Open311 v2
         };
 
-        if ( $c->cobrand->moniker ne 'zurich' ) { # XXX
+        if ( $c->cobrand->moniker eq 'zurich' ) {
+            $request->{service_notice} = [ 
+                $problem->get_extra_metadata('public_response')
+            ];
+        }
+        else {
             # FIXME Not according to Open311 v2
             $request->{agency_responsible} = $problem->bodies;
         }
@@ -279,7 +285,7 @@ sub output_requests : Private {
         my $display_photos = $c->cobrand->allow_photo_display($problem);
         if ($display_photos && $problem->photo) {
             my $url = $c->cobrand->base_url();
-            my $imgurl = $url . "/photo/$id.full.jpeg";
+            my $imgurl = $url . $problem->photos->[0]->{url_full};
             $request->{'media_url'} = [ $imgurl ];
         }
         push(@problemlist, $request);
@@ -304,7 +310,7 @@ sub get_requests : Private {
 
     $c->forward( 'is_jurisdiction_id_ok' );
 
-    my $max_requests = $c->req->param('max_requests') || 0;
+    my $max_requests = $c->get_param('max_requests') || 0;
 
     # Only provide access to the published reports
     my $states = FixMyStreet::DB::Result::Problem->visible_states();
@@ -322,7 +328,7 @@ sub get_requests : Private {
         has_photo          => [ '=', 'photo' ],
     );
     for my $param (keys %rules) {
-        my $value = $c->req->param($param);
+        my $value = $c->get_param($param);
         next unless $value;
         my $op  = $rules{$param}[0];
         my $key = $rules{$param}[1];
@@ -361,12 +367,12 @@ sub get_requests : Private {
         $criteria->{$key} = { $op, $value };
     }
 
-    if ( $c->req->param('start_date') and $c->req->param('end_date') ) {
-        $criteria->{confirmed} = [ '-and' => { '>=', $c->req->param('start_date') }, { '<', $c->req->param('end_date') } ];
-    } elsif ( $c->req->param('start_date') ) {
-        $criteria->{confirmed} = { '>=', $c->req->param('start_date') };
-    } elsif ( $c->req->param('end_date') ) {
-        $criteria->{confirmed} = { '<', $c->req->param('end_date') };
+    if ( $c->get_param('start_date') and $c->get_param('end_date') ) {
+        $criteria->{confirmed} = [ '-and' => { '>=', $c->get_param('start_date') }, { '<', $c->get_param('end_date') } ];
+    } elsif ( $c->get_param('start_date') ) {
+        $criteria->{confirmed} = { '>=', $c->get_param('start_date') };
+    } elsif ( $c->get_param('end_date') ) {
+        $criteria->{confirmed} = { '<', $c->get_param('end_date') };
     }
 
     if ('rss' eq $c->stash->{format}) {
@@ -436,7 +442,7 @@ sub format_output : Private {
 
 sub is_jurisdiction_id_ok : Private {
     my ( $self, $c ) = @_;
-    unless (my $jurisdiction_id = $c->req->param('jurisdiction_id')) {
+    unless (my $jurisdiction_id = $c->get_param('jurisdiction_id')) {
         $c->detach( 'error', [ _('Missing jurisdiction_id') ] );
     }
 }

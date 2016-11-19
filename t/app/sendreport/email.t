@@ -1,36 +1,31 @@
-#!/usr/bin/perl
-
 use strict;
 use warnings;
 
 use Test::More;
 
 use FixMyStreet;
-use FixMyStreet::App;
-use FixMyStreet::DB::Result::Contact;
+use FixMyStreet::DB;
 use FixMyStreet::SendReport::Email;
 use FixMyStreet::TestMech;
 use mySociety::Locale;
+
+ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
 my $e = FixMyStreet::SendReport::Email->new();
 
 # area id 1000
 my $params = { id => 1000, name => 'Council of the Thousand' };
-my $body = FixMyStreet::App->model('DB::Body')->find_or_create($params);
+my $body = FixMyStreet::DB->resultset('Body')->find_or_create($params);
 ok $body, "found/created body";
 
-my $contact = FixMyStreet::App->model('DB::Contact')->find_or_create(
+my $contact = $mech->create_contact_ok(
     email => 'council@example.com',
     body_id => 1000,
     category => 'category',
-    confirmed => 1,
-    deleted => 0,
-    editor => 'test suite',
-    whenedited => DateTime->now,
     note => '',
 );
 
-my $row = FixMyStreet::App->model('DB::Problem')->new( {
+my $row = FixMyStreet::DB->resultset('Problem')->new( {
     bodies_str => '1000',
     category => 'category',
     cobrand => '',
@@ -50,14 +45,14 @@ foreach my $test ( {
     },
     {
         desc => 'unconfirmed contact results in no receipients',
-        count => undef,
+        count => 0,
         add_council => 1,
         unconfirmed => 1,
         expected_note => 'Body 1000 deleted',
     },
     {
         desc => 'unconfirmed contact note uses note from contact table',
-        count => undef,
+        count => 0,
         add_council => 1,
         unconfirmed => 1,
         note => 'received bounced so unconfirmed',
@@ -78,6 +73,8 @@ foreach my $test ( {
     };
 }
 
-$contact->delete;
-
 done_testing();
+
+END {
+    $mech->delete_body($body);
+}

@@ -1,5 +1,9 @@
 [% INCLUDE 'admin/header.html' title=loc('Bodies') -%]
 
+[% IF body_errors.size %]
+    <p class="error">[% loc('Please correct the errors below') %]</p>
+[% END %]
+
 [% IF bodies.size == 0 %]
   <p class="fms-admin-info">
     [% loc('Currently no bodies have been created.') %]
@@ -9,6 +13,13 @@
     contacts (such as an email address) to which reports are sent.') %]
   </p>
 [% ELSE %]
+
+  [% IF c.config.STAGING_SITE and !c.config.SEND_REPORTS_ON_STAGING %]
+  <p class="fms-admin-warning">
+    [% tprintf(loc("As this is a staging site and %s is false, reports made on this site will be sent to the problem reporter, not the contact given for the report’s category."), "<a class='admin-offsite-link' href='http://fixmystreet.org/customising/config/#send_reports_on_staging'><code>SEND_REPORTS_ON_STAGING</code></a>") %]
+  </p>
+  [% END %]
+
   <table cellspacing="0" cellpadding="2" border="1">
       <tr>
           <th>[% loc('Name') %]</th>
@@ -28,13 +39,13 @@
             [% IF c.cobrand.moniker == 'zurich' %]
               [% FILTER repeat(4*body.api_key) %]&nbsp;[% END %]
               [% IF admin_type == 'super' %]
-                <a href="[% c.uri_for( 'body', id ) %]">[% body.name %]</a>
+                <a href="[% c.uri_for( 'body', id ) %]">[% body.name | html %]</a>
               [% ELSE %]
-                [% body.name %]
+                [% body.name | html %]
               [% END %]
             [% ELSE %] [%# not Zurich: all bodies should be links %]
-              <a href="[% c.uri_for( 'body', id ) %]">[% body.name %]</a>
-              [%- ', ' _ body.parent.name IF body.parent -%]
+              <a href="[% c.uri_for( 'body', id ) %]">[% body.name | html%]</a>
+              [%- IF body.parent %], [% body.parent.name | html %][% END -%]
             [% END %]
           </td>
       [% IF c.cobrand.moniker == 'zurich' %]
@@ -62,7 +73,7 @@
   </table>
 [% END %]
 
-[% IF c.cobrand.moniker != 'zurich' OR admin_type == 'super' %]
+[% IF (c.cobrand.moniker == 'zurich' AND admin_type == 'super') OR c.user.is_superuser %]
     <div class="admin-box">
       <h2>[% loc('Add body') %]</h2>
       [% INCLUDE 'admin/body-form.html', body='' %]

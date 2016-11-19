@@ -1,6 +1,6 @@
 package FixMyStreet::SendReport::EastHants;
 
-use Moose;
+use Moo;
 
 BEGIN { extends 'FixMyStreet::SendReport'; }
 
@@ -28,19 +28,19 @@ EOF
 }
 
 sub send {
-    return if mySociety::Config::get('STAGING_SITE');
+    return if FixMyStreet->config('STAGING_SITE');
 
     my ( $self, $row, $h ) = @_;
 
     # FIXME: should not recreate this each time
     my $eh_service;
 
-    require EastHantsWSDL;
+    require Integrations::EastHantsWSDL;
 
     $h->{category} = 'Customer Services' if $h->{category} eq 'Other';
     $h->{message} = construct_message( %$h );
     my $return = 1;
-    $eh_service ||= EastHantsWSDL->on_fault(sub { my($soap, $res) = @_; die ref $res ? $res->faultstring : $soap->transport->status, "\n"; });
+    $eh_service ||= Integrations::EastHantsWSDL->on_fault(sub { my($soap, $res) = @_; die ref $res ? $res->faultstring : $soap->transport->status, "\n"; });
     try {
         # ServiceName, RemoteCreatedBy, Salutation, FirstName, Name, Email, Telephone, HouseNoName, Street, Town, County, Country, Postcode, Comments, FurtherInfo, ImageURL
         my $message = ent(encode_utf8($h->{message}));
@@ -52,7 +52,6 @@ sub send {
         $return = 0 if $result eq 'Report received';
     } catch {
         my $e = $_;
-        print "Caught an error: $e\n";
         $self->error( "Error sending to East Hants: $e" );
     };
     $self->success( !$return );

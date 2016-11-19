@@ -1,25 +1,23 @@
-#!/usr/bin/perl
-
 use strict;
 use warnings;
 
 use Test::More;
 
-use FixMyStreet;
-use FixMyStreet::App;
 use FixMyStreet::TestMech;
+use FixMyStreet;
+use FixMyStreet::DB;
 use mySociety::Locale;
 use Sub::Override;
 
 mySociety::Locale::gettext_domain('FixMyStreet');
 
-my $problem_rs = FixMyStreet::App->model('DB::Problem');
+my $problem_rs = FixMyStreet::DB->resultset('Problem');
 
 my $problem = $problem_rs->new(
     {
         postcode     => 'EH99 1SP',
-        latitude     => '51.5016605453401',
-        longitude    => '-0.142497580865087',
+        latitude     => '54.5',
+        longitude    => '-1.5',
         areas        => 1,
         title        => '',
         detail       => '',
@@ -32,6 +30,23 @@ my $problem = $problem_rs->new(
         cobrand_data => '',
     }
 );
+
+my $visible_states = $problem->visible_states;
+is_deeply $visible_states, {
+    'confirmed'                   => 1,
+    'investigating'               => 1,
+    'in progress'                 => 1,
+    'planned'                     => 1,
+    'action scheduled'            => 1,
+    'fixed'                       => 1,
+    'fixed - council'             => 1,
+    'fixed - user'                => 1,
+    'unable to fix'               => 1,
+    'not responsible'             => 1,
+    'duplicate'                   => 1,
+    'closed'                      => 1,
+    'internal referral'           => 1,
+    }, 'visible_states is correct';
 
 is $problem->confirmed,  undef, 'inflating null confirmed ok';
 is $problem->whensent,   undef, 'inflating null confirmed ok';
@@ -47,30 +62,6 @@ for my $test (
             detail => 'Please enter some details',
             bodies => 'No council selected',
             name => 'Please enter your name',
-        }
-    },
-    {
-        desc => 'name too short',
-        changed => {
-            name => 'xx',
-        },
-        errors => {
-            title => 'Please enter a subject',
-            detail => 'Please enter some details',
-            bodies => 'No council selected',
-            name => 'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below',
-        }
-    },
-    {
-        desc => 'name is anonymous',
-        changed => {
-            name => 'anonymous',
-        },
-        errors => {
-            title => 'Please enter a subject',
-            detail => 'Please enter some details',
-            bodies => 'No council selected',
-            name => 'Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below',
         }
     },
     {
@@ -154,7 +145,7 @@ for my $test (
     };
 }
 
-my $user = FixMyStreet::App->model('DB::User')->find_or_create(
+my $user = FixMyStreet::DB->resultset('User')->find_or_create(
     {
         email => 'system_user@example.com'
     }
@@ -168,7 +159,7 @@ $problem->insert;
 
 my $tz_local = DateTime::TimeZone->new( name => 'local' );
 
-my $body = FixMyStreet::App->model('DB::Body')->new({
+my $body = FixMyStreet::DB->resultset('Body')->new({
     name => 'Edinburgh City Council'
 });
 
@@ -369,66 +360,65 @@ for my $test (
 
 my $mech = FixMyStreet::TestMech->new();
 
-my %contact_params = (
-    confirmed => 1,
-    deleted => 0,
-    editor => 'Test',
-    whenedited => \'ms_current_timestamp()',
-    note => 'Created for test',
-);
-
+my %body_ids;
+my @bodies;
 for my $body (
-    { id => 2651, name => 'City of Edinburgh Council' },
-    { id => 2226, name => 'Gloucestershire County Council' },
-    { id => 2326, name => 'Cheltenham Borough Council' },
-    { id => 2333, name => 'Hart Council' },
-    { id => 2227, name => 'Hampshire County Council' },
-    { id => 14279, name => 'Ballymoney Borough Council' },
-    { id => 2636, name => 'Isle of Wight Council' },
-    { id => 2649, name => 'Fife Council' },
+    { area_id => 2651, name => 'City of Edinburgh Council' },
+    { area_id => 2226, name => 'Gloucestershire County Council' },
+    { area_id => 2326, name => 'Cheltenham Borough Council' },
+    { area_id => 2333, name => 'Hart Council' },
+    { area_id => 2227, name => 'Hampshire County Council' },
+    { area_id => 14279, name => 'Ballymoney Borough Council' },
+    { area_id => 2636, name => 'Isle of Wight Council' },
+    { area_id => 2649, name => 'Fife Council' },
+    { area_id => 14279, name => 'TransportNI (Western)' },
 ) {
-    $mech->create_body_ok($body->{id}, $body->{name});
+    my $aid = $body->{area_id};
+    my $body = $mech->create_body_ok($aid, $body->{name});
+    if ($body_ids{$aid}) {
+        $body_ids{$aid} = [ $body_ids{$aid}, $body->id ];
+    } else {
+        $body_ids{$aid} = $body->id;
+    }
+    push @bodies, $body;
 }
 
 # Let's make some contacts to send things to!
-my @contacts;
 for my $contact ( {
-    body_id => 2651, # Edinburgh
+    body_id => $body_ids{2651}, # Edinburgh
     category => 'potholes',
     email => 'test@example.org',
 }, {
-    body_id => 2226, # Gloucestershire
+    body_id => $body_ids{2226}, # Gloucestershire
     category => 'potholes',
     email => '2226@example.org',
 }, {
-    body_id => 2326, # Cheltenham
+    body_id => $body_ids{2326}, # Cheltenham
     category => 'potholes',
     email => '2326@example.org',
 }, {
-    body_id => 2333, # Hart
+    body_id => $body_ids{2333}, # Hart
     category => 'potholes',
     email => 'trees@example.com',
 }, {
-    body_id => 2227, # Hampshire
+    body_id => $body_ids{2227}, # Hampshire
     category => 'potholes',
     email => 'highways@example.com',
 }, {
-    body_id => 14279, # Ballymoney
+    body_id => $body_ids{14279}[1], # TransportNI
     category => 'Street lighting',
     email => 'roads.western@drdni.example.org',
 }, {
-    body_id => 14279, # Ballymoney
+    body_id => $body_ids{14279}[0], # Ballymoney
     category => 'Graffiti',
     email => 'highways@example.com',
 }, {
     confirmed => 0,
-    body_id => 2636, # Isle of Wight
+    body_id => $body_ids{2636}, # Isle of Wight
     category => 'potholes',
     email => '2636@example.com',
 } ) {
-    my $new_contact = FixMyStreet::App->model('DB::Contact')->find_or_create( { %contact_params, %$contact } );
-    ok $new_contact, "created test contact";
-    push @contacts, $new_contact;
+    $mech->create_contact_ok( %$contact );
 }
 
 my %common = (
@@ -442,13 +432,13 @@ foreach my $test ( {
         email_count   => 1,
         dear          => qr'Dear City of Edinburgh Council',
         to            => qr'City of Edinburgh Council',
-        body          => 2651,
+        body          => $body_ids{2651},
     }, {
         %common,
         desc          => 'no email sent if no unsent problems',
         unset_whendef => 0,
         email_count   => 0,
-        body          => 2651,
+        body          => $body_ids{2651},
     }, {
         %common,
         desc          => 'email to two tier council',
@@ -456,7 +446,7 @@ foreach my $test ( {
         email_count   => 1,
         to            => qr'Cheltenham Borough Council.*Gloucestershire County Council',
         dear          => qr'Dear Cheltenham Borough Council and Gloucestershire County',
-        body          => '2226,2326',
+        body          => $body_ids{2226} . ',' . $body_ids{2326},
         multiple      => 1,
     }, {
         %common,
@@ -465,7 +455,8 @@ foreach my $test ( {
         email_count   => 1,
         to            => qr'Gloucestershire County Council" <2226@example',
         dear          => qr'Dear Gloucestershire County Council,',
-        body          => '2226|2649',
+        body          => $body_ids{2226},
+        body_missing  => $body_ids{2649},
         missing       => qr'problem might be the responsibility of Fife.*Council'ms,
     }, {
         %common,
@@ -474,7 +465,7 @@ foreach my $test ( {
         email_count   => 1,
         to            => qr'Hart Council',
         dear          => qr'Dear Hart Council,',
-        body          => '2333',
+        body          => $body_ids{2333},
         cobrand       => 'hart',
         url           => 'hart.',
     }, {
@@ -484,7 +475,7 @@ foreach my $test ( {
         email_count   => 1,
         to            => qr'Hampshire County Council" <highways@example',
         dear          => qr'Dear Hampshire County Council,',
-        body          => '2227',
+        body          => $body_ids{2227},
         cobrand       => 'hart',
         url           => 'www.',
     }, {
@@ -494,24 +485,26 @@ foreach my $test ( {
         email_count   => 1,
         dear          => qr'Dear Ballymoney Borough Council',
         to            => qr'Ballymoney Borough Council',
-        body          => 14279,
+        body          => $body_ids{14279}[0],
         category      => 'Graffiti',
+        longitude => -6.5,
     }, {
         %common,
         desc          => 'directs NI correctly, 2',
         unset_whendef => 1,
         email_count   => 1,
-        dear          => qr'Dear Roads Service \(Western\)',
-        to            => qr'Roads Service \(Western\)" <roads',
-        body          => 14279,
+        dear          => qr'Dear TransportNI \(Western\)',
+        to            => qr'TransportNI \(Western\)" <roads',
+        body          => $body_ids{14279}[1],
         category      => 'Street lighting',
+        longitude => -6.5,
     }, {
         %common,
         desc          => 'does not send to unconfirmed contact',
         unset_whendef => 1,
         stays_unsent  => 1,
         email_count   => 0,
-        body          => 2636,
+        body          => $body_ids{2636},
     },
 ) {
     subtest $test->{ desc } => sub {
@@ -526,25 +519,27 @@ foreach my $test ( {
 
         $mech->clear_emails_ok;
 
-        FixMyStreet::App->model('DB::Problem')->search(
+        $problem_rs->search(
             {
                 whensent => undef
             }
-        )->update( { whensent => \'ms_current_timestamp()' } );
+        )->update( { whensent => \'current_timestamp' } );
 
         $problem->discard_changes;
         $problem->update( {
             bodies_str => $test->{ body },
+            bodies_missing => $test->{ body_missing },
             state => 'confirmed',
-            confirmed => \'ms_current_timestamp()',
-            whensent => $test->{ unset_whendef } ? undef : \'ms_current_timestamp()',
+            confirmed => \'current_timestamp',
+            whensent => $test->{ unset_whendef } ? undef : \'current_timestamp',
             category => $test->{ category } || 'potholes',
             name => $test->{ name },
             cobrand => $test->{ cobrand } || 'fixmystreet',
+            longitude => $test->{longitude} || '-1.5',
         } );
 
         FixMyStreet::override_config $override, sub {
-            FixMyStreet::App->model('DB::Problem')->send_reports();
+            $problem_rs->send_reports();
         };
 
         $mech->email_count_is( $test->{ email_count } );
@@ -553,19 +548,25 @@ foreach my $test ( {
             like $email->header('To'), $test->{ to }, 'to line looks correct';
             is $email->header('From'), sprintf('"%s" <%s>', $test->{ name }, $test->{ email } ), 'from line looks correct';
             like $email->header('Subject'), qr/A Title/, 'subject line looks correct';
-            like $email->body, qr/A user of FixMyStreet/, 'email body looks a bit like a report';
-            like $email->body, qr/Subject: A Title/, 'more email body checking';
-            like $email->body, $test->{ dear }, 'Salutation looks correct';
+            my $body = $mech->get_text_body_from_email($email);
+            like $body, qr/A user of FixMyStreet/, 'email body looks a bit like a report';
+            like $body, qr/Subject: A Title/, 'more email body checking';
+            like $body, $test->{ dear }, 'Salutation looks correct';
+            if ($test->{longitude}) {
+                like $body, qr{Easting/Northing \(IE\): 297279/362371};
+            } else {
+                like $body, qr{Easting/Northing: };
+            }
 
             if ( $test->{multiple} ) {
-                like $email->body, qr/This email has been sent to several councils /, 'multiple body text correct';
+                like $body, qr/This email has been sent to several councils /, 'multiple body text correct';
             } elsif ( $test->{ missing } ) {
-                like $email->body, $test->{ missing }, 'missing body information correct';
+                like $body, $test->{ missing }, 'missing body information correct';
             }
 
             if ( $test->{url} ) {
                 my $id = $problem->id;
-                like $email->body, qr[$test->{url}fixmystreet.com/report/$id], 'URL present is correct';
+                like $body, qr[$test->{url}fixmystreet.com/report/$id], 'URL present is correct';
             }
 
             $problem->discard_changes;
@@ -586,28 +587,25 @@ subtest 'check can set mutiple emails as a single contact' => sub {
     };
 
     my $contact = {
-        body_id => 2651, # Edinburgh
+        body_id => $body_ids{2651}, # Edinburgh
         category => 'trees',
         email => '2636@example.com,2636-2@example.com',
     };
-    my $new_contact = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-            %contact_params, 
-            %$contact } );
-    ok $new_contact, "created multiple email test contact";
+    $mech->create_contact_ok( %$contact );
 
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
         bodies_str => $contact->{ body_id },
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'trees',
         name => 'Test User',
@@ -616,7 +614,7 @@ subtest 'check can set mutiple emails as a single contact' => sub {
     } );
 
     FixMyStreet::override_config $override, sub {
-        FixMyStreet::App->model('DB::Problem')->send_reports();
+        $problem_rs->send_reports();
     };
 
     $mech->email_count_is(1);
@@ -631,17 +629,17 @@ subtest 'check can turn on report sent email alerts' => sub {
     );
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
-        bodies_str => 2651,
+        bodies_str => $body_ids{2651},
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         name => 'Test User',
@@ -649,7 +647,7 @@ subtest 'check can turn on report sent email alerts' => sub {
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 2 );
     my @emails = $mech->get_email;
@@ -658,16 +656,18 @@ subtest 'check can turn on report sent email alerts' => sub {
     like $email->header('To'),qr/City of Edinburgh Council/, 'to line looks correct';
     is $email->header('From'), '"Test User" <system_user@example.com>', 'from line looks correct';
     like $email->header('Subject'), qr/A Title/, 'subject line looks correct';
-    like $email->body, qr/A user of FixMyStreet/, 'email body looks a bit like a report';
-    like $email->body, qr/Subject: A Title/, 'more email body checking';
-    like $email->body, qr/Dear City of Edinburgh Council/, 'Salutation looks correct';
+    my $body = $mech->get_text_body_from_email($email);
+    like $body, qr/A user of FixMyStreet/, 'email body looks a bit like a report';
+    like $body, qr/Subject: A Title/, 'more email body checking';
+    like $body, qr/Dear City of Edinburgh Council/, 'Salutation looks correct';
 
     $problem->discard_changes;
     ok defined( $problem->whensent ), 'whensent set';
 
     $email = $emails[1];
     like $email->header('Subject'), qr/FixMyStreet Report Sent/, 'report sent email title correct';
-    like $email->body, qr/to submit your report/, 'report sent body correct';
+    $body = $mech->get_text_body_from_email($email);
+    like $body, qr/to submit your report/, 'report sent body correct';
 
     $send_confirmation_mail_override->restore();
 };
@@ -676,24 +676,24 @@ subtest 'check can turn on report sent email alerts' => sub {
 subtest 'check iOS app store test reports not sent' => sub {
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
-        bodies_str => 2651,
+        bodies_str => $body_ids{2651},
         title => 'App store test',
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 0 );
 
@@ -705,24 +705,24 @@ subtest 'check iOS app store test reports not sent' => sub {
 subtest 'check reports from abuser not sent' => sub {
     $mech->clear_emails_ok;
 
-    FixMyStreet::App->model('DB::Problem')->search(
+    $problem_rs->search(
         {
             whensent => undef
         }
-    )->update( { whensent => \'ms_current_timestamp()' } );
+    )->update( { whensent => \'current_timestamp' } );
 
     $problem->discard_changes;
     $problem->update( {
-        bodies_str => 2651,
+        bodies_str => $body_ids{2651},
         title => 'Report',
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
         category => 'potholes',
         send_fail_count => 0,
     } );
 
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 1 );
 
@@ -731,14 +731,14 @@ subtest 'check reports from abuser not sent' => sub {
 
     $problem->update( {
         state => 'confirmed',
-        confirmed => \'ms_current_timestamp()',
+        confirmed => \'current_timestamp',
         whensent => undef,
     } );
 
-    my $abuse = FixMyStreet::App->model('DB::Abuse')->create( { email => $problem->user->email } );
+    my $abuse = FixMyStreet::DB->resultset('Abuse')->create( { email => $problem->user->email } );
 
     $mech->clear_emails_ok;
-    FixMyStreet::App->model('DB::Problem')->send_reports();
+    $problem_rs->send_reports();
 
     $mech->email_count_is( 0 );
 
@@ -749,14 +749,26 @@ subtest 'check reports from abuser not sent' => sub {
     ok $abuse->delete(), 'user removed from abuse table';
 };
 
+subtest 'check response templates' => sub {
+    my $c1 = $mech->create_contact_ok(category => 'Potholes', body_id => $body_ids{2651}, email => 'p');
+    my $c2 = $mech->create_contact_ok(category => 'Graffiti', body_id => $body_ids{2651}, email => 'g');
+    my $t1 = FixMyStreet::DB->resultset('ResponseTemplate')->create({ body_id => $body_ids{2651}, title => "Title 1", text => "Text 1" });
+    my $t2 = FixMyStreet::DB->resultset('ResponseTemplate')->create({ body_id => $body_ids{2651}, title => "Title 2", text => "Text 2" });
+    my $t3 = FixMyStreet::DB->resultset('ResponseTemplate')->create({ body_id => $body_ids{2651}, title => "Title 3", text => "Text 3" });
+    $t1->add_to_contacts($c1);
+    $t2->add_to_contacts($c2);
+    my ($problem) = $mech->create_problems_for_body(1, $body_ids{2651}, 'TITLE');
+    is $problem->response_templates, 1, 'Only the global template returned';
+    ($problem) = $mech->create_problems_for_body(1, $body_ids{2651}, 'TITLE', { category => 'Potholes' });
+    is $problem->response_templates, 2, 'Global and pothole templates returned';
+};
+
 END {
     $problem->comments->delete if $problem;
     $problem->delete if $problem;
     $mech->delete_user( $user ) if $user;
 
-    foreach (@contacts) {
-        $_->delete;
-    }
+    $mech->delete_body($_) for @bodies;
 
     done_testing();
 }

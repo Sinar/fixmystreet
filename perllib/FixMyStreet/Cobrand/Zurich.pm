@@ -4,9 +4,13 @@ use base 'FixMyStreet::Cobrand::Default';
 use DateTime;
 use POSIX qw(strcoll);
 use RABX;
+use Scalar::Util 'blessed';
+use DateTime::Format::Pg;
 
 use strict;
 use warnings;
+use feature 'say';
+use utf8;
 
 =head1 NAME
 
@@ -76,17 +80,10 @@ sub example_places {
     return [ 'Langstrasse', 'Basteiplatz' ];
 }
 
-sub languages { [ 'de-ch,Deutsch,de_CH', 'en-gb,English,en_GB' ] }
+sub languages { [ 'de-ch,Deutsch,de_CH' ] }
 sub language_override { 'de-ch' }
 
-# If lat/lon are in the URI, we must have zoom as well, otherwise OpenLayers defaults to 0.
-sub uri {
-    my ( $self, $uri ) = @_;
-
-    $uri->query_param( zoom => 6 )
-      if $uri->query_param('lat') && !$uri->query_param('zoom');
-    return $uri;
-}
+sub default_link_zoom { 6 }
 
 sub prettify_dt {
     my $self = shift;
@@ -104,8 +101,11 @@ sub prettify_dt {
 sub zurich_closed_states {
     my $states = {
         'fixed - council' => 1,
-        'closed'          => 1,
+        'closed'          => 1, # extern
         'hidden'          => 1,
+        'investigating'   => 1, # wish
+        'unable to fix'   => 1, # jurisdiction  unknown
+        'partial'         => 1, # not contactable
     };
 
     return wantarray ? keys %{ $states } : $states;
@@ -114,6 +114,37 @@ sub zurich_closed_states {
 sub problem_is_closed {
     my ($self, $problem) = @_;
     return exists $self->zurich_closed_states->{ $problem->state } ? 1 : 0;
+}
+
+sub zurich_public_response_states {
+    my $states = {
+        'fixed - council' => 1,
+        'closed'          => 1, # extern
+        'unable to fix'   => 1, # jurisdiction unknown
+    };
+
+    return wantarray ? keys %{ $states } : $states;
+}
+
+sub zurich_user_response_states {
+    my $states = {
+        'hidden'          => 1,
+        'investigating'   => 1, # wish
+        'partial'         => 1, # not contactable
+    };
+
+    return wantarray ? keys %{ $states } : $states;
+}
+
+sub problem_has_public_response {
+    my ($self, $problem) = @_;
+    return exists $self->zurich_public_response_states->{ $problem->state } ? 1 : 0;
+}
+
+sub problem_has_user_response {
+    my ($self, $problem) = @_;
+    my $state_matches = exists $self->zurich_user_response_states->{ $problem->state } ? 1 : 0;
+    return $state_matches && $problem->get_extra_metadata('public_response');
 }
 
 sub problem_as_hashref {
@@ -131,16 +162,35 @@ sub problem_as_hashref {
         $hashref->{title} = _('This report is awaiting moderation.');
         $hashref->{state} = 'submitted';
         $hashref->{state_t} = _('Submitted');
+        $hashref->{banner_id} = 'closed';
     } else {
         if ( $problem->state eq 'confirmed' ) {
             $hashref->{state} = 'open';
             $hashref->{state_t} = _('Open');
+            $hashref->{banner_id} = 'closed';
+        } elsif ( $problem->state eq 'closed' ) {
+            $hashref->{state} = 'extern'; # is this correct?
+            $hashref->{banner_id} = 'closed';
+            $hashref->{state_t} = _('Extern');
+        } elsif ( $problem->state eq 'unable to fix' ) {
+            $hashref->{state} = 'jurisdiction unknown'; # is this correct?
+            $hashref->{state_t} = _('Jurisdiction Unknown');
+            $hashref->{banner_id} = 'fixed'; # green
+        } elsif ( $problem->state eq 'partial' ) {
+            $hashref->{state} = 'not contactable'; # is this correct?
+            $hashref->{state_t} = _('Not contactable');
+            # no banner_id as hidden
+        } elsif ( $problem->state eq 'investigating' ) {
+            $hashref->{state} = 'wish'; # is this correct?
+            $hashref->{state_t} = _('Wish');
         } elsif ( $problem->is_fixed ) {
             $hashref->{state} = 'closed';
+            $hashref->{banner_id} = 'fixed';
             $hashref->{state_t} = _('Closed');
         } elsif ( $problem->state eq 'in progress' || $problem->state eq 'planned' ) {
             $hashref->{state} = 'in progress';
             $hashref->{state_t} = _('In progress');
+            $hashref->{banner_id} = 'progress';
         }
     }
 
@@ -158,7 +208,8 @@ sub updates_as_hashref {
         $hashref->{update_pp} = $self->prettify_dt( $problem->lastupdate );
 
         if ( $problem->state eq 'fixed - council' ) {
-            $hashref->{details} = FixMyStreet::App::View::Web->add_links( $ctx, $problem->extra ? $problem->extra->{public_response} : '' );
+            $hashref->{details} = FixMyStreet::App::View::Web::add_links(
+                $problem->get_extra_metadata('public_response') || '' );
         } elsif ( $problem->state eq 'closed' ) {
             $hashref->{details} = sprintf( _('Assigned to %s'), $problem->body($ctx)->name );
         }
@@ -169,13 +220,16 @@ sub updates_as_hashref {
 
 sub allow_photo_display {
     my ( $self, $r ) = @_;
-    if (ref($r) ne 'HASH') {
-        return $r->extra && $r->extra->{publish_photo};
+    if (blessed $r) {
+        return $r->get_extra_metadata( 'publish_photo' );
     }
+
+    # additional munging in case $r isn't an object, TODO see if we can remove this
     my $extra = $r->{extra};
     utf8::encode($extra) if utf8::is_utf8($extra);
     my $h = new IO::String($extra);
     $extra = RABX::wire_rd($h);
+    return unless ref $extra eq 'HASH';
     return $extra->{publish_photo};
 }
 
@@ -264,18 +318,56 @@ sub get_or_check_overdue {
     my ($self, $problem) = @_;
 
     # use the cached version is it exists (e.g. when called from template)
-    my $extra = $problem->extra;
-    if (exists $extra->{closed_overdue} and defined $extra->{closed_overdue}) {
-        return $extra->{closed_overdue}
-    }
+    my $overdue = $problem->get_extra_metadata('closed_overdue');
+    return $overdue if defined $overdue;
+
     return $self->overdue($problem);
 }
 
+=head1 C<set_problem_state>
+
+If the state has changed, sets the state and calls C::Admin's C<log_edit> action.
+If the state hasn't changed, defers to update_admin_log (to update time_spent if any).
+
+Returns either undef or the AdminLog entry created.
+
+=cut
+
 sub set_problem_state {
     my ($self, $c, $problem, $new_state) = @_;
-    return if $new_state eq $problem->state;
+    return $self->update_admin_log($c, $problem) if $new_state eq $problem->state;
     $problem->state( $new_state );
     $c->forward( 'log_edit', [ $problem->id, 'problem', "state change to $new_state" ] );
+}
+
+=head1 C<update_admin_log>
+
+Calls C::Admin's C<log_edit> if either a) text is provided, or b) there has
+been time_spent on the task.  As set_problem_state will already call log_edit
+if required, don't call this as well.
+
+Returns either undef or the AdminLog entry created.
+
+=cut
+
+sub update_admin_log {
+    my ($self, $c, $problem, $text) = @_;
+
+    my $time_spent = ( ($c->get_param('time_spent') // 0) + 0 );
+    $c->set_param('time_spent' => 0); # explicitly zero this to avoid duplicates
+
+    if (!$text) {
+        return unless $time_spent;
+        $text = "Logging time_spent";
+    }
+
+    $c->forward( 'log_edit', [ $problem->id, 'problem', $text, $time_spent ] );
+}
+
+# Any user with from_body set can view admin
+sub admin_allow_user {
+    my ( $self, $user ) = @_;
+    return 1 if $user->from_body;
 }
 
 # Specific administrative displays
@@ -285,24 +377,25 @@ sub admin_pages {
     my $c = $self->{c};
 
     my $type = $c->stash->{admin_type};
+
     my $pages = {
         'summary' => [_('Summary'), 0],
         'reports' => [_('Reports'), 2],
         'report_edit' => [undef, undef],
         'update_edit' => [undef, undef],
+        'stats' => [_('Stats'), 4],
     };
     return $pages if $type eq 'sdm';
 
     $pages = { %$pages,
         'bodies' => [_('Bodies'), 1],
         'body' => [undef, undef],
-        'body_edit' => [undef, undef],
+        'templates' => [_('Templates'), 2],
     };
     return $pages if $type eq 'dm';
 
     $pages = { %$pages,
         'users' => [_('Users'), 3],
-        'stats' => [_('Stats'), 4],
         'user_edit' => [undef, undef],
     };
     return $pages if $type eq 'super';
@@ -339,8 +432,8 @@ sub admin {
         my @children = map { $_->id } $body->bodies->all;
         my @all = (@children, $body->id);
 
-        my $order = $c->req->params->{o} || 'created';
-        my $dir = defined $c->req->params->{d} ? $c->req->params->{d} : 1;
+        my $order = $c->get_param('o') || 'created';
+        my $dir = defined $c->get_param('d') ? $c->get_param('d') : 1;
         $c->stash->{order} = $order;
         $c->stash->{dir} = $dir;
         $order .= ' desc' if $dir;
@@ -359,7 +452,7 @@ sub admin {
             order_by => $order,
         });
 
-        my $page = $c->req->params->{p} || 1;
+        my $page = $c->get_param('p') || 1;
         $c->stash->{other} = $c->cobrand->problems->search({
             state => { -not_in => [ 'unconfirmed', 'confirmed', 'planned' ] },
             bodies_str => \@all,
@@ -373,8 +466,8 @@ sub admin {
 
         my $body = $c->stash->{body};
 
-        my $order = $c->req->params->{o} || 'created';
-        my $dir = defined $c->req->params->{d} ? $c->req->params->{d} : 1;
+        my $order = $c->get_param('o') || 'created';
+        my $dir = defined $c->get_param('d') ? $c->get_param('d') : 1;
         $c->stash->{order} = $order;
         $c->stash->{dir} = $dir;
         $order .= ' desc' if $dir;
@@ -393,7 +486,7 @@ sub admin {
             order_by => $order
         } );
 
-        my $page = $c->req->params->{p} || 1;
+        my $page = $c->get_param('p') || 1;
         $c->stash->{reports_published} = $c->cobrand->problems->search( {
             state => 'fixed - council',
             bodies_str => $body->parent->id,
@@ -445,15 +538,15 @@ sub admin_report_edit {
 
     }
 
-    # If super or sdm check that the token is correct before proceeding
-    if ( ($type eq 'super' || $type eq 'dm') && $c->req->param('submit') ) {
-        $c->forward('check_token');
+    # If super or dm check that the token is correct before proceeding
+    if ( ($type eq 'super' || $type eq 'dm') && $c->get_param('submit') ) {
+        $c->forward('/auth/check_csrf_token');
     }
 
     # All types of users can add internal notes
-    if ( ($type eq 'super' || $type eq 'dm' || $type eq 'sdm') && $c->req->param('submit') ) {
+    if ( ($type eq 'super' || $type eq 'dm' || $type eq 'sdm') && $c->get_param('submit') ) {
         # If there is a new note add it as a comment to the problem (with is_internal_note set true in extra).
-        if ( my $new_internal_note = $c->req->params->{new_internal_note} ) {
+        if ( my $new_internal_note = $c->get_param('new_internal_note') ) {
             $problem->add_to_comments( {
                 text => $new_internal_note,
                 user => $c->user->obj,
@@ -465,89 +558,208 @@ sub admin_report_edit {
         }
     }
 
+
     # Problem updates upon submission
-    if ( ($type eq 'super' || $type eq 'dm') && $c->req->param('submit') ) {
-        # Predefine the hash so it's there for lookups
-        my $extra = $problem->extra || {};
-        $extra->{publish_photo} = $c->req->params->{publish_photo} || 0;
-        $extra->{third_personal} = $c->req->params->{third_personal} || 0;
+    if ( ($type eq 'super' || $type eq 'dm') && $c->get_param('submit') ) {
+        $problem->set_extra_metadata('publish_photo' => $c->get_param('publish_photo') || 0 );
+        $problem->set_extra_metadata('third_personal' => $c->get_param('third_personal') || 0 );
+
         # Make sure we have a copy of the original detail field
-        $extra->{original_detail} = $problem->detail if !$extra->{original_detail} && $c->req->params->{detail} && $problem->detail ne $c->req->params->{detail};
+        if (my $new_detail = $c->get_param('detail')) {
+            my $old_detail = $problem->detail;
+            if (! $problem->get_extra_metadata('original_detail')
+                && ($old_detail ne $new_detail))
+            {
+                $problem->set_extra_metadata( original_detail => $old_detail );
+            }
+        }
 
         # Some changes will be accompanied by an internal note, which if needed
         # should be stored in this variable.
         my $internal_note_text = "";
 
         # Workflow things
+        #
+        #   Note that 2 types of email may be sent
+        #    1) _admin_send_email()  sends an email to the *user*, if their email is confirmed
+        #
+        #    2) setting $problem->whensent(undef) may make it eligible for generating an email
+        #   to the body (internal or external).  See DBRS::Problem->send_reports for Zurich-
+        #   specific categories which are eligible for this.
+
         my $redirect = 0;
-        my $new_cat = $c->req->params->{category};
-        if ( $new_cat && $new_cat ne $problem->category ) {
-            my $cat = $c->model('DB::Contact')->search( { category => $c->req->params->{category} } )->first;
+        my $new_cat = $c->get_param('category') || '';
+        my $state = $c->get_param('state') || '';
+        my $oldstate = $problem->state;
+
+        my $closure_states = $self->zurich_closed_states;
+        delete $closure_states->{'fixed - council'}; # may not be needed?
+
+        my $old_closure_state = $problem->get_extra_metadata('closure_status');
+
+        # update the public update from DM
+        if (my $update = $c->get_param('status_update')) {
+            $problem->set_extra_metadata(public_response => $update);
+        }
+
+        if (
+            ($state eq 'confirmed') 
+            && $new_cat
+            && $new_cat ne $problem->category
+        ) {
+            my $cat = $c->model('DB::Contact')->search({ category => $c->get_param('category') } )->first;
             my $old_cat = $problem->category;
             $problem->category( $new_cat );
             $problem->external_body( undef );
             $problem->bodies_str( $cat->body_id );
             $problem->whensent( undef );
-            $extra->{changed_category} = 1;
+            $problem->set_extra_metadata(changed_category => 1);
             $internal_note_text = "Weitergeleitet von $old_cat an $new_cat";
+            $self->update_admin_log($c, $problem, "Changed category from $old_cat to $new_cat");
             $redirect = 1 if $cat->body_id ne $body->id;
-        } elsif ( my $subdiv = $c->req->params->{body_subdivision} ) {
-            $extra->{moderated_overdue} //= $self->overdue( $problem );
+        } elsif ( $closure_states->{$state} and
+                    ( $oldstate ne 'planned' )
+                    || (($old_closure_state ||'') ne $state))
+        {
+            # for these states
+            #  - closed (Extern)
+            #  - investigating (Wish)
+            #  - hidden
+            #  - partial (Not contactable)
+            #  - unable to fix (Jurisdiction unknown)
+            # we divert to planned (Rueckmeldung ausstehend) and set closure_status to the requested state
+            # From here, the DM can reply to the user, triggering the setting of problem to correct state
+            $problem->set_extra_metadata( closure_status => $state );
+            $self->set_problem_state($c, $problem, 'planned');
+            $state = 'planned';
+            $problem->set_extra_metadata_if_undefined( moderated_overdue => $self->overdue( $problem ) );
+
+        } elsif ( my $subdiv = $c->get_param('body_subdivision') ) {
+            $problem->set_extra_metadata_if_undefined( moderated_overdue => $self->overdue( $problem ) );
             $self->set_problem_state($c, $problem, 'in progress');
             $problem->external_body( undef );
             $problem->bodies_str( $subdiv );
             $problem->whensent( undef );
             $redirect = 1;
-        } elsif ( my $external = $c->req->params->{body_external} ) {
-            $extra->{moderated_overdue} //= $self->overdue( $problem );
-            $self->set_problem_state($c, $problem, 'closed');
-            $extra->{closed_overdue} //= $self->overdue( $problem );
-            $problem->external_body( $external );
-            $problem->whensent( undef );
-            _admin_send_email( $c, 'problem-external.txt', $problem );
-            $redirect = 1;
         } else {
-            if (my $state = $c->req->params->{state}) {
+            if ($state) {
 
-                if ($problem->state eq 'unconfirmed' and $state ne 'unconfirmed') {
+                if ($oldstate eq 'unconfirmed' and $state ne 'unconfirmed') {
                     # only set this for the first state change
-                    $extra->{moderated_overdue} //= $self->overdue( $problem );
+                    $problem->set_extra_metadata_if_undefined( moderated_overdue => $self->overdue( $problem ) );
                 }
+
+                $self->set_problem_state($c, $problem, $state)
+                    unless $closure_states->{$state};
+                    # we'll defer to 'planned' clause below to change the state
+            }
+        }
+
+        if ($problem->state eq 'planned') {
+            # Rueckmeldung ausstehend
+            # override $state from the metadata set above
+            $state = $problem->get_extra_metadata('closure_status') || '';
+            my ($moderated, $closed) = (0, 0);
+
+            if ($state eq 'hidden' && $c->get_param('publish_response') ) {
+                _admin_send_email( $c, 'problem-rejected.txt', $problem );
 
                 $self->set_problem_state($c, $problem, $state);
-
-                if ($self->problem_is_closed($problem)) {
-                    $extra->{closed_overdue} //= $self->overdue( $problem );
-                }
-                if ( $state eq 'hidden' && $c->req->params->{send_rejected_email} ) {
-                    _admin_send_email( $c, 'problem-rejected.txt', $problem );
-                }
+                $moderated++;
+                $closed++;
             }
-        }
+            elsif ($state =~/^(closed|investigating)$/) { # Extern | Wish
+                $moderated++;
+                # Nested if instead of `and` because in these cases, we *don't*
+                # want to close unless we have body_external (so we don't want
+                # the final elsif clause below to kick in on publish_response)
+                if (my $external = $c->get_param('body_external')) {
+                    my $external_body = $c->model('DB::Body')->find($external)
+                        or die "Body $external not found";
+                    $problem->external_body( $external );
+                }
+                if ($problem->external_body && $c->get_param('publish_response')) {
+                    $problem->whensent( undef );
+                    $self->set_problem_state($c, $problem, $state);
+                    my $template = ($state eq 'investigating') ? 'problem-wish.txt' : 'problem-external.txt';
+                    _admin_send_email( $c, $template, $problem );
+                    $redirect = 0;
+                    $closed++;
+                }
+                # set the external_message in extra, so that it can be edited again
+                if ( my $external_message = $c->get_param('external_message') ) {
+                    $problem->set_extra_metadata( external_message => $external_message );
+                }
+                # else should really return a message here
+            }
+            elsif ($c->get_param('publish_response')) {
+                # otherwise we only set the state if publish_response is set
+                #
 
-        $problem->extra( $extra );
-        $problem->title( $c->req->param('title') );
-        $problem->detail( $c->req->param('detail') );
-        $problem->latitude( $c->req->param('latitude') );
-        $problem->longitude( $c->req->param('longitude') );
-
-        # Final, public, Update from DM
-        if (my $update = $c->req->param('status_update')) {
-            $extra->{public_response} = $update;
-            $problem->extra( $extra );
-            if ($c->req->params->{publish_response}) {
-                $self->set_problem_state($c, $problem, 'fixed - council');
-                $extra->{closed_overdue} = $self->overdue( $problem );
-                $problem->extra( { %$extra } );
+                # if $state wasn't set, then we are simply closing the message as fixed
+                $state ||= 'fixed - council';
                 _admin_send_email( $c, 'problem-closed.txt', $problem );
+                $redirect = 0;
+                $moderated++;
+                $closed++;
+            }
+
+            if ($moderated) {
+                $problem->set_extra_metadata_if_undefined( moderated_overdue => $self->overdue( $problem ) );
+            }
+
+            if ($closed) {
+                # set to either the closure_status from metadata or 'fixed - council' as above
+                $self->set_problem_state($c, $problem, $state);
+                $problem->set_extra_metadata_if_undefined( closed_overdue => $self->overdue( $problem ) );
+                $problem->unset_extra_metadata('closure_status');
             }
         }
+        else {
+            $problem->unset_extra_metadata('closure_status');
+        }
 
-        $problem->lastupdate( \'ms_current_timestamp()' );
+        $problem->title( $c->get_param('title') ) if $c->get_param('title');
+        $problem->detail( $c->get_param('detail') ) if $c->get_param('detail');
+        $problem->latitude( $c->get_param('latitude') );
+        $problem->longitude( $c->get_param('longitude') );
+
+        # send external_message if provided and state is *now* Wish|Extern
+        # e.g. was already, or was set in the Rueckmeldung ausstehend clause above.
+        if ( my $external_message = $c->get_param('external_message')
+             and $problem->state =~ /^(closed|investigating)$/)
+        {
+            my $external = $problem->external_body;
+            my $external_body = $c->model('DB::Body')->find($external)
+                or die "Body $external not found";
+
+            $problem->set_extra_metadata_if_undefined( moderated_overdue => $self->overdue( $problem ) );
+            # Create a Comment on this Problem with the content of the external message.
+            # NB this isn't directly shown anywhere, but is for logging purposes.
+            $problem->add_to_comments( {
+                text => (
+                    sprintf '(%s %s) %s',
+                    $state eq 'closed' ?
+                        _('Forwarded to external body') :
+                        _('Forwarded wish to external body'),
+                    $external_body->name,
+                    $external_message,
+                ),
+                user => $c->user->obj,
+                state => 'hidden', # seems best fit, should not be shown publicly
+                mark_fixed => 0,
+                anonymous => 1,
+                extra => { is_internal_note => 1, is_external_message => 1 },
+            } );
+            # set the external_message in extra, so that it will be picked up
+            # later by send-reports
+            $problem->set_extra_metadata( external_message => $external_message );
+        }
+
+        $problem->lastupdate( \'current_timestamp' );
         $problem->update;
 
-        $c->stash->{status_message} =
-          '<p><em>' . _('Updated!') . '</em></p>';
+        $c->stash->{status_message} = '<p class="message-updated">' . _('Updated!') . '</p>';
 
         # do this here otherwise lastupdate and confirmed times
         # do not display correctly (reloads problem from database, including
@@ -566,14 +778,21 @@ sub admin_report_edit {
             } );
         }
 
-        if ( $redirect ) {
-            $c->detach('index');
+        # Just update if time_spent still hasn't been logged
+        # (this will only happen if no other update_admin_log has already been called)
+        $self->update_admin_log($c, $problem);
+
+        if ( $redirect and $type eq 'dm' ) {
+            # only redirect for DM
+            $c->stash->{status_message} ||= '<p class="message-updated">' . _('Updated!') . '</p>';
+            $c->go('index');
         }
 
         $c->stash->{updates} = [ $c->model('DB::Comment')
           ->search( { problem_id => $problem->id }, { order_by => 'created' } )
           ->all ];
 
+        $self->stash_states($problem);
         return 1;
     }
 
@@ -582,30 +801,47 @@ sub admin_report_edit {
         # Has cut-down edit template for adding update and sending back up only
         $c->stash->{template} = 'admin/report_edit-sdm.html';
 
-        if ($c->req->param('send_back')) {
-            $c->forward('check_token');
+        if ($c->get_param('send_back') or $c->get_param('not_contactable')) {
+            # SDM can send back a report either to be assigned to a different
+            # subdivision, or because the customer was not contactable.
+            # We handle these in the same way but with different statuses.
+
+            $c->forward('/auth/check_csrf_token');
+
+            my $not_contactable = $c->get_param('not_contactable');
 
             $problem->bodies_str( $body->parent->id );
-            $self->set_problem_state($c, $problem, 'confirmed');
+            if ($not_contactable) {
+                # we can't directly set state, but mark the closure_status for DM to confirm.
+                $self->set_problem_state($c, $problem, 'planned');
+                $problem->set_extra_metadata( closure_status => 'partial');
+            }
+            else {
+                $self->set_problem_state($c, $problem, 'confirmed');
+            }
             $problem->update;
-            # log here
+            $c->forward( 'log_edit', [ $problem->id, 'problem', 
+                $not_contactable ?
+                    _('Customer not contactable')
+                    : _('Sent report back') ] );
+            # Make sure the problem's time_spent is updated
+            $self->update_admin_log($c, $problem);
             $c->res->redirect( '/admin/summary' );
-
-        } elsif ($c->req->param('submit')) {
-            $c->forward('check_token');
+        } elsif ($c->get_param('submit')) {
+            $c->forward('/auth/check_csrf_token');
 
             my $db_update = 0;
-            if ( $c->req->param('latitude') != $problem->latitude || $c->req->param('longitude') != $problem->longitude ) {
-                $problem->latitude( $c->req->param('latitude') );
-                $problem->longitude( $c->req->param('longitude') );
+            if ( $c->get_param('latitude') != $problem->latitude || $c->get_param('longitude') != $problem->longitude ) {
+                $problem->latitude( $c->get_param('latitude') );
+                $problem->longitude( $c->get_param('longitude') );
                 $db_update = 1;
             }
 
             $problem->update if $db_update;
 
             # Add new update from status_update
-            if (my $update = $c->req->param('status_update')) {
-                FixMyStreet::App->model('DB::Comment')->create( {
+            if (my $update = $c->get_param('status_update')) {
+                $c->model('DB::Comment')->create( {
                     text => $update,
                     user => $c->user->obj,
                     state => 'unconfirmed',
@@ -615,14 +851,14 @@ sub admin_report_edit {
                     anonymous => 1,
                 } );
             }
+            # Make sure the problem's time_spent is updated
+            $self->update_admin_log($c, $problem);
 
-            $c->stash->{status_message} = '<p><em>' . _('Updated!') . '</em></p>';
+            $c->stash->{status_message} = '<p class="message-updated">' . _('Updated!') . '</p>';
 
             # If they clicked the no more updates button, we're done.
-            if ($c->req->param('no_more_updates')) {
-                my $extra = $problem->extra || {};
-                $extra->{subdiv_overdue} = $self->overdue( $problem );
-                $problem->extra( $extra );
+            if ($c->get_param('no_more_updates')) {
+                $problem->set_extra_metadata( subdiv_overdue => $self->overdue( $problem ) );
                 $problem->bodies_str( $body->parent->id );
                 $problem->whensent( undef );
                 $self->set_problem_state($c, $problem, 'planned');
@@ -635,33 +871,157 @@ sub admin_report_edit {
             ->search( { problem_id => $problem->id }, { order_by => 'created' } )
             ->all ];
 
+        $self->stash_states($problem);
         return 1;
 
     }
 
+    $self->stash_states($problem);
     return 0;
 
 }
 
+sub stash_states {
+    my ($self, $problem) = @_;
+    my $c = $self->{c};
+
+    # current problem state affects which states are visible in dropdowns
+    my @states = (
+        {
+            # Erfasst
+            state => 'unconfirmed',
+            trans => _('Submitted'),
+            unconfirmed => 1,
+            hidden => 1,
+        },
+        {
+            # Aufgenommen
+            state => 'confirmed',
+            trans => _('Open'),
+            unconfirmed => 1,
+        },
+        {
+            # Unsichtbar (hidden)
+            state => 'hidden',
+            trans => _('Hidden'),
+            unconfirmed => 1,
+            hidden => 1,
+        },
+        {
+            # Extern
+            state => 'closed',
+            trans => _('Extern'),
+        },
+        {
+            # Zustaendigkeit unbekannt
+            state => 'unable to fix',
+            trans => _('Jurisdiction unknown'),
+        },
+        {
+            # Wunsch (hidden)
+            state => 'investigating',
+            trans => _('Wish'),
+        },
+        {
+            # Nicht kontaktierbar (hidden)
+            state => 'partial',
+            trans => _('Not contactable'),
+        },
+    );
+    my %state_trans = map { $_->{state} => $_->{trans} } @states;
+
+    my $state = $problem->state;
+
+    # Rueckmeldung ausstehend may also indicate the status it's working towards.
+    push @states, do {
+        if ($state eq 'planned' and my $closure_status = $problem->get_extra_metadata('closure_status')) {
+            {
+                state => $closure_status,
+                trans => sprintf '%s (%s)', _('Planned'), $state_trans{$closure_status},
+            };
+        }
+        else {
+            {
+                state => 'planned',
+                trans => _('Planned'),
+            };
+        }
+    };
+
+    if ($state eq 'in progress') {
+        push @states, {
+            state => 'in progress',
+            trans => _('In progress'),
+        };
+    }
+    elsif ($state eq 'fixed - council') {
+        push @states, {
+            state => 'fixed - council',
+            trans => _('Closed'),
+        };
+    }
+    elsif ($state =~/^(hidden|unconfirmed)$/) {
+        @states = grep { $_->{$state} } @states;
+    }
+    $c->stash->{states} = \@states;
+    $c->stash->{states_trans} = { map { $_->{state} => $_->{trans} } @states }; # [% states_trans.${problem.state} %]
+
+    # stash details about the public response
+    $c->stash->{default_public_response} = "\nFreundliche Grüsse\n\nIhre Stadt Zürich\n";
+    $c->stash->{show_publish_response} = 
+        ($problem->state eq 'planned');
+}
+
+=head2 _admin_send_email
+
+Send an email to the B<user> who logged the problem, if their email address is confirmed.
+
+=cut
+
 sub _admin_send_email {
     my ( $c, $template, $problem ) = @_;
 
-    return unless $problem->extra && $problem->extra->{email_confirmed};
+    return unless $problem->get_extra_metadata('email_confirmed');
 
     my $to = $problem->name
         ? [ $problem->user->email, $problem->name ]
         : $problem->user->email;
 
-    # Similar to what SendReport::Zurich does to find address to send to
-    my $body = ( values %{$problem->bodies} )[0];
-    my $sender = $body->endpoint || $c->cobrand->contact_email;
-    my $sender_name = $c->cobrand->contact_name; # $body->name?
+    my $sender = FixMyStreet->config('DO_NOT_REPLY_EMAIL');
+    my $sender_name = $c->cobrand->contact_name;
+    utf8::decode($sender_name) unless utf8::is_utf8($sender_name);
 
     $c->send_email( $template, {
         to => [ $to ],
         url => $c->uri_for_email( $problem->url ),
         from => [ $sender, $sender_name ],
+        problem => $problem,
     } );
+}
+
+sub munge_sendreport_params {
+    my ($self, $row, $h, $params) = @_;
+    if ($row->state =~ /^(closed|investigating)$/ && $row->get_extra_metadata('publish_photo')) {
+        # we attach images to reports sent to external bodies
+        my $photoset = $row->get_photoset();
+        my $num = $photoset->num_images
+            or return;
+        my $id = $row->id;
+        my @attachments = map {
+            my $image = $photoset->get_raw_image($_);
+            {
+                body => $image->{data},
+                attributes => {
+                    filename => "$id.$_." . $image->{extension},
+                    content_type => $image->{content_type},
+                    encoding => 'base64',
+                        # quoted-printable ends up with newlines corrupting binary data
+                    name => "$id.$_." . $image->{extension},
+                },
+            }
+        } (0..$num-1);
+        $params->{_attachments_} = \@attachments;
+    }
 }
 
 sub admin_fetch_all_bodies {
@@ -708,13 +1068,16 @@ sub admin_stats {
     my $c = $self->{c};
 
     my %date_params;
-    my $ym = $c->req->params->{ym};
+    my $ym = $c->get_param('ym');
     my ($m, $y) = $ym ? ($ym =~ /^(\d+)\.(\d+)$/) : ();
     $c->stash->{ym} = $ym;
     if ($y && $m) {
         $c->stash->{start_date} = DateTime->new( year => $y, month => $m, day => 1 );
         $c->stash->{end_date} = $c->stash->{start_date} + DateTime::Duration->new( months => 1 );
-        $date_params{created} = { '>=', $c->stash->{start_date}, '<', $c->stash->{end_date} };
+        $date_params{created} = {
+            '>=', DateTime::Format::Pg->format_datetime($c->stash->{start_date}), 
+            '<',  DateTime::Format::Pg->format_datetime($c->stash->{end_date}),
+        };
     }
 
     my %params = (
@@ -722,34 +1085,114 @@ sub admin_stats {
         state => [ FixMyStreet::DB::Result::Problem->visible_states() ],
     );
 
-    if ( $c->req->params->{export} ) {
+    if ( $c->get_param('export') ) {
         my $problems = $c->model('DB::Problem')->search(
             {%date_params},
             {
+                join => 'admin_log_entries',
+                distinct => 1,
                 columns => [
                     'id',       'created',
                     'latitude', 'longitude',
                     'cobrand',  'category',
                     'state',    'user_id',
-                    'external_body'
+                    'external_body',
+                    'title', 'detail',
+                    'photo',
+                    'whensent', 'lastupdate',
+                    'service',
+                    'extra',
+                    { sum_time_spent => { sum => 'admin_log_entries.time_spent' } },
                 ]
             }
         );
-        my $body = "ID,Created,E,N,Category,Status,UserID,External Body\n";
+        my @fields = (
+            'Report ID',
+            'Created',
+            'Sent to Agency',
+            'Last Updated',
+            'E',
+            'N',
+            'Category',
+            'Status',
+            'Closure Status',
+            'UserID',
+            'External Body',
+            'Time Spent',
+            'Title',
+            'Detail',
+            'Media URL',
+            'Interface Used',
+            'Council Response',
+            'Strasse',
+            'Mast-Nr.',
+            'Haus-Nr.',
+            'Hydranten-Nr.',
+        );
+
+        my $body = "";
+        require Text::CSV;
+        my $csv = Text::CSV->new({ binary => 1 });
+
+        if ($csv->combine(@fields)) {
+            $body .= $csv->string . "\n";
+        }
+        else {
+            $body .= sprintf "{{error emitting CSV line: %s}}\n", $csv->error_diag;
+        }
+
         while ( my $report = $problems->next ) {
             my $external_body;
             my $body_name = "";
             if ( $external_body = $report->body($c) ) {
-                $body_name = $external_body->name;
+                $body_name = $external_body->name || '[Unknown body]';
             }
-            $body .= join( ',',
-                $report->id,           $report->created,
+
+            my $detail = $report->detail;
+            my $public_response = $report->get_extra_metadata('public_response') || '';
+            my $metas = $report->get_extra_fields();
+            my %extras;
+            foreach my $field (@$metas) {
+                $extras{$field->{name}} = $field->{value};
+            }
+
+            # replace newlines with HTML <br/> element
+            $detail =~ s{\r?\n}{ <br/> }g;
+            $public_response =~ s{\r?\n}{ <br/> }g if $public_response;
+
+            # Assemble photo URL, if report has a photo
+            my $media_url = ( @{$report->photos} && $c->cobrand->allow_photo_display($report) ) ? ($c->cobrand->base_url . $report->photos->[0]->{url}) : '';
+
+            my @columns = (
+                $report->id,
+                $report->created,
+                $report->whensent,
+                $report->lastupdate,
                 $report->local_coords, $report->category,
-                $report->state,        $report->user_id,
-                "\"$body_name\"" )
-              . "\n";
+                $report->state,
+                $report->get_extra_metadata('closure_status') || '',
+                $report->user_id,
+                $body_name,
+                $report->get_column('sum_time_spent') || 0,
+                $report->title,
+                $detail,
+                $media_url,
+                $report->service || 'Web interface',
+                $public_response,
+                $extras{'strasse'} || '',
+                $extras{'mast_nr'} || '',
+                $extras{'haus_nr'} || '',
+                $extras{'hydranten_nr'} || ''
+            );
+            if ($csv->combine(@columns)) {
+                $body .= $csv->string . "\n";
+            }
+            else {
+                $body .= sprintf "{{error emitting CSV line: %s}}\n", $csv->error_diag;
+            }
         }
         $c->res->content_type('text/csv; charset=utf-8');
+        $c->res->header('Content-Disposition' => 'attachment; filename=stats.csv');
         $c->res->body($body);
     }
 
@@ -815,5 +1258,112 @@ sub admin_stats {
 
     return 1;
 }
+
+sub problem_confirm_email_extras {
+    my ($self, $report) = @_;
+    my $confirmed_reports = $report->user->problems->search({
+        extra => { like => '%email_confirmed%' },
+    })->count;
+
+    $self->{c}->stash->{email_confirmed} = $confirmed_reports;
+}
+
+sub body_details_data {
+    return (
+        {
+            name => 'Stadt Zurich'
+        },
+        {
+            name => 'Elektrizitäwerk Stadt Zürich',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+        {
+            name => 'ERZ Entsorgung + Recycling Zürich',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+        {
+            name => 'Fachstelle Graffiti',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+        {
+            name => 'Grün Stadt Zürich',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+        {
+            name => 'Tiefbauamt Stadt Zürich',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+        {
+            name => 'Dienstabteilung Verkehr',
+            parent => 'Stadt Zurich',
+            area_id => 423017,
+        },
+    );
+}
+
+sub contact_details_data {
+    return (
+        {
+            category => 'Beleuchtung/Uhren',
+            body_name => 'Elektrizitätswerk Stadt Zürich',
+            fields => [
+                {
+                    code => 'strasse',
+                    description => 'Strasse',
+                    datatype => 'string',
+                    required => 'yes',
+                },
+                {
+                    code => 'haus_nr',
+                    description => 'Haus-Nr.',
+                    datatype => 'string',
+                },
+                {
+                    code => 'mast_nr',
+                    description => 'Mast-Nr.',
+                    datatype => 'string',
+                }
+            ],
+        },
+        {
+            category => 'Brunnen/Hydranten',
+            # body_name ???
+            fields => [
+                {
+                    code => 'hydranten_nr',
+                    description => 'Hydranten-Nr.',
+                    datatype => 'string',
+                },
+            ],
+        },
+        {
+            category => "Grünflächen/Spielplätze",
+            body_name => 'Grün Stadt Zürich',
+            rename_from => "Tiere/Grünflächen",
+        },
+        {
+            category => 'Spielplatz/Sitzbank',
+            body_name => 'Grün Stadt Zürich',
+            delete => 1,
+        },
+    );
+}
+
+sub contact_details_data_body_default {
+    my ($self) = @_;
+    # temporary measure to assign un-bodied contacts to parent
+    # (this isn't at all how things will be setup in live, but is
+    # handy during dev.)
+    return $self->{c}->model('DB::Body')->find({ name => 'Stadt Zurich' });
+}
+
+sub reports_per_page { return 20; }
+
+sub singleton_bodies_str { 1 }
 
 1;

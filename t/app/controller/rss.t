@@ -13,8 +13,7 @@ my $dt = DateTime->new(
     day     => 10
 );
 
-my $user1 = FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'reporter-rss@example.com', name => 'Reporter User' } );
+my $user1 = $mech->create_user_ok('reporter-rss@example.com', name => 'Reporter User');
 
 my $dt_parser = FixMyStreet::App->model('DB')->schema->storage->datetime_parser;
 
@@ -51,6 +50,7 @@ FixMyStreet::override_config {
 };
 $mech->content_contains( "Testing, 10th October" );
 $mech->content_lacks( 'Nearest road to the pin' );
+is $mech->response->header('Access-Control-Allow-Origin'), '*';
 
 $report->geocode( 
 {
@@ -127,11 +127,14 @@ $mech->content_contains( '18 North Bridge, Edinburgh' );
 
 $report->delete();
 
+my $council = $mech->create_body_ok(2333, 'Hart Council');
+my $county = $mech->create_body_ok(2227, 'Hampshire Council');
+
 my $now = DateTime->now();
 my $report_to_council = FixMyStreet::App->model('DB::Problem')->find_or_create(
     {
         postcode           => 'GU51 4AE',
-        bodies_str         => '2333',
+        bodies_str         => $council->id,
         areas              => ',2333,2227,',
         category           => 'Other',
         title              => 'council report',
@@ -155,7 +158,7 @@ my $report_to_council = FixMyStreet::App->model('DB::Problem')->find_or_create(
 my $report_to_county_council = FixMyStreet::App->model('DB::Problem')->find_or_create(
     {
         postcode           => 'GU51 4AE',
-        bodies_str         => '2227',
+        bodies_str         => $county->id,
         areas              => ',2333,2227,',
         category           => 'Other',
         title              => 'county report',
@@ -178,7 +181,7 @@ my $report_to_county_council = FixMyStreet::App->model('DB::Problem')->find_or_c
 
 subtest "check RSS feeds on cobrand have correct URLs for non-cobrand reports" => sub {
     $mech->host('hart.fixmystreet.com');
-    my $expected1 = mySociety::Config::get('BASE_URL') . '/report/' . $report_to_county_council->id;
+    my $expected1 = FixMyStreet->config('BASE_URL') . '/report/' . $report_to_county_council->id;
     my $expected2;
 
     FixMyStreet::override_config {

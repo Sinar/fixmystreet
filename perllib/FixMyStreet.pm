@@ -6,6 +6,7 @@ use warnings;
 use Path::Class;
 my $ROOT_DIR = file(__FILE__)->parent->parent->absolute->resolve;
 
+use DateTime::TimeZone;
 use Readonly;
 use Sub::Override;
 
@@ -94,15 +95,12 @@ sub override_config($&) {
 
     mySociety::MaPit::configure($config->{MAPIT_URL}) if $config->{MAPIT_URL};
 
-    # For historical reasons, we have two ways of asking for config variables.
-    # Override them both, I'm sure we'll find time to get rid of one eventually.
-    # 
-    # NB: though we have these two functions, templates tend to use [% c.config %]
+    # NB: though we have this, templates tend to use [% c.config %].
     # This overriding happens after $c->config is set, so note that
     # FixMyStreet::App->setup_request rewrites $c->config if we are in
     # test_mode, so tests should Just Work there too.
 
-    my $override_guard1 = Sub::Override->new(
+    my $override_guard = Sub::Override->new(
         "FixMyStreet::config",
         sub {
             my ($class, $key) = @_;
@@ -112,27 +110,19 @@ sub override_config($&) {
             return $orig_config->{$key} if exists $orig_config->{$key};
         }
     );
-    my $override_guard2 = Sub::Override->new(
-        "mySociety::Config::get",
-        sub ($;$) {
-            my ($key, $default) = @_;
-            return $config->{$key} if exists $config->{$key};
-            my $orig_config = mySociety::Config::load_default();
-            return $orig_config->{$key} if exists $orig_config->{$key};
-            return $default if @_ == 2;
-        }
-    );
+
+    FixMyStreet::Map::reload_allowed_maps() if $config->{MAP_TYPE};
 
     $code->();
 
-    $override_guard1->restore();
-    $override_guard2->restore();
-    mySociety::MaPit::configure() if $config->{MAPIT_URL};;
+    $override_guard->restore();
+    mySociety::MaPit::configure() if $config->{MAPIT_URL};
+    FixMyStreet::Map::reload_allowed_maps() if $config->{MAP_TYPE};
 }
 
 =head2 dbic_connect_info
 
-    $connect_info = FixMyStreet->dbic_connect_info();
+    $connect_info = FixMyStreet->dbic_connect_info;
 
 Returns the array that DBIx::Class::Schema needs to connect to the database.
 Most of the values are read from the config file and others are hordcoded here.
@@ -168,7 +158,7 @@ sub dbic_connect_info {
     };
     my $dbic_args = {};
 
-    return [ $dsn, $user, $password, $dbi_args, $dbic_args ];
+    return ( $dsn, $user, $password, $dbi_args, $dbic_args );
 }
 
 =head2 configure_mysociety_dbhandle
@@ -200,21 +190,26 @@ sub configure_mysociety_dbhandle {
 
 }
 
-=head2 get_email_template
+my $tz;
+my $tz_f;
 
-=cut
+sub local_time_zone {
+    $tz //= DateTime::TimeZone->new( name => "local" );
+    return $tz;
+}
 
-sub get_email_template {
-    # TODO further refactor this by just using Template path
-    my ($class, $cobrand, $lang, $template) = @_;
+sub time_zone {
+    $tz_f //= DateTime::TimeZone->new( name => FixMyStreet->config('TIME_ZONE') )
+        if FixMyStreet->config('TIME_ZONE');
+    return $tz_f;
+}
 
-    my $template_path = FixMyStreet->path_to( "templates", "email", $cobrand, $lang, $template )->stringify;
-    $template_path = FixMyStreet->path_to( "templates", "email", $cobrand, $template )->stringify
-        unless -e $template_path;
-    $template_path = FixMyStreet->path_to( "templates", "email", "default", $template )->stringify
-        unless -e $template_path;
-    $template = Utils::read_file( $template_path );
-    return $template;
+sub set_time_zone {
+    my ($class, $dt)  = @_;
+    my $tz = local_time_zone();
+    my $tz_f = time_zone();
+    $dt->set_time_zone($tz);
+    $dt->set_time_zone($tz_f) if $tz_f;
 }
 
 1;

@@ -5,10 +5,16 @@ notifications:
       - "irc.mysociety.org#fixmystreet"
     use_notice: true
     skip_join: true
+  webhooks:
+    urls:
+      - https://webhooks.gitter.im/e/863c1892a6a51e5a3b3c
 
 language: perl
 perl:
-  - "5.14"
+  - "5.14" # wheezy, precise
+  - "5.18" # trusty
+  - "5.20" # jessie, vivid, wily
+  - "5.22" # stretch, xenial
 
 env:
   global:
@@ -17,24 +23,11 @@ env:
     - secure: "qW+WCgAF68itADxcbcq+nCnKx3vf3GX73HMfjfbkFFUsYmIR+ZaJ9yQMnGJwxIpCHTWLAeqyx4KO8N8T3GmNdKYzIMZemOzp4ED29YC31QOQeq1CwNp2hD5sq/o47d2BzXWwMYNvNXfxz1K6r2c6EMPUtu8X3B8ExZq1RzSFdXs="
 
 before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq jhead libgmp-dev python-boto
-# A couple of other modules that normally come from packages, but no system stuff here
-  - cpanm -q Locale::gettext Math::BigInt::GMP
   - sudo locale-gen cy_GB.UTF-8 en_GB.UTF-8 nb_NO.UTF-8 de_CH.UTF-8 sv_SE.UTF-8
 install:
   - .travis/install
 before_script:
-  - psql -c 'create database fms;' -U postgres
-  - psql fms postgres < db/schema.sql
-  - psql fms postgres < db/alert_types.sql
-  - psql fms postgres < db/generate_secret.sql
-  - >
-    sed -r -e "s,(FMS_DB_USER:) 'fms',\\1 'postgres',"
-    conf/general.yml-example > conf/general.yml
-  - ./bin/cron-wrapper ./bin/make_po FixMyStreet-EmptyHomes
-  - ./bin/cron-wrapper ./bin/make_emptyhomes_welsh_po
   - commonlib/bin/gettext-makemo FixMyStreet
-script: "bin/cron-wrapper perl /usr/bin/prove -rl t"
-after_script:
+script: "bin/run-tests t"
+after_success:
   - .travis/after_script

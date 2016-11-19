@@ -13,16 +13,19 @@ use strict;
 use warnings;
 require 5.8.0;
 
-use Digest::MD5;
-use Encode;
+BEGIN {
+    use File::Basename qw(dirname);
+    use File::Spec;
+    my $d = dirname(File::Spec->rel2abs($0));
+    require "$d/../setenv.pl";
+}
+
 use CronFns;
 
-use FixMyStreet::App;
-
-use Utils;
-use mySociety::Config;
-use mySociety::EmailUtil;
-
+use DateTime;
+use FixMyStreet;
+use FixMyStreet::Cobrand;
+use FixMyStreet::DB;
 use Open311;
 
 # send_method config values found in by-area config data, for selecting to appropriate method
@@ -30,25 +33,33 @@ use constant SEND_METHOD_EMAIL      => 'email';
 use constant SEND_METHOD_OPEN311    => 'Open311';
 
 use constant COUNCIL_ID_OXFORDSHIRE => 2237;
+use constant COUNCIL_ID_BROMLEY => 2482;
+use constant COUNCIL_ID_LEWISHAM => 2492;
 
 # Set up site, language etc.
 my ($verbose, $nomail) = CronFns::options();
-my $base_url = mySociety::Config::get('BASE_URL');
-my $site = CronFns::site($base_url);
+my $base_url = FixMyStreet->config('BASE_URL');
+my $site = '';
+$site = 'fixmystreet.com' if $base_url eq "https://www.fixmystreet.com";
 
-my $bodies = FixMyStreet::App->model('DB::Body')->search( {
+my $bodies = FixMyStreet::DB->resultset('Body')->search( {
     send_method => SEND_METHOD_OPEN311,
     send_comments => 1,
 } );
 
 while ( my $body = $bodies->next ) {
 
-    # Oxfordshire (OCC) is special:
-    # we do *receive* service_request_updates (aka comments) for OCC, but we never *send* them, so skip this pass
-    next if $body->areas->{+COUNCIL_ID_OXFORDSHIRE};
+    # XXX Cobrand specific
+    if ($site eq 'fixmystreet.com') {
+        # Oxfordshire (OCC) is special:
+        # we do *receive* service_request_updates (aka comments) for OCC, but we never *send* them, so skip this pass
+        next if $body->areas->{+COUNCIL_ID_OXFORDSHIRE};
+        # Lewisham does not yet accept updates
+        next if $body->areas->{+COUNCIL_ID_LEWISHAM};
+    }
 
     my $use_extended = 0;
-    my $comments = FixMyStreet::App->model('DB::Comment')->search( {
+    my $comments = FixMyStreet::DB->resultset('Comment')->search( {
             'me.whensent'    => undef,
             'me.external_id' => undef,
             'me.state'          => 'confirmed',
@@ -63,7 +74,7 @@ while ( my $body = $bodies->next ) {
         }
     );
 
-    if ( $body->areas->{2482} ) {
+    if ( $site eq 'fixmystreet.com' && $body->areas->{+COUNCIL_ID_BROMLEY} ) {
         $use_extended = 1;
     }
 
@@ -81,7 +92,7 @@ while ( my $body = $bodies->next ) {
 
     my $o = Open311->new( %open311_conf );
 
-    if ( $body->areas->{2482} ) {
+    if ( $site eq 'fixmystreet.com' && $body->areas->{+COUNCIL_ID_BROMLEY} ) {
         my $endpoints = $o->endpoints;
         $endpoints->{update} = 'update.xml';
         $endpoints->{service_request_updates} = 'update.xml';
@@ -104,10 +115,10 @@ while ( my $body = $bodies->next ) {
         }
 
         if ( $comment->send_fail_count ) {
-            next if bromley_retry_timeout( $comment );
+            next if retry_timeout( $comment );
         }
 
-        if ( $body->areas->{2482} ) {
+        if ( $site eq 'fixmystreet.com' && $body->areas->{+COUNCIL_ID_BROMLEY} ) {
             my $extra = $comment->extra;
             if ( !$extra ) {
                 $extra = {};
@@ -124,22 +135,22 @@ while ( my $body = $bodies->next ) {
         if ( $id ) {
             $comment->update( {
                 external_id => $id,
-                whensent    => \'ms_current_timestamp()',
+                whensent    => \'current_timestamp',
             } );
         } else {
             $comment->update( {
                 send_fail_count => $comment->send_fail_count + 1,
-                send_fail_timestamp => \'ms_current_timestamp()',
+                send_fail_timestamp => \'current_timestamp',
                 send_fail_reason => 'Failed to post over Open311',
             } );
         }
     }
 }
 
-sub bromley_retry_timeout {
+sub retry_timeout {
     my $row = shift;
 
-    my $tz = DateTime::TimeZone->new( name => 'local' );
+    my $tz = FixMyStreet->local_time_zone;
     my $now = DateTime->now( time_zone => $tz );
     my $diff = $now - $row->send_fail_timestamp;
     if ( $diff->in_units( 'minutes' ) < 30 ) {

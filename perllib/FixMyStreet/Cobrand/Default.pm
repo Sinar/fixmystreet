@@ -5,7 +5,9 @@ use strict;
 use warnings;
 use FixMyStreet;
 use FixMyStreet::Geocode::Bing;
+use DateTime;
 use Encode;
+use List::MoreUtils 'none';
 use URI;
 use Digest::MD5 qw(md5_hex);
 
@@ -18,15 +20,32 @@ use mySociety::PostcodeUtil;
     $path = $cobrand->path_to_web_templates(  );
 
 Returns the path to the templates for this cobrand - by default
-"templates/web/$moniker" and "templates/web/fixmystreet"
+"templates/web/$moniker" (and then base in Web.pm).
 
 =cut
 
 sub path_to_web_templates {
     my $self = shift;
     my $paths = [
-        FixMyStreet->path_to( 'templates/web', $self->moniker )->stringify,
-        FixMyStreet->path_to( 'templates/web/fixmystreet' )->stringify,
+        FixMyStreet->path_to( 'templates/web', $self->moniker ),
+    ];
+    return $paths;
+}
+
+=head1 path_to_email_templates
+
+    $path = $cobrand->path_to_email_templates(  );
+
+Returns the path to the email templates for this cobrand - by default
+"templates/email/$moniker" (and then default in Email.pm).
+
+=cut
+
+sub path_to_email_templates {
+    my ( $self, $lang_code ) = @_;
+    my $paths = [
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker, $lang_code ),
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker ),
     ];
     return $paths;
 }
@@ -43,41 +62,113 @@ sub country {
     return '';
 }
 
-=head1 problems_clause
-
-Returns a hash for a query to be used by problems (and elsewhere in joined
-queries) to restrict results for a cobrand.
-
-=cut
-
-sub problems_clause {}
-
 =head1 problems
 
-Returns a ResultSet of Problems, restricted to a subset if we're on a cobrand
-that only wants some of the data.
+Returns a ResultSet of Problems, potentially restricted to a subset if we're on
+a cobrand that only wants some of the data.
 
 =cut
 
 sub problems {
     my $self = shift;
-    return $self->{c}->model('DB::Problem');
+    return $self->problems_restriction($self->{c}->model('DB::Problem'));
 }
 
-=head1 site_restriction
+=head1 problems_on_map
 
-Return a site key and a hash of extra query parameters if the cobrand uses a
-subset of the FixMyStreet data. Parameter is any extra data the cobrand needs.
-Returns a site key of 0 and an empty hash if the cobrand uses all the data.
+Returns a ResultSet of Problems to be shown on the /around map, potentially
+restricted to a subset if we're on a cobrand that only wants some of the data.
 
 =cut
 
-sub site_restriction { return {}; }
+sub problems_on_map {
+    my $self = shift;
+    return $self->problems_on_map_restriction($self->{c}->model('DB::Problem'));
+}
+
+=head1 updates
+
+Returns a ResultSet of Comments, potentially restricted to a subset if we're on
+a cobrand that only wants some of the data.
+
+=cut
+
+sub updates {
+    my $self = shift;
+    return $self->updates_restriction($self->{c}->model('DB::Comment'));
+}
+
+=head1 problems_restriction/updates_restriction
+
+Used to restricts reports and updates in a cobrand in a particular way. Do
+nothing by default.
+
+=cut
+
+sub problems_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+sub updates_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+=head1 categories_restriction
+
+Used to restrict categories available when making new report in a cobrand in a
+particular way. Do nothing by default.
+
+=cut
+
+sub categories_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+
+=head1 problems_on_map_restriction
+
+Used to restricts reports shown on the /around map in a cobrand in a particular way. Do
+nothing by default.
+
+=cut
+
+sub problems_on_map_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
+=head1 users
+
+Returns a ResultSet of Users, potentially restricted to a subset if we're on
+a cobrand that only wants some of the data.
+
+=cut
+
+sub users {
+    my $self = shift;
+    return $self->users_restriction($self->{c}->model('DB::User'));
+}
+
+=head1 users_restriction
+
+Used to restricts users in the admin in a cobrand in a particular way. Do
+nothing by default.
+
+=cut
+
+sub users_restriction {
+    my ($self, $rs) = @_;
+    return $rs;
+}
+
 sub site_key { return 0; }
 
 =head2 restriction
 
-Return a restriction to pull out data saved while using the cobrand site.
+Return a restriction to data saved while using this specific cobrand site.
 
 =cut
 
@@ -102,7 +193,10 @@ Base URL for the admin interface.
 
 =cut
 
-sub admin_base_url { FixMyStreet->config('ADMIN_BASE_URL') || '' }
+sub admin_base_url {
+    my $self = shift;
+    return FixMyStreet->config('ADMIN_BASE_URL') || $self->base_url . "/admin";
+}
 
 =head2 base_url
 
@@ -115,7 +209,8 @@ sub base_url { FixMyStreet->config('BASE_URL') }
 =head2 base_url_for_report
 
 Return the base url for a report (might be different in a two-tier county, but
-most of the time will be same as base_url).
+most of the time will be same as base_url). Report may be an object, or a
+hashref.
 
 =cut
 
@@ -145,14 +240,6 @@ Can be specified in template.
 
 sub enter_postcode_text { }
 
-=head2 site_title
-
-The name of the site
-
-=cut
-
-sub site_title { return 'FixMyStreet'; }
-
 =head2 set_lang_and_domain
 
     my $set_lang = $cobrand->set_lang_and_domain( $lang, $unicode, $dir )
@@ -164,7 +251,9 @@ Set the language and domain of the site based on the cobrand and host.
 sub set_lang_and_domain {
     my ( $self, $lang, $unicode, $dir ) = @_;
 
-    my $languages = join('|', @{$self->languages});
+    my @languages = @{$self->languages};
+    push @languages, 'en-gb,English,en_GB' if none { /en-gb/ } @languages;
+    my $languages = join('|', @languages);
     my $lang_override = $self->language_override || $lang;
     my $lang_domain = $self->language_domain || 'FixMyStreet';
 
@@ -172,9 +261,16 @@ sub set_lang_and_domain {
     my $set_lang = mySociety::Locale::negotiate_language( $languages, $lang_override, $headers );
     mySociety::Locale::gettext_domain( $lang_domain, $unicode, $dir );
     mySociety::Locale::change();
+
+    if ($mySociety::Locale::langmap{$set_lang}) {
+        DateTime->DefaultLocale( $mySociety::Locale::langmap{$set_lang} );
+    } else {
+        DateTime->DefaultLocale( 'en_US' );
+    }
+
     return $set_lang;
 }
-sub languages { FixMyStreet->config('LANGUAGES') || [ 'en-gb,English,en_GB' ] }
+sub languages { FixMyStreet->config('LANGUAGES') || [] }
 sub language_domain { }
 sub language_override { }
 
@@ -286,22 +382,14 @@ sub cobrand_data_for_generic_problem { '' }
 Given a URL ($_[1]), QUERY, EXTRA_DATA, return a URL with any extra params
 needed appended to it.
 
-In the default case, if we're using an OpenLayers map, we need to make
-sure zoom is always present if lat/lon are, to stop OpenLayers defaulting
-to null/0.
+In the default case, we need to make sure zoom is always present if lat/lon
+are, to stop OpenLayers defaulting to null/0.
 
 =cut
 
 sub uri {
     my ( $self, $uri ) = @_;
-
-    {
-        no warnings 'once';
-        (my $map_class = $FixMyStreet::Map::map_class) =~ s/^FixMyStreet::Map:://;
-        return $uri unless $map_class =~ /OSM|FMS/;
-    }
-
-    $uri->query_param( zoom => 3 )
+    $uri->query_param( zoom => $self->default_link_zoom )
       if $uri->query_param('lat') && !$uri->query_param('zoom');
 
     return $uri;
@@ -323,7 +411,7 @@ Return an override type of map if necessary.
 =cut
 sub map_type {
     my $self = shift;
-    return 'OSM' if $self->{c}->req->uri->host =~ /^osm\./;
+    return 'OSM' if $self->{c} && $self->{c}->req->uri->host =~ /^osm\./;
     return;
 }
 
@@ -335,6 +423,16 @@ The number of reports to show per page on all reports page.
 
 sub reports_per_page {
     return FixMyStreet->config('ALL_REPORTS_PER_PAGE') || 100;
+}
+
+=head2 reports_ordering
+
+The order_by clause to use for reports on all reports page
+
+=cut
+
+sub reports_ordering {
+    return 'updated-desc';
 }
 
 =head2 on_map_list_limit
@@ -352,6 +450,14 @@ Return the default maximum age for pins.
 =cut
 
 sub on_map_default_max_pin_age { return '6 months'; }
+
+=head2 on_map_default_status
+
+Return the default ?status= query parameter to use for filter on map page.
+
+=cut
+
+sub on_map_default_status { return 'all'; }
 
 =head2 allow_photo_upload
 
@@ -523,7 +629,50 @@ List of names of pages to display on the admin interface
 
 =cut
 
-sub admin_pages { 0 }
+sub admin_pages {
+    my $self = shift;
+
+    my $user = $self->{c}->user;
+
+    my $pages = {
+         'summary' => [_('Summary'), 0],
+         'timeline' => [_('Timeline'), 5],
+         'stats'  => [_('Stats'), 8],
+    };
+
+    # There are some pages that only super users can see
+    if ( $user->is_superuser ) {
+        $pages->{flagged} = [ _('Flagged'), 7 ];
+        $pages->{config} = [ _('Configuration'), 9];
+    };
+    # And some that need special permissions
+    if ( $user->is_superuser || $user->has_body_permission_to('category_edit') ) {
+        my $page_title = $user->is_superuser ? _('Bodies') : _('Categories');
+        $pages->{bodies} = [ $page_title, 1 ];
+        $pages->{body} = [ undef, undef ];
+    }
+    if ( $user->is_superuser || $user->has_body_permission_to('report_edit') ) {
+        $pages->{reports} = [ _('Reports'), 2 ];
+        $pages->{report_edit} = [ undef, undef ];
+        $pages->{update_edit} = [ undef, undef ];
+        $pages->{abuse_edit} = [ undef, undef ];
+    }
+    if ( $user->is_superuser || $user->has_body_permission_to('template_edit') ) {
+        $pages->{templates} = [ _('Templates'), 3 ];
+        $pages->{template_edit} = [ undef, undef ];
+    };
+    if ( $user->is_superuser || $user->has_body_permission_to('responsepriority_edit') ) {
+        $pages->{responsepriorities} = [ _('Priorities'), 4 ];
+        $pages->{responsepriority_edit} = [ undef, undef ];
+    };
+
+    if ( $user->is_superuser || $user->has_body_permission_to('user_edit') ) {
+        $pages->{users} = [ _('Users'), 6 ];
+        $pages->{user_edit} = [ undef, undef ];
+    }
+
+    return $pages;
+}
 
 =head2 admin_show_creation_graph
 
@@ -531,6 +680,60 @@ Show the problem creation graph in the admin interface
 =cut
 
 sub admin_show_creation_graph { 1 }
+
+=head2 admin_allow_user
+
+Perform checks on whether this user can access admin. By default only superusers
+are allowed.
+
+=cut
+
+sub admin_allow_user {
+    my ( $self, $user ) = @_;
+    return 1 if $user->is_superuser;
+}
+
+=head2 available_permissions
+
+Grouped lists of permission types available for use in the admin
+
+=cut
+
+sub available_permissions {
+    my $self = shift;
+
+    return {
+        _("Problems") => {
+            moderate => _("Moderate report details"),
+            report_edit => _("Edit reports"),
+            report_edit_category => _("Edit report category"), # future use
+            report_edit_priority => _("Edit report priority"), # future use
+            report_inspect => _("Markup problem details"),
+            report_instruct => _("Instruct contractors to fix problems"), # future use
+            planned_reports => _("Manage shortlist"),
+            contribute_as_another_user => _("Create reports/updates on a user's behalf"),
+            contribute_as_body => _("Create reports/updates as the council"),
+
+            # NB this permission is special in that it can be assigned to users
+            # without their from_body being set. It's included here for
+            # reference, but left commented out because it's not assigned in the
+            # same way as other permissions.
+            # trusted => _("Trusted to make reports that don't need to be inspected"),
+        },
+        _("Users") => {
+            user_edit => _("Edit other users' details"),
+            user_manage_permissions => _("Edit other users' permissions"),
+            user_assign_body => _("Grant access to the admin"),
+            user_assign_areas => _("Assign users to areas"), # future use
+        },
+        _("Bodies") => {
+            category_edit => _("Add/edit problem categories"),
+            template_edit => _("Add/edit response templates"),
+            responsepriority_edit => _("Add/edit response priorities"),
+        },
+    };
+}
+
 
 =head2 area_types
 
@@ -591,6 +794,7 @@ sub short_name {
     my ($area) = @_;
 
     my $name = $area->{name} || $area->name;
+    $name =~ tr{/}{_};
     $name = URI::Escape::uri_escape_utf8($name);
     $name =~ s/%20/+/g;
     return $name;
@@ -625,10 +829,10 @@ sub council_rss_alert_options {
         ( $_->{id_name} = $_->{short_name} ) =~ tr/+/_/;
         push @options, {
             type      => 'council',
-            id        => sprintf( 'council:%s:%s', $_->{id}, $_->{id_name} ),
+            id        => sprintf( 'area:%s:%s', $_->{id}, $_->{id_name} ),
             text      => sprintf( _('Problems within %s'), $_->{name}),
             rss_text  => sprintf( _('RSS feed of problems within %s'), $_->{name}),
-            uri       => $c->uri_for( '/rss/reports/' . $_->{short_name} ),
+            uri       => $c->uri_for( '/rss/area/' . $_->{short_name} ),
         };
     }
 
@@ -667,25 +871,25 @@ sub get_report_stats { return 0; }
 sub get_body_sender {
     my ( $self, $body, $category ) = @_;
 
+    # look up via category
+    my $contact = $body->contacts->search( { category => $category } )->first;
     if ( $body->can_be_devolved ) {
-        # look up via category
-        my $config = FixMyStreet::App->model("DB::Contact")->search( { body_id => $body->id, category => $category } )->first;
-        if ( $config->send_method ) {
-            return { method => $config->send_method, config => $config };
+        if ( $contact->send_method ) {
+            return { method => $contact->send_method, config => $contact, contact => $contact };
         } else {
-            return { method => $body->send_method, config => $body };
+            return { method => $body->send_method, config => $body, contact => $contact };
         }
     } elsif ( $body->send_method ) {
-        return { method => $body->send_method, config => $body };
+        return { method => $body->send_method, config => $body, contact => $contact };
     }
 
-    return $self->_fallback_body_sender( $body, $category );
+    return $self->_fallback_body_sender( $body, $category, $contact );
 }
 
 sub _fallback_body_sender {
-    my ( $self, $body, $category ) = @_;
+    my ( $self, $body, $category, $contact ) = @_;
 
-    return { method => 'Email' };
+    return { method => 'Email', contact => $contact };
 };
 
 sub example_places {
@@ -720,7 +924,18 @@ If set to an arrayref, will plot those area ID(s) from mapit on all the /around 
 
 sub areas_on_around { []; }
 
-sub process_extras {}
+=head2
+
+A list of extra fields we wish to save to the database in the 'extra' column of
+problems based on variables passed in by the form. Return a list of hashrefs
+of values we wish to save, e.g.
+( { name => 'address', required => 1 }, { name => 'passport', required => 0 } )
+
+=cut
+
+sub report_form_extras {}
+
+sub process_open311_extras {}
 
 =head 2 pin_colour
 
@@ -759,7 +974,18 @@ sub tweak_all_reports_map {}
 
 sub can_support_problems { return 0; }
 
+=head2 default_map_zoom / default_link_zoom
+
+default_map_zoom is used when displaying a map overriding the
+default of max-4 or max-3 depending on population density.
+
+default_link_zoom is used in links that contain a 'lat' and no
+zoom, to stop e.g. OpenLayers defaulting to null/0.
+
+=cut
+
 sub default_map_zoom { undef };
+sub default_link_zoom { 3 }
 
 sub users_can_hide { return 0; }
 
@@ -891,9 +1117,73 @@ sub updates_as_hashref {
     return {};
 }
 
-sub get_country_for_ip_address {
-    return 0;
+sub jurisdiction_id_example {
+    my $self = shift;
+    return $self->moniker;
+}
+
+=head2 body_details_data
+
+Returns a list of bodies to create with ensure_body.  These
+are mostly just passed to ->find_or_create, but there is some
+pre-processing so that you can enter:
+
+    area_id => 123,
+    parent => 'Big Town',
+
+instead of
+
+    body_areas => [ { area_id => 123 } ],
+    parent => { name => 'Big Town' },
+
+For example:
+
+    return (
+        {
+            name => 'Big Town',
+        },
+        {
+            name => 'Small town',
+            parent => 'Big Town',
+            area_id => 1234,
+        },
+
+
+=cut
+
+sub body_details_data {
+    return ();
+}
+
+=head2 contact_details_data
+
+Returns a list of contact_data to create with setup_contacts.
+See Zurich for an example.
+
+=cut
+
+sub contact_details_data {
+    return ()
+}
+
+=head2 lookup_by_ref_regex
+
+Returns a regex to match postcode form input against to determine if a lookup
+by id should be done.
+
+=cut
+
+sub lookup_by_ref_regex {
+    return qr/^\s*ref:\s*(\d+)\s*$/;
+}
+
+=head2 category_extra_hidden
+
+Return true if an Open311 service attribute should be a hidden field.
+=cut
+
+sub category_extra_hidden {
+    my ($self, $meta) = @_;
 }
 
 1;
-

@@ -14,7 +14,7 @@ use Test::More;
 use Web::Scraper;
 use Carp;
 use Email::Send::Test;
-use JSON;
+use JSON::MaybeXS;
 
 =head1 NAME
 
@@ -63,11 +63,10 @@ Create a test user (or find it and return if it already exists).
 
 sub create_user_ok {
     my $self = shift;
-    my ($email) = @_;
+    my ( $email, %extra ) = @_;
 
-    my $user =
-      FixMyStreet::App->model('DB::User')
-      ->find_or_create( { email => $email } );
+    my $params = { email => $email, %extra };
+    my $user = FixMyStreet::DB->resultset('User')->find_or_create($params);
     ok $user, "found/created user for $email";
 
     return $user;
@@ -147,27 +146,28 @@ sub delete_user {
     my $user =
       ref $email_or_user
       ? $email_or_user
-      : FixMyStreet::App->model('DB::User')
+      : FixMyStreet::DB->resultset('User')
       ->find( { email => $email_or_user } );
 
     # If no user found we can't delete them
-    if ( !$user ) {
-        ok( 1, "No user found to delete" );
-        return 1;
-    }
+    return 1 unless $user;
 
-    $mech->log_out_ok;
+    $mech->get('/auth/sign_out');
+
     for my $p ( $user->problems ) {
-        ok( $_->delete, "delete comment " . $_->text ) for $p->comments;
-        ok( $_->delete, "delete questionnaire " . $_->id ) for $p->questionnaires;
-        ok( $p->delete, "delete problem " . $p->title );
+        $p->comments->delete;
+        $p->questionnaires->delete;
+        $p->user_planned_reports->delete;
+        $p->delete;
     }
     for my $a ( $user->alerts ) {
         $a->alerts_sent->delete;
-        ok( $a->delete, "delete alert " . $a->alert_type );
+        $a->delete;
     }
-    ok( $_->delete, "delete comment " . $_->text )     for $user->comments;
-    ok $user->delete, "delete test user " . $user->email;
+    $_->delete for $user->comments;
+    $_->delete for $user->admin_logs;
+    $_->delete for $user->user_body_permissions;
+    $user->delete;
 
     return 1;
 }
@@ -221,6 +221,76 @@ sub get_email {
 
     $mech->email_count_is(1) || return undef;
     return $emails[0];
+}
+
+sub get_text_body_from_email {
+    my ($mech, $email, $obj) = @_;
+    unless ($email) {
+        $email = $mech->get_email;
+        $mech->clear_emails_ok;
+    }
+
+    my $body;
+    $email->walk_parts(sub {
+        my $part = shift;
+        return if $part->subparts;
+        return if $part->content_type !~ m{text/plain};
+        $body = $obj ? $part : $part->body;
+        ok $body, "Found text body";
+    });
+    return $body;
+}
+
+sub get_link_from_email {
+    my ($mech, $email, $multiple) = @_;
+    unless ($email) {
+        $email = $mech->get_email;
+        $mech->clear_emails_ok;
+    }
+
+    my @links;
+    $email->walk_parts(sub {
+        my $part = shift;
+        return if $part->subparts;
+        return if $part->content_type !~ m{text/};
+        if (@links) {
+            # Must be an HTML part now, first two links are in header
+            my @html_links = $part->body =~ m{https?://[^"]+}g;
+            is $links[0], $html_links[2], 'HTML link matches text link';
+        } else {
+            @links = $part->body =~ m{https?://\S+}g;
+            ok @links, "Found links in email '@links'";
+        }
+    });
+    return $multiple ? @links : $links[0];
+}
+
+=head2 get_first_email
+
+    $email = $mech->get_first_email(@emails);
+
+Returns first email in queue as a string and fails a test if the mail doesn't have a date and epoch-containing Message-ID header.
+
+=cut
+
+sub get_first_email {
+    my $mech = shift;
+    my $email = shift or do { fail 'No email retrieved'; return };
+    my $email_as_string = $email->as_string;
+    ok $email_as_string =~ s{^Date:\s+\S.*?\r?\n}{}xmsg, "Found and stripped out date";
+    ok $email_as_string =~ s{^Message-ID:\s+\S.*?\r?\n}{}xmsg, "Found and stripped out message ID (contains epoch)";
+    return $email_as_string;
+}
+
+=head2 contains_or_lacks
+
+Based upon boolean FLAG, checks that content contains or lacks TEXT.
+
+=cut
+
+sub contains_or_lacks {
+    my ($mech, $flag, $text) = @_;
+    $flag ? $mech->content_contains($text) : $mech->content_lacks($text);
 }
 
 =head2 page_errors
@@ -322,6 +392,7 @@ sub extract_problem_meta {
     my $result = scraper {
         process 'div#side p em', 'meta', 'TEXT';
         process '.problem-header p em', 'meta', 'TEXT';
+        process '.problem-header p.report_meta_info', 'meta', 'TEXT';
     }
     ->scrape( $mech->response );
 
@@ -384,7 +455,7 @@ sub extract_update_metas {
 
     my $result = scraper {
         process 'div#updates div.problem-update p em', 'meta[]', 'TEXT';
-        process '.update-text .meta-2', 'meta[]', 'TEXT';
+        process '.item-list__update-text .meta-2', 'meta[]', 'TEXT';
     }
     ->scrape( $mech->response );
 
@@ -405,7 +476,7 @@ sub extract_problem_list {
     my $mech = shift;
 
     my $result = scraper {
-        process 'ul.issue-list-a li a h4', 'problems[]', 'TEXT';
+        process 'ul.item-list--reports li a h3', 'problems[]', 'TEXT';
     }->scrape( $mech->response );
 
     return $result->{ problems } || [];
@@ -534,31 +605,74 @@ sub get_ok_json {
     return decode_json( $res->content );
 }
 
+sub delete_body {
+    my $mech = shift;
+    my $body = shift;
+
+    $mech->delete_problems_for_body($body->id);
+    $mech->delete_contact($_) for $body->contacts;
+    $mech->delete_user($_) for $body->users;
+    $_->delete for $body->response_templates;
+    $_->delete for $body->response_priorities;
+    $body->body_areas->delete;
+    $body->delete;
+}
+
+sub delete_contact {
+    my $mech = shift;
+    my $contact = shift;
+
+    $contact->contact_response_templates->delete_all;
+    $contact->contact_response_priorities->delete_all;
+    $contact->delete;
+}
+
 sub delete_problems_for_body {
     my $mech = shift;
     my $body = shift;
 
-    my $reports = FixMyStreet::App->model('DB::Problem')->search( { bodies_str => $body } );
+    my $reports = FixMyStreet::DB->resultset('Problem')->search( { bodies_str => $body } );
     if ( $reports ) {
         for my $r ( $reports->all ) {
             $r->comments->delete;
+            $r->questionnaires->delete;
         }
         $reports->delete;
     }
 }
 
+sub create_contact_ok {
+    my $self = shift;
+    my %contact_params = (
+        confirmed => 1,
+        deleted => 0,
+        editor => 'Test',
+        whenedited => \'current_timestamp',
+        note => 'Created for test',
+        @_
+    );
+    my $contact = FixMyStreet::DB->resultset('Contact')->find_or_create( \%contact_params );
+    ok $contact, 'found/created contact ' . $contact->category;;
+    return $contact;
+}
+
 sub create_body_ok {
     my $self = shift;
-    my ( $id, $name ) = @_;
+    my ( $area_id, $name, %extra ) = @_;
 
-    my $params = { id => $id, name => $name };
-    my $body = FixMyStreet::App->model('DB::Body')->find_or_create($params);
-    $body->update($params); # Make sure
-    ok $body, "found/created user for $id $name";
+    my $body = FixMyStreet::DB->resultset('Body');
+    my $params = { name => $name };
+    if ($extra{id}) {
+        $body = $body->update_or_create({ %$params, id => $extra{id} }, { key => 'primary' });
+    } else {
+        $body = $body->find_or_create($params);
+    }
+    ok $body, "found/created body $name";
 
-    FixMyStreet::App->model('DB::BodyArea')->find_or_create({
-        area_id => $id,
-        body_id => $id,
+    $body->body_areas->delete;
+    FixMyStreet::DB->resultset('BodyArea')->find_or_create({
+        area_id => $area_id,
+        body_id => $body->id,
     });
 
     return $body;
@@ -571,7 +685,7 @@ sub create_problems_for_body {
     my $dt = $params->{dt} || DateTime->now();
 
     my $user = $params->{user} ||
-      FixMyStreet::App->model('DB::User')
+      FixMyStreet::DB->resultset('User')
       ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
 
     delete $params->{user};
@@ -600,19 +714,28 @@ sub create_problems_for_body {
             latitude           => '51.5016605453401',
             longitude          => '-0.142497580865087',
             user_id            => $user->id,
-            photo              => 1,
+            photo              => $mech->get_photo_data,
         };
 
         my %report_params = ( %$default_params, %$params );
 
         my $problem =
-          FixMyStreet::App->model('DB::Problem')->create( \%report_params );
+          FixMyStreet::DB->resultset('Problem')->create( \%report_params );
 
         push @problems, $problem;
         $count--;
     }
 
     return @problems;
+}
+
+sub get_photo_data {
+    my $mech = shift;
+    return $mech->{sample_photo} ||= do {
+        my $sample_file = FixMyStreet->path_to( 't/app/controller/sample.jpg' );
+        $mech->builder->ok( -f "$sample_file", "sample file $sample_file exists" );
+        $sample_file->slurp(iomode => '<:raw');
+    };
 }
 
 1;

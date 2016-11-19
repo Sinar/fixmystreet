@@ -17,19 +17,19 @@
 [% END %]
 
 [%
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html";
     SET bodyclass = 'mappage';
     INCLUDE 'header.html',
         title = tprintf(loc('%s - Summary reports'), name)
-        rss = [ tprintf(loc('Problems within %s, FixMyStreet'), name), rss_url ]
+        rss = [ tprintf(loc('Problems within %s, %s', "First %s is the body name, second %s the site name"), name, site_name), rss_url ]
 %]
 
 [% map_html %]
 
-[% INCLUDE 'reports/_ward-list.html', location = 'before' %]
-
 </div>
-<div id="side">
+<div id="map_sidebar">
+    <div id="side">
 
 <h1 id="reports_heading">
     [% IF ward %]
@@ -43,69 +43,29 @@
     [% INCLUDE '_hart_hants_note.html' %]
 [% END %]
 
-[% IF NOT body.areas.size AND c.cobrand.country == 'GB' %]
-    <p id="unknown" class="alert">This council no longer exists.
-    [% IF body.name.match('Penwith|Kerrier|Carrick|Restormel|Caradon|North Cornwall') %]
-    Its area is now covered by <a href="/reports/Cornwall">Cornwall Council</a>.
-    [% ELSIF body.name.match('Durham|Easington|Sedgefield|Teesdale|Wear Valley|Derwentside|Chester le Street') %]
-    Its area is now covered by <a href="/reports/Durham+County">Durham County Council</a>.
-    [% ELSIF body.name.match('Blyth Valley|Wansbeck|Castle Morpeth|Tynedale|Alnwick|Berwick upon Tweed') %]
-    Its area is now covered by <a href="/reports/Northumberland">Northumberland County Council</a>.
-    [% ELSIF body.name.match('North Shropshire|Oswestry|Shrewsbury and Atcham|South Shropshire|Bridgnorth') %]
-    Its area is now covered by <a href="/reports/Shropshire">Shropshire Council</a>.
-    [% ELSIF body.name.match('Salisbury|West Wiltshire|Kennet|North Wiltshire') %]
-    Its area is now covered by <a href="/reports/Wiltshire">Wiltshire Council</a>.
-    [% ELSIF body.name.match('Ellesmere Port and Neston|Vale Royal|Chester') %]
-    Its area is now covered by <a href="/reports/Cheshire+West+and+Chester">Cheshire West and Chester Council</a>.
-    [% ELSIF body.name.match('Macclesfield|Congleton|Crewe and Nantwich') %]
-    Its area is now covered by <a href="/reports/Cheshire+East">Cheshire East Council</a>.
-    [% ELSIF body.name.match('Mid Bedfordshire|South Bedfordshire') %]
-    Its area is now covered by <a href="/reports/Central+Bedfordshire">Central Bedfordshire Council</a>.
-    [% ELSIF body.name.match('Cheshire') %]
-    Its area is now covered by <a href="/reports/Cheshire+West+and+Chester">Cheshire West and Chester Council</a> or
-    <a href="/reports/Cheshire+East">Cheshire East Council</a>.
-    [% ELSIF body.name.match('Bedfordshire') %]
-    Its area is now covered by <a href="/reports/Bedford">Bedford Borough Council</a> or
-    <a href="/reports/Central+Bedfordshire">Central Bedfordshire Council</a>.
-    [% END %]
-    </p>
+[% IF NOT body.areas.size %]
+    [% TRY %][% INCLUDE 'reports/_body_gone.html' %][% CATCH file %][% END %]
 [% ELSE %]
     [% INCLUDE 'reports/_rss.html' %]
 [% END %]
 
 [% TRY %][% INCLUDE 'reports/cobrand_stats.html' %][% CATCH file %][% END %]
 
-[% INCLUDE 'reports/_ward-list.html', location = 'after' %]
-
-[% IF c.cobrand.moniker == 'fixmystreet' %]
-<p class="promo">
-    FixMyStreet is now available for local council websites.
-    <a href="https://www.fixmystreet.com/council">Find&nbsp;out&nbsp;more</a>.
-</p>
-[% END %]
-
-[% INCLUDE 'pagination.html', param = 'p' %]
+[% INCLUDE 'reports/_ward-list.html' %]
 
 <section class="full-width">
-    [% INCLUDE column
-        problems = problems.${body.id}
-    %]
+[% INCLUDE "reports/_list-filters.html", use_form_wrapper = 1 %]
+<div class="js-pagination">
+[% INCLUDE 'pagination.html', param = 'p' %]
+</div>
+<div id="js-reports-list">
+    [% INCLUDE 'reports/_problem-list.html' %]
+</div>
+<div class="js-pagination">
+[% INCLUDE 'pagination.html', param = 'p' %]
+</div>
 </section>
 
-[% INCLUDE 'pagination.html', param = 'p' %]
-
+    </div>
 </div>
 [% INCLUDE 'footer.html' %]
-
-[% BLOCK column %]
-[% IF problems %]
-
-<ul class="issue-list-a">
-[% FOREACH problem IN problems %]
-    [% INCLUDE 'reports/_list-entry.html' %]
-[% END %]
-</ul>
-
-[% END %]
-[% END %]
-

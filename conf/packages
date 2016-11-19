@@ -3,6 +3,7 @@
 # mailing list if you want to change it.
 
 make
+g++
 jhead
 liblocale-gettext-perl
 libsoap-lite-perl
@@ -11,8 +12,7 @@ perl
 perlmagick
 libmath-bigint-gmp-perl
 gettext
-ruby-compass
-postgresql-server-dev-9.1 | postgresql-server-dev-8.4
+postgresql-server-dev-all
 gnuplot
 ttf-bitstream-vera
 libexpat1-dev

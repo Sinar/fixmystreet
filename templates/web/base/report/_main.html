@@ -1,99 +1,146 @@
-[% moderating = c.user && c.user.has_permission_to('moderate', problem.bodies_str) %]
+[% IF c.user_exists %]
+    [% DEFAULT permissions = c.user.permissions(c, problem.bodies_str) %]
+[%- END %]
 
-[% IF moderating %]
-[%# TODO: extract stylesheet! %]
-<style>
-    .moderate-edit label {
-        display: inline-block;
-        height: 1em;
-        margin-top: 0;
-    }
+<a href="[% c.uri_for( '/around', { lat => latitude, lon => longitude } ) %]"
+    class="problem-back js-back-to-report-list">[% loc('Back to all reports') %]</a>
 
-    .moderate-edit input {
-        display: inline-block;
-    }
+<div class="problem-header clearfix" problem-id="[% problem.id %]">
 
-    .moderate-edit { display: none }
-    .moderate-edit :disabled {
-        background: #ddd;
-    }
-    br {
-        line-height: 0.5em;
-    }
-</style>
+[% IF c.user.has_permission_to('planned_reports', problem.bodies_str_ids) %]
+<form method="post" action="/my/planned/change" id="planned_form" class="hidden-label-target">
+    <input type="hidden" name="id" value="[% problem.id %]">
+    <input type="hidden" name="token" value="[% csrf_token %]">
+    <input type="hidden" name="change" value="[% IF c.user.is_planned_report(problem) %]remove[% ELSE %]add[% END %]">
+    <p><input
+        type="submit"
+        id="shortlist-report"
+        data-label-remove="[% loc('Remove from shortlist') %]"
+        data-label-add="[% loc('Add to shortlist') %]"
+        data-value-remove="[% loc('Shortlisted') %]"
+        data-value-add="[% loc('Shortlist') %]"
+    [%~ IF c.user.is_planned_report(problem) ~%]
+        value="[% loc('Shortlisted') %]"
+        aria-label="[% loc('Remove from shortlist') %]"
+    [%~ ELSE ~%]
+        value="[% loc('Shortlist') %]"
+        aria-label="[% loc('Add to shortlist') %]"
+    [%~ END ~%]
+    ></p>
+</form>
 [% END %]
 
-<div class="problem-header cf" problem-id="[% problem.id %]">
-  [% IF moderating %]
-    [% original = problem.moderation_original_data %]
+  [% IF permissions.moderate %]
+    [% original = problem_original %]
     <form method="post" action="/moderate/report/[% problem.id %]">
-        <input type="button" class="btn moderate moderate-display" value="moderate">
-        <div class="moderate-edit">
-            <input type="checkbox" class="hide-document" name="problem_hide">
-            <label for="problem_hide">Hide report completely?</label>
-            <br />
-            <input type="checkbox" name="problem_show_name" [% problem.anonymous ? '' : 'checked' %]>
-            <label for="problem_show_name">Show name publicly?</label>
-            [% IF problem.photo or original.photo %]
-                <br />
-                <input type="checkbox" name="problem_show_photo" [% problem.photo ? 'checked' : '' %]>
-                <label for="problem_show_photo">Show Photo?</label>
-            [% END %]
-        </div>
+        <input type="hidden" name="token" value="[% csrf_token %]">
   [% END %]
+
     <h1 class="moderate-display">[% problem.title | html %]</h1>
-    [% IF moderating %]
+
+  [% IF permissions.moderate %]
     <div class="moderate-edit">
-        [% IF problem.title != original.title %]
-        <input type="checkbox" name="problem_revert_title" class="revert-title">
-        <label for="problem_revert_title">Revert to original title</label>
-        [% END %]
-    <h1><input type="text" name="problem_title" value="[% problem.title | html %]"></h1>
+      [% IF problem.title != original.title %]
+        <label>
+            <input type="checkbox" name="problem_revert_title" class="revert-title">
+            Revert to original title
+        </label>
+      [% END %]
+        <h1><input class="form-control" type="text" name="problem_title" value="[% problem.title | html %]" data-original-value="[% original.title | html %]"></h1>
     </div>
+  [% END %]
+
+    <div class="moderate-edit">
+        <label>
+            <input type="checkbox" name="problem_show_name" [% 'checked' UNLESS problem.anonymous %]>
+            Show reporter&rsquo;s name
+        </label>
+    </div>
+    <p class="report_meta_info">
+        [% INCLUDE 'report/_report_meta_info.html' %]
+    </p>
+
+    [% INCLUDE 'report/_main_sent_info.html' %]
+    [% mlog = problem.latest_moderation_log_entry(); IF mlog %]
+        <p>Moderated by [% mlog.user.from_body.name %] at [% prettify_dt(mlog.whenedited) %]</p>
     [% END %]
 
-    <p><em>
-    [% problem.meta_line(c) | html %]
-    [%- IF !problem.used_map AND c.cobrand.moniker != 'emptyhomes' %]; <strong>[% loc('there is no pin shown as the user did not use the map') %]</strong>[% END %]
-    [% IF problem.bodies_str %]
-        [% INCLUDE 'report/_council_sent_info.html' %]
-    [% ELSE %]
-        <br><small>[% loc('Not reported to council') %]</small>
-    [% END %]
-    [% mlog = problem.latest_moderation_log_entry(); IF mlog %]
-        <br /> Moderated by [% mlog.user.from_body.name %] at [% prettify_dt(mlog.whenedited) %]
-    [% END %]
-    </em></p>
     [% INCLUDE 'report/_support.html' %]
 
-    [% IF c.cobrand.moniker != 'southampton' %]
-        [% INCLUDE 'report/photo.html' object=problem %]
+  [% IF permissions.moderate %]
+    [% IF problem.photo or original.photo %]
+        <p class="moderate-edit">
+            <label>
+                <input type="checkbox" name="problem_show_photo" [% problem.photo ? 'checked' : '' %]>
+                Show photo
+            </label>
+        </p>
     [% END %]
+  [% END %]
 
-        <div class="moderate-display">
-            [% add_links( problem.detail ) | html_para %]
-        </div>
-        [% IF moderating %]
-            <div class="moderate-edit">
-            [% IF problem.detail != original.detail %]
+    [% INCLUDE 'report/photo.html' object=problem %]
+    <div class="moderate-display">
+        [% problem.detail | add_links | html_para %]
+    </div>
+
+  [% IF permissions.moderate %]
+    <p class="moderate-edit">
+      [% IF problem.detail != original.detail %]
+        <label>
             <input type="checkbox" name="problem_revert_detail" class="revert-textarea">
-            <label for="problem_revert_detail">Revert to original text</label>
-            [% END %]
-            <textarea name="problem_detail">[% add_links( problem.detail ) %]</textarea>
-            </div>
-        [% END %]
+            Revert to original text
+        </label>
+      [% END %]
+        <textarea class="form-control" name="problem_detail" data-original-value="[% original.detail | html %]">[% problem.detail | html %]</textarea>
+    </p>
 
-    [% IF c.cobrand.moniker == 'southampton' %]
-        [% INCLUDE 'report/photo.html' object=problem %]
-    [% END %]
-
-  [% IF moderating %]
-        <div class="moderate-edit">
+    <div class="moderate-edit">
+        <p>
+            <label>
+                <input type="checkbox" class="hide-document" name="problem_hide" [% problem.hidden ? 'checked' : '' %]>
+                Hide entire report
+            </label>
+        </p>
+        <p>
             <label for="moderation_reason">Moderation reason:</label>
-            <input type="text" name="moderation_reason" placeholder="Describe why you are moderating this">
-            <input type="submit" class="red-btn" value="Moderate it">
-            <input type="button" class="btn cancel" value="cancel">
-        </div>
+            <input type="text" class="form-control" name="moderation_reason" placeholder="Describe why you are moderating this">
+        </p>
+        <p>
+            <input type="submit" class="green-btn" value="Save changes">
+            <input type="button" class="btn cancel" value="Discard changes">
+        </p>
+    </div>
+  [% END %]
+
+  [% IF permissions.moderate %]
     </form>
   [% END %]
+
+  [% IF
+      (permissions.moderate)
+     OR
+       (c.user.has_permission_to('planned_reports', problem.bodies_str_ids))
+  %]
+    <div class="moderate-display segmented-control" role="menu">
+      [% IF permissions.moderate %]
+        <a class="js-moderate btn" role="menuitem" aria-label="[% loc('Moderate this report') %]">[% loc('Moderate') %]</a>
+      [% END %]
+      [% IF c.user.has_permission_to('planned_reports', problem.bodies_str_ids) %]
+          [%~ IF c.user.is_planned_report(problem) ~%]
+            <label class="btn" for="shortlist-report" role="menuitem" aria-label="[% loc('Remove from shortlist') %]">[% loc('Shortlisted') %]</label>
+          [%~ ELSE ~%]
+            <label class="btn" for="shortlist-report" role="menuitem" aria-label="[% loc('Add to shortlist') %]">[% loc('Shortlist') %]</label>
+          [%~ END ~%]
+      [% END %]
+    </div>
+  [% END %]
+
+  [% IF permissions.planned_reports AND problem.shortlisted_user AND NOT c.user.is_planned_report(problem) %]
+    <div class="moderate-display shortlisted-status">
+      <h3>[% tprintf(loc('Shortlisted by %s'), problem.shortlisted_user.name) %]</h3>
+      <p>[% tprintf(loc('Adding this report to your shortlist will remove it from %s’s shortlist.'), problem.shortlisted_user.name) %]</p>
+    </div>
+  [% END %]
+
+  [% TRY %][% PROCESS 'report/_main_after.html' %][% CATCH file %][% END %]
 </div>

@@ -1,38 +1,32 @@
+// Zurich has a taller map page header than most cobrands.
+$mappage-header-height: 7em;
+
 @import "colours";
 @import "../sass/layout";
 @import "zurich";
 
 // Things to override from parent stylesheet
 
-// White background, so no shadow or margin needed.
 .content {
     color: #3c3c3c;
-    @include box-shadow(none);
 }
-.ie6, .ie7, .ie8  {
-    .content {
-        border: none;
-    }
-}
-// Except on map pages (which includes the front page)
-body.mappage .content, body.frontpage .content {
+
+// Front page content needs a shadow.
+// (Purely decorative: No need for border fallback for IE8)
+body.frontpage .content {
     @include box-shadow(0 0 6px 1px #000);
 }
-.ie6, .ie7, .ie8  {
-    body.mappage .content, body.frontpage .content {
-        border: 1px solid #666;
-    }
-}
-/* The header on a map page needs a shadow too */
-body.mappage .nav-wrapper-2 {
+// The header on a map page needs a shadow too
+body.mappage .nav-wrapper .nav-wrapper-2 {
     @include box-shadow(0 0 6px 1px #000);
+    z-index: 2; // One more than #zurich-main-nav so it's on top
 }
-/* Except on admin pages where there's an admin nav directly underneath it */
+// Except on admin pages where there's an admin nav directly underneath it
 body.mappage.admin .nav-wrapper-2 {
     @include box-shadow(none);
 }
 
-/* Fix positioning of images in the admin */
+// Fix positioning of images in the admin
 body.admin .admin-nav-wrapper {
     z-index: 1;
 }
@@ -90,7 +84,7 @@ body.mappage #site-logo-text {
         border-top: none;
     }
     .nav-wrapper-3 {
-        height: 99px;
+        height: 6em; // rough figure, enough to show the blue band, but less than .nav-wrapper-2 height
         padding-top: 18px;
     }
 }
@@ -99,7 +93,6 @@ body.mappage {
     .nav-wrapper {
         .nav-wrapper-2 {
             border-top: none;
-            height: 117px; // 99px+18px for padding
             padding: 0 10px;
             box-sizing: border-box;
         }
@@ -107,12 +100,7 @@ body.mappage {
     /* Ugh :( But first wrapper is the caption, second is the fixed (so first we
        can do padding on) so a third seems necessary for the background then. */
     .nav-wrapper-3 {
-        height: 99px;
-        padding-top: 18px;
         background: #fff url(logo_portal.x.jpg) top left repeat-x;
-    }
-    #site-logo {
-        margin-left: 10px;
     }
     .content {
       margin-top: 1em;
@@ -187,23 +175,26 @@ body.mappage {
 }
 
 body.mappage {
-    #main-nav {
-        width: auto;
-    }
-    #main-nav ul#main-menu li a,
-    #main-nav ul#main-menu li span {
-        padding: 0.75em;
-    }
     #zurich-footer {
         display: none;
+    }
+
+    #map_sidebar {
+        padding-top: 3em; // make space for the #zurich-main-nav
+    }
+
+    #zurich-main-nav {
+      margin: 0;
+      position: absolute;
+      top: 7em;
+      left: 0;
+      width: 29em; // width of #map_sidebar (including padding)
+      z-index: 1;
     }
 }
 
 body.twothirdswidthpage {
     .content {
-        aside {
-            @include box-shadow(none);
-        }
         .sticky-sidebar aside {
           top: 14em; // overrides default value, due to Zurich nav at top of content
         }
@@ -219,7 +210,7 @@ body.twothirdswidthpage {
         &#fixed {
             padding-top: 2em;
             background: $col_fixed_label;
-            @include background(linear-gradient(#769643, $col_fixed_label 4px));
+            @include linear-gradient(#769643, $col_fixed_label 4px);
         }
         &#closed {
             padding-top: 2em;
@@ -227,20 +218,15 @@ body.twothirdswidthpage {
         }
     }
 }
-.ie6 .banner p {
-    &#fixed {
-        background-image: none;
-    }
-}
 
 #fms_pan_zoom {
-    top: 9em !important;
+    top: 2em;
 }
 #fms_pan_zoom_zoomin {
-    top: 0 !important;
+    top: 0;
 }
 #fms_pan_zoom_zoomout {
-    top: 44px !important;
+    top: 44px;
 }
 
 // Admin specific changes
@@ -249,10 +235,60 @@ body.fullwidthpage.admin .content {
     width: 100%;
 }
 
-body.mappage.admin .content {
-    margin-top: 6em;
-    margin-left: 0.5em;
+body.mappage.admin {
+    // Shuffle things around so they're in the right place
+    #map_box {
+        top: 11em;
+        left: 40em;
+    }
+    #map_sidebar {
+        top: 11em;
+        width: 40em;
+        padding: 0;
+        background: #fff url(/cobrands/zurich/admin-faux-columns.gif) top center repeat-y;
+        @include box-shadow(0 0 5px rgba(0,0,0,0.5));
+    }
+    .content {
+        // To push down the admin navigation
+        margin-top: 6em;
+    }
 }
+
+.admin-report-edit {
+    padding: 1em;
+    width: 50%;
+    float: right;
+    font-size: 0.8em;
+    box-sizing: border-box;
+
+    button, input[type="submit"], .btn {
+        padding: 0.5em 0.5em 0.3em 0.5em;
+        text-transform: none;
+    }
+
+    h2 {
+        font-family: inherit;
+        font-size: inherit;
+        font-weight: bold;
+    }
+}
+
+.admin-report-edit--details {
+    label[for="title"],
+    label[for="detail"] {
+        display: none;
+    }
+
+    #title {
+        margin-top: 1em;
+        font-weight: bold;
+    }
+
+    #detail {
+        margin-bottom: 1em;
+    }
+}
+
 .admin {
     .content {
         margin: 2em 0 1em;
@@ -270,10 +306,35 @@ body.mappage.admin .content {
           font-weight: bold;
           padding-right: 0.333em;
         }
+        :first-child > label {
+            // avoid empty space above first label in a container
+            margin-top: 0;
+        }
+        textarea {
+            min-height: 0;
+        }
+    }
+
+    button, input[type=submit], .btn {
+        &.delete {
+            font-size: 0.75em;
+            color: #933;
+            margin: 2em 0;
+
+            &:hover {
+                @include linear-gradient(#fcc, #daa 50%);
+            };
+        }
     }
 
     #zurich-footer {
         margin: 2em auto 3em auto;
+    }
+
+    .message-updated {
+      color: #060;
+      font-weight: bold;
+      position: absolute;
     }
 }
 
@@ -281,59 +342,12 @@ body.mappage.admin .content {
     background-color: white;
     padding: 1.5em 0 1em;
 }
+
 body.mappage .admin-nav-wrapper {
     box-sizing: border-box;
     padding-left: 10px;
     padding-right: 10px;
     position: fixed;
     width: 100%;
-    @include box-shadow(0 0 6px 1px #000);
+    @include box-shadow(0 0 5px rgba(0,0,0,0.5));
 }
-
-.admin-nav {
-    background: #f4f4f4;
-    @include background(linear-gradient(#fbfbfb, #efefef));
-    border-bottom: 2px solid $table_border_color;
-    ul {
-        overflow:auto;
-        margin:0 0 -2px 0;
-        list-style: none;
-        padding: 0;
-        border-top: 1px solid $table_border_color;
-        border-left: 1px solid $table_border_color;
-        border-right: 1px solid $table_border_color;
-        li {
-            border-right: 1px solid $table_border_color;
-            float:left;
-            list-style: none;
-            margin:0;
-            padding: 0.5em 1em;
-            font-weight: bold;
-            color: #000;
-            a {
-                color: #000;
-            }
-        }
-        li.search-box {
-            float: right;
-        }
-        li.current {
-            background-color: #fff;
-            border-bottom: 2px solid #fff;
-        }
-        li.search-box {
-            border:none;
-            padding: 0.2em 0.5em 0.2em 30px;
-            background-image: url('search-icon.png');
-            background-position: 2px center;
-            background-repeat: no-repeat;
-            input {
-                height: 100%;
-                width: 12em;
-                border: none;
-                padding: 6px 0.5em;
-            }
-        }
-    }
-}
-

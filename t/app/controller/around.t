@@ -1,7 +1,9 @@
 use strict;
 use warnings;
 use Test::More;
+use LWP::Protocol::PSGI;
 
+use t::Mock::MapIt;
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
@@ -54,8 +56,12 @@ foreach my $test (
 {
     subtest "test bad pc value '$test->{pc}'" => sub {
         $mech->get_ok('/');
-        $mech->submit_form_ok( { with_fields => { pc => $test->{pc} } },
-            "bad location" );
+        FixMyStreet::override_config {
+            GEOCODER => '',
+        }, sub {
+            $mech->submit_form_ok( { with_fields => { pc => $test->{pc} } },
+                "bad location" );
+        };
         is_deeply $mech->page_errors, $test->{errors},
           "expected errors for pc '$test->{pc}'";
         is_deeply $mech->pc_alternatives, $test->{pc_alternatives},
@@ -67,8 +73,8 @@ foreach my $test (
 foreach my $test (
     {
         pc        => 'SW1A 1AA',
-        latitude  => '51.501009',
-        longitude => '-0.141588',
+        latitude  => '51.5',
+        longitude => '-2.1',
     },
     {
         pc        => 'TQ 388 773',
@@ -78,10 +84,12 @@ foreach my $test (
   )
 {
     subtest "check lat/lng for '$test->{pc}'" => sub {
+        LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.uk');
+
         $mech->get_ok('/');
         FixMyStreet::override_config {
             ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             $mech->submit_form_ok( { with_fields => { pc => $test->{pc} } },
                 "good location" );
@@ -116,11 +124,55 @@ subtest 'check non public reports are not displayed on around page' => sub {
     ok $private->update( { non_public => 1 } ), 'problem marked non public';
 
     $mech->get_ok('/');
-    $mech->submit_form_ok( { with_fields => { pc => 'EH99 1SP' } },
-        "good location" );
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
+        MAPIT_URL => 'http://mapit.mysociety.org/',
+    }, sub {
+        $mech->submit_form_ok( { with_fields => { pc => 'EH99 1SP' } },
+            "good location" );
+    };
     $mech->content_lacks( 'Around page Test 3 for 2651',
         'problem marked non public is not visible' );
 };
 
+
+subtest 'check category and status filtering works on /ajax' => sub {
+    my $categories = [ 'Pothole', 'Vegetation', 'Flytipping' ];
+    my $params = {
+        postcode  => 'OX1 1ND',
+        latitude  => 51.7435918829363,
+        longitude => -1.23201966270446,
+    };
+    my $bbox = ($params->{longitude} - 0.01) . ',' .  ($params->{latitude} - 0.01)
+                . ',' . ($params->{longitude} + 0.01) . ',' .  ($params->{latitude} + 0.01);
+
+    # Create one open and one fixed report in each category
+    foreach my $category ( @$categories ) {
+        foreach my $state ( 'confirmed', 'fixed' ) {
+            my %report_params = (
+                %$params,
+                category => $category,
+                state => $state,
+            );
+            $mech->create_problems_for_body( 1, 2237, 'Around page', \%report_params );
+        }
+    }
+
+    my $json = $mech->get_ok_json( '/ajax?bbox=' . $bbox );
+    my $pins = $json->{pins};
+    is scalar @$pins, 6, 'correct number of reports when no filters';
+
+    $json = $mech->get_ok_json( '/ajax?filter_category=Pothole&bbox=' . $bbox );
+    $pins = $json->{pins};
+    is scalar @$pins, 2, 'correct number of Pothole reports';
+
+    $json = $mech->get_ok_json( '/ajax?status=open&bbox=' . $bbox );
+    $pins = $json->{pins};
+    is scalar @$pins, 3, 'correct number of open reports';
+
+    $json = $mech->get_ok_json( '/ajax?status=fixed&filter_category=Vegetation&bbox=' . $bbox );
+    $pins = $json->{pins};
+    is scalar @$pins, 1, 'correct number of fixed Vegetation reports';
+};
 
 done_testing();

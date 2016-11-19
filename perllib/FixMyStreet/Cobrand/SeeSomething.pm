@@ -9,18 +9,6 @@ sub council_area { return 'West Midlands'; }
 sub council_name { return 'See Something Say Something'; }
 sub council_url { return 'seesomething'; }
 sub area_types  { [ 'MTD' ] }
-sub site_title { return 'See Something, Say Something'; }
-
-
-sub site_restriction {
-    my $self = shift;
-    return { bodies_str => { IN => $self->council_id  } };
-}
-
-sub problems_clause {
-    my $self = shift;
-    return { bodies_str => { IN => $self->council_id  } };
-}
 
 sub area_check {
     my ( $self, $params, $context ) = @_;
@@ -72,6 +60,11 @@ sub allow_anonymous_reports { 1; }
 
 sub anonymous_account { return { name => 'Anonymous Submission', email => FixMyStreet->config('DO_NOT_REPLY_EMAIL') }; }
 
+sub admin_allow_user {
+    my ( $self, $user ) = @_;
+    return 1 if ( $user->from_body || $user->is_superuser );
+}
+
 sub admin_pages {
     my $self = shift;
 
@@ -86,6 +79,7 @@ sub admin_stats {
 
     my %filters = ();
 
+    # XXX The below lookup assumes a body ID === MapIt area ID
     my %councils =
         map {
             my $name = $_->name;
@@ -100,22 +94,22 @@ sub admin_stats {
         $c->detach( '/page_error_404_not_found' );
     }
 
-    if ( $c->req->param('category') ) {
-        $filters{category} = $c->req->param('category');
-        $c->stash->{category} = $c->req->param('category');
+    if ( $c->get_param('category') ) {
+        $filters{category} = $c->get_param('category');
+        $c->stash->{category} = $c->get_param('category');
     }
 
-    if ( $c->req->param('subcategory') ) {
-        $filters{subcategory} = $c->req->param('subcategory');
-        $c->stash->{subcategory} = $c->req->param('subcategory');
+    if ( $c->get_param('subcategory') ) {
+        $filters{subcategory} = $c->get_param('subcategory');
+        $c->stash->{subcategory} = $c->get_param('subcategory');
     }
 
-    if ( $c->req->param('service') ) {
-        $filters{service} = { -ilike => $c->req->param('service') };
-        $c->stash->{service} = $c->req->param('service');
+    if ( $c->get_param('service') ) {
+        $filters{service} = { -ilike => $c->get_param('service') };
+        $c->stash->{service} = $c->get_param('service');
     }
 
-    my $page = $c->req->params->{p} || 1;
+    my $page = $c->get_param('p') || 1;
 
     my $p = $c->model('DB::Problem')->search(
         {

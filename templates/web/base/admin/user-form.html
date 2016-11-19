@@ -1,10 +1,8 @@
-<form method="post" action="[% c.uri_for( 'user_edit', user.id ) %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
-    <input type="hidden" name="token" value="[% token %]" >
+<form method="post" id="user_edit" action="[% c.uri_for( 'user_edit', user.id ) %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
+    <input type="hidden" name="token" value="[% csrf_token %]" >
     <input type="hidden" name="submit" value="1" >
 
-    [% IF c.cobrand.moniker == 'zurich' AND field_errors.email %]
-        <p class='error'>[% field_errors.email %]</p>
-    [% END %]
+    [% INCLUDE 'errors.html' errors = field_errors.values %]
     <ul class="no-bullets">
         <li>
           <div class="admin-hint">
@@ -15,9 +13,15 @@
               %]
             </p>
           </div>
-          [% loc('Name:') %] <input type='text' name='name' id='name' value='[% user.name | html %]'>
+          <label for="name">[% loc('Name:') %]</label>
+          <input type='text' class="form-control" name='name' id='name' value='[% user.name | html %]'>
         </li>
-        <li>[% loc('Email:') %] <input type='text' id='email' name='email' value='[% user.email | html %]'></li>
+        <li><label for="email">[% loc('Email:') %]</label>
+        <input type='text' class="form-control" id='email' name='email' value='[% user.email | html %]'></li>
+        <li><label for="phone">[% loc('Phone:') %]</label>
+        <input type='text' class="form-control" id='phone' name='phone' value='[% user.phone | html %]'></li>
+
+      [% IF c.user.is_superuser || c.cobrand.moniker == 'zurich' %]
         <li>
           <div class="admin-hint">
             <p>
@@ -29,13 +33,58 @@
               %]
             </p>
           </div>
-          [% loc('Body:') %] <select id='body' name='body'>
+          [% loc('Body:') %] <select class="form-control" id='body' name='body'>
             <option value=''>[% loc('No body') %]</option>
-        [% FOR body IN bodies %]
-            <option value="[% body.id %]"[% ' selected' IF body.id == user.from_body.id %]>[% body.name %]</option>
-        [% END %]
+          [% FOR body IN bodies %]
+            <option value="[% body.id %]"[% ' selected data-originally-selected' IF body.id == user.from_body.id %]>[% body.name %]</option>
+          [% END %]
+          </select>
         </li>
-        </select>
+        [% ELSE %]
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc("Staff users have permission to log in to the admin.") %]
+              </p>
+            </div>
+            [% loc('Staff:') %] <input type="checkbox" id="body" name="body" value="[% c.user.from_body.id %]" [% user.from_body.id == c.user.from_body.id ? ' checked' : '' %] [% 'disabled' UNLESS c.user.is_superuser OR c.user.has_body_permission_to('user_assign_body') %]>
+          </li>
+        [% END %]
+
+        [% IF areas AND c.cobrand.moniker != 'zurich' %]
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc(
+                  "Normal (public) users should not be associated with any <strong>area</strong>.<br>
+                  Authorised staff users can be associated with the area in which they operate.")
+                %]
+              </p>
+            </div>
+            [% loc('Area:') %]
+            <select class="form-control" id='area_id' name='area_id' [% 'disabled' UNLESS c.user.has_permission_to('user_assign_areas', user.from_body.id) %]>
+              <option value=''>[% loc('No area') %]</option>
+              [% FOREACH area IN areas %]
+                <option value="[% area.id %]"[% ' selected' IF area.id == user.area_id %]>[% area.name | html %]</option>
+              [% END %]
+            </select>
+          </li>
+        [% END %]
+
+        [% IF contacts AND c.cobrand.moniker != 'zurich'%]
+          <li class="js-user-categories">
+            <div class="admin-hint">
+              <p>
+                [% loc(
+                  "Authorised staff users can be associated with the categories in which they operate.")
+                %]
+              </p>
+            </div>
+            [% INCLUDE 'admin/category-checkboxes.html' %]
+          </li>
+        [% END %]
+
+
       [% IF c.cobrand.moniker != 'zurich' %]
         <li>
           <div class="admin-hint">
@@ -47,10 +96,83 @@
               [% loc("You can add an abusive user's email to the abuse list, which automatically hides (and never sends) reports they create.") %]
             </p>
           </div>
-          
+
           [% loc('Flagged:') %] <input type="checkbox" id="flagged" name="flagged"[% user.flagged ? ' checked' : '' %]>
         </li>
+
+        [% UNLESS user.is_superuser %]
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc("Reports made by trusted users will be sent to the responsible body without being inspected first.") %]
+              </p>
+            </div>
+            [% IF c.user.is_superuser %]
+              [% loc('Trusted by bodies:') %]<br />
+              <select class="form-control" id='body' name='trusted_bodies' multiple>
+                [% FOR body IN bodies %]
+                  <option value="[% body.id %]"[% ' selected' IF user.has_permission_to('trusted', body.id) %]>[% body.name %]</option>
+                [% END %]
+              </select>
+            [% ELSE %]
+              <label>
+                [% loc('Trusted:') %]
+                <input type="checkbox" id="trusted_bodies" name="trusted_bodies" value="[% c.user.from_body.id %]" [% 'checked' IF user.has_permission_to('trusted', c.user.from_body.id) %]>
+              </label>
+            [% END %]
+          </li>
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc("Reports from users with high enough reputation will be sent immediately without requiring inspection. Each category's threshold can be managed on its edit page. Users earn reputation when a report they have made is marked as inspected by inspectors.") %]
+              </p>
+            </div>
+            [% loc('Reputation:') %] [% user.get_extra_metadata('reputation') %]
+          </li>
+        [% END %]
+
+        [% IF c.user.is_superuser %]
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc("Superusers have permission to perform <strong>all actions</strong> within the admin.") %]
+              </p>
+            </div>
+            [% loc('Superuser:') %] <input type="checkbox" id="is_superuser" name="is_superuser"[% user.is_superuser ? ' checked' : '' %]>
+          </li>
+        [% END %]
+
+        [% IF available_permissions AND NOT user.is_superuser %]
+          <li>
+            <div class="admin-hint">
+              <p>
+                [% loc("Users can perform the following actions within their assigned body or area.") %]
+              </p>
+            </div>
+            <p>[% loc('Permissions:') %]</p>
+            <ul>
+          [% FOREACH group IN available_permissions.pairs %]
+            <li>
+              [% group.key %]
+              <ul class="no-bullets">
+                <li>
+                  (<a href="#" data-select-all>[% loc('all') %]</a> /
+                  <a href="#" data-select-none>[% loc('none') %]</a>)
+                </li>
+                [% FOREACH permission IN group.value %]
+                  <li>
+                    <label class="inline">
+                      <input type="checkbox" id="perms_[% permission.key %]" name="permissions[[% permission.key %]]" [% "checked" IF user.has_body_permission_to(permission.key) %]>
+                      [% permission.value %]
+                    </label>
+                  </li>
+                [% END %]
+              </ul>
+            </li>
+          [% END %]
+            </ul>
+        [% END %]
       [% END %]
     </ul>
-    <input type="submit" name="Submit changes" value="[% loc('Submit changes') %]" >
+    <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" >
 </form>

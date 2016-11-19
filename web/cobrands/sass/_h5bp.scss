@@ -37,10 +37,13 @@ html { font-size: 100%; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 10
 body { margin: 0; font-size: 1em; line-height: 1.5; }
 
 /* mySociety addition: background colour */
-body, button, input, select, textarea {
-    font-family: sans-serif; 
+body, button {
+    font-family: sans-serif;
     color: #222;
     background-color: #fff
+}
+input[disabled] {
+    color: #888;
 }
 
 /*
@@ -244,11 +247,9 @@ td { vertical-align: top; }
 .invisible { visibility: hidden; }
 
 /* Contain floats: h5bp.com/q */
-/* mySociety change: rename to cf */
-.cf:before, .cf:after { content: ""; display: table; }
-.cf:after { clear: both; }
-.cf { *zoom: 1; }
-
+.clearfix:before, .clearfix:after { content: " "; display: table; }
+.clearfix:after { clear: both; }
+.clearfix { *zoom: 1; }
 
 
 /* ==|== print styles =======================================================

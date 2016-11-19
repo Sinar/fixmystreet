@@ -17,10 +17,7 @@ $mech->clear_emails_ok;
 # create a test user and report
 $mech->delete_user('test@example.com');
 
-my $user =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
-ok $user, "created test user";
+my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
 my $dt = DateTime->now()->subtract( weeks => 5 );
 my $report_time = $dt->ymd . ' ' . $dt->hms;
@@ -61,12 +58,14 @@ FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
 } );
 my $email = $mech->get_email;
 ok $email, "got an email";
-like $email->body, qr/fill in our short questionnaire/i, "got questionnaire email";
+my $plain = $mech->get_text_body_from_email($email, 1);
+like $plain->body, qr/fill in our short questionnaire/i, "got questionnaire email";
 
-like $email->body, qr/Testing =96 Detail/, 'email contains encoded character';
-is $email->header('Content-Type'), 'text/plain; charset="windows-1252"', 'in the right character set';
+like $plain->body_str, qr/Testing \x{2013} Detail/, 'email contains encoded character';
+is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'in the right character set';
 
-my ($token) = $email->body =~ m{http://.*?/Q/(\S+)};
+my $url = $mech->get_link_from_email($email);
+my ($token) = $url =~ m{/Q/(\S+)};
 ok $token, "extracted questionnaire token '$token'";
 $mech->clear_emails_ok;
 
@@ -87,7 +86,7 @@ foreach my $test (
     {
         desc => 'User goes to questionnaire URL with a bad token',
         token_extra => 'BAD',
-        content => "we couldn't validate that token",
+        content => "Sorry, that wasn&rsquo;t a valid link",
     },
     {
         desc => 'User goes to questionnaire URL for a now-hidden problem',
@@ -96,7 +95,7 @@ foreach my $test (
     },
     {
         desc => 'User goes to questionnaire URL for an already answered questionnaire',
-        answered => \'ms_current_timestamp()',
+        answered => \'current_timestamp',
         content => 'already answered this questionnaire',
     },
 ) {
@@ -191,6 +190,16 @@ foreach my $test (
         },
     },
     {
+        desc => 'Fixed report, reopened, reported before, blank update, no further questionnaire',
+        problem_state => 'fixed',
+        fields => {
+            been_fixed => 'No',
+            reported => 'Yes',
+            another => 'No',
+            update => '   ',
+        },
+    },
+    {
         desc => 'Closed report, said fixed, reported before, no update, no further questionnaire',
         problem_state => 'closed',
         fields => {
@@ -252,13 +261,13 @@ foreach my $test (
 
         # Check the right HTML page has been returned
         $mech->content_like( qr/<title>[^<]*Questionnaire/m );
-        $mech->content_contains( 'glad to hear it&rsquo;s been fixed' )
+        $mech->content_contains( 'Glad to hear' )
             if $result =~ /fixed/;
-        $mech->content_lacks( 'glad to hear it&rsquo;s been fixed' )
+        $mech->content_lacks( 'Glad to hear' )
             if $result !~ /fixed/;
         $mech->content_contains( 'get some more information about the status of your problem' )
             if $result eq 'unknown';
-        $mech->content_contains( "sorry to hear that" )
+        $mech->content_contains( "sorry to hear" )
             if $result eq 'confirmed' || $result eq 'closed';
 
         # Check the database has the right information
@@ -266,7 +275,7 @@ foreach my $test (
         $questionnaire->discard_changes;
         is $report->state, $result eq 'unknown' ? $test->{problem_state} : $result;
         is $report->send_questionnaire, $another;
-        ok DateTime::Format::Pg->format_datetime( $report->lastupdate) gt $report_time, 'lastupdate changed'
+        ok (DateTime::Format::Pg->format_datetime( $report->lastupdate) gt $report_time, 'lastupdate changed')
             unless $test->{fields}{been_fixed} eq 'Unknown' || $test->{lastupdate_static};
         is $questionnaire->old_state, $test->{problem_state};
         is $questionnaire->new_state, $result;
@@ -315,11 +324,11 @@ my $comment = FixMyStreet::App->model('DB::Comment')->find_or_create(
 );
 subtest 'Check updates are shown correctly on questionnaire page' => sub {
     $mech->get_ok("/Q/" . $token->token);
-    $mech->content_contains( 'updates that have been left' );
+    $mech->content_contains( 'Show all updates' );
     $mech->content_contains( 'This is some update text' );
 };
 
-for my $test ( 
+for my $test (
     {
         state => 'confirmed',
         fixed => 0
@@ -384,30 +393,23 @@ for my $test (
 }
 
 FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'emptyhomes', 'fixmystreet' ],
+    ALLOWED_COBRANDS => [ 'fixmystreet' ],
 }, sub {
-    # EHA extra checking
-    ok $mech->host("reportemptyhomes.com"), 'change host to reportemptyhomes';
-
-    # Reset, and all the questionaire sending function - FIXME should it detect site itself somehow?
+    $report->discard_changes;
     $report->send_questionnaire( 1 );
     $report->update;
     $questionnaire->delete;
 
-    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
-        site => 'emptyhomes'
-    } );
-    $email = $mech->get_email;
-    ok $email, "got an email";
+    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires();
+
+    my $email = $mech->get_email;
+    my $body = $mech->get_text_body_from_email($email);
     $mech->clear_emails_ok;
-
-    (my $body = $email->body) =~ s/\s+/ /g;
-    like $body, qr/fill in this short questionnaire/i, "got questionnaire email";
-    ($token) = $email->body =~ m{http://.*?/Q/(\S+)};
+    $body =~ s/\s+/ /g;
+    like $body, qr/fill in our short questionnaire/i, "got questionnaire email";
+    my $url = $mech->get_link_from_email($email);
+    ($token) = $url =~ m{/Q/(\S+)};
     ok $token, "extracted questionnaire token '$token'";
-
-    $mech->get_ok("/Q/" . $token);
-    $mech->content_lacks( 'Would you like to receive another questionnaire' );
 
     # Test already answered the ever reported question, so not shown again
     $dt = $dt->add( weeks => 4 );
@@ -419,16 +421,10 @@ FixMyStreet::override_config {
         }
     );
     ok $questionnaire2, 'added another questionnaire';
-    ok $mech->host("www.fixmystreet.com"), 'change host to fixmystreet';
     $mech->get_ok("/Q/" . $token);
     $mech->title_like( qr/Questionnaire/ );
     $mech->content_contains( 'Has this problem been fixed?' );
     $mech->content_lacks( 'ever reported' );
-
-    # EHA extra checking
-    ok $mech->host("reportemptyhomes.com"), 'change host to reportemptyhomes';
-    $mech->get_ok("/Q/" . $token);
-    $mech->content_lacks( 'Would you like to receive another questionnaire' );
 
     $token = FixMyStreet::App->model("DB::Token")->find( { scope => 'questionnaire', token => $token } );
     ok $token, 'found token for questionnaire';
@@ -442,18 +438,20 @@ FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'fiksgatami' ],
 }, sub {
     # I18N Unicode extra testing using FiksGataMi
+    $report->discard_changes;
     $report->send_questionnaire( 1 );
     $report->cobrand( 'fiksgatami' );
     $report->update;
     $questionnaire->delete;
-    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( { site => 'fixmystreet' } ); # It's either fixmystreet or emptyhomes
+    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires();
     $email = $mech->get_email;
     ok $email, "got an email";
     $mech->clear_emails_ok;
 
-    like $email->body, qr/Testing =96 Detail/, 'email contains encoded character from user';
-    like $email->body, qr/sak p=E5 FiksGataMi/, 'email contains encoded character from template';
-    is $email->header('Content-Type'), 'text/plain; charset="windows-1252"', 'email is in right encoding';
+    my $plain = $mech->get_text_body_from_email($email, 1);
+    like $plain->body_str, qr/Testing \x{2013} Detail/, 'email contains encoded character from user';
+    like $plain->body_str, qr/sak p\xe5 FiksGataMi/, 'email contains encoded character from template';
+    is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'email is in right encoding';
 };
 
 $mech->delete_user('test@example.com');

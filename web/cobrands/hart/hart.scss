@@ -4,53 +4,33 @@
 
     */
 
-@import "compass";
+@import "../sass/mixins";
 @import "_colours";
 
-/* from http://nicolasgallagher.com/micro-clearfix-hack/ */
-.clearfix:before,
-.clearfix:after { content: " "; display: table; }
-.clearfix:after { clear: both; }
-/* For IE 6/7 only */
-.clearfix { *zoom: 1; }
-
-
-// Taken from Bromley's form css
-input[type=text],
-input[type=password],
-input[type=email],
-input[type=file],
-textarea, 
-select { background: #fff; border: 1px solid #768b9a; border-color: #768b9a #d1dee8 #d1dee8 #768b9a; color: #333; font-family: "Gill Sans MT", "Gill Sans", Arial, 'Helvetica Neue', Helvetica, sans-serif; padding: 8px;
-@include border-radius(0); }
-
 .green-btn, button.green-btn, input.green-btn {
-    background: #5b7189; 
-    border: 1px solid #8e9eb0; 
-    color: #fff; 
-    font-family: 'Gill Sans MT', 'Gill Sans', 'Trebuchet MS', Calibri, sans-serif; 
-    font-weight: normal; 
-    margin: 0; min-height: 23px; 
+    background: #5b7189;
+    border: 1px solid #8e9eb0;
+    color: #fff;
+    font-family: 'Gill Sans MT', 'Gill Sans', 'Trebuchet MS', Calibri, sans-serif;
+    font-weight: normal;
+    margin: 0; min-height: 23px;
     /* outline: 1px solid #405062; */
-    padding: 4px 8px; 
-    text-transform: uppercase; 
+    padding: 4px 8px;
+    text-transform: uppercase;
 }
-.green-btn:hover, button.green-btn:hover, input.green-btn:hover { 
-    background: #5b7189; border: 1px solid #8e9eb0; 
-}
-.form-txt-submit-box input[type=submit] {
-    padding-top: 0; padding-bottom: 0; width: auto;
+.green-btn:hover, button.green-btn:hover, input.green-btn:hover {
+    background: #5b7189; border: 1px solid #8e9eb0;
 }
 
 
 h1, h2, h3, h4, h5, h6, legend { font-family: 'Gill Sans MT', 'Gill Sans', 'Trebuchet MS', Calibri, sans-serif; }
 body { color: #333; font-family: "Gill Sans MT", "Gill Sans", Arial, 'Helvetica Neue', Helvetica, sans-serif; line-height: 1.4; background-color: $base_bg;}
 
-.nav-wrapper-2, 
+.nav-wrapper-2,
 body.mappage .nav-wrapper .nav-wrapper-2,
 body.frontpage .nav-wrapper-2 {
     border: 0;
-    border-top: solid 4px $hart_primary;  /* otherwise overridden in base layout.scss 
+    border-top: solid 4px $hart_primary;  /* otherwise overridden in base layout.scss
                                              for some templates only */
     min-height: auto;
     background-color: $hart_primary;
@@ -61,11 +41,23 @@ body.frontpage .nav-wrapper-2 {
 }
 
 @media only screen and (min-width:48em) {
+    #map_box,
+    #map_sidebar {
+        top: 173px + 32px;
+    }
+
     body.frontpage #site-header {
         height: 13em;
 
         .mobile-header-nav {
             display: none;
+        }
+    }
+
+    body.mappage {
+        .header-container,
+        .main-menu {
+            max-width: none; // containers are full width on map page
         }
     }
 
@@ -76,14 +68,13 @@ body.frontpage .nav-wrapper-2 {
 
 	#main-nav {
 	  margin-top: 106px;
-	  
-	  ul {
-        margin-left: 157px;
-	    float: none;
-	  }
+    }
+    .nav-menu {
+      margin-left: 157px;
+	  float: none;
 	}
 
-	#main-nav ul li {
+	.nav-menu li {
 	  text-align: center;
 	  text-transform: uppercase;
 	  padding: 0 15px;
@@ -91,21 +82,16 @@ body.frontpage .nav-wrapper-2 {
 	  border-right: solid 1px white;
 	  line-height: 1.5em;
 	}
+	.nav-menu li:last-child {
+	    border-right: none;
+	}
 
-	#main-nav ul li a {
+	.nav-menu a {
 	    padding: 0;
 	    font-size: inherit;
 	}
 
-	#main-nav ul li:last-child {
-	    border-right: none;
-	}
-
-	#main-nav ul li a:link, #main-nav ul li a:visited {
-	  color: #fff;
-	}
-
-	#main-nav ul li:hover, #main-nav ul li:hover a, {
+	.nav-menu li:hover, .nav-menu li:hover a, {
 	  background-color: white;
 	  color: black;
 	  text-decoration: none;
@@ -159,22 +145,16 @@ body.frontpage #site-logo,
 .sign-in a:hover, .sign-in a:active {text-decoration:underline;}
 
 .main-menu-wrapper {
-    /* z-index:2; */
     background-color: #FFF;
-    width:100%;
+    width: 100%;
+
     @media only screen and (min-width:48em) {
         position: absolute;
-    }
-}
-
-@media only screen and (min-width:48em) {
-    body.mappage .main-menu-wrapper {
-        position: fixed
+        box-shadow: 0 0 20px rgba(0,0,0,0.2); // shadow to add contrast with map
     }
 }
 
 .main-menu {
-
   li {
       font-family: 'Gill Sans MT', 'Gill Sans', 'Trebuchet MS', Calibri, sans-serif;
       margin: 0;
@@ -200,8 +180,7 @@ body.frontpage #site-logo,
       }
   }
   @media only screen and (min-width:48em) {
-    margin-top: 173px;
-    height: 2em;
+    height: 32px;
     max-width: 60em;
     margin: 173px auto 0 auto;
 
@@ -210,7 +189,7 @@ body.frontpage #site-logo,
       margin-left: 1em;
       text-align: center;
 
-      span { 
+      span {
         display: inline;
       }
 
@@ -262,10 +241,10 @@ body.frontpage .table-cell .content {
     height: auto;
     overflow: hidden;
     padding: 15px 15px 50px 15px;
-    color:#fff; 
+    color:#fff;
 
     @media only screen and (min-width:48em) {
-        margin-left:-15px; 
+        margin-left:-15px;
         padding: 35px 25px 40px 25px;
     }
 
@@ -312,10 +291,10 @@ body.frontpage .table-cell .content {
     p {
       margin: 0;
     }
-    a:link, a:visited { 
-        color: #fff; text-decoration: none; 
+    a:link, a:visited {
+        color: #fff; text-decoration: none;
     }
-    a:hover, a:active { 
+    a:hover, a:active {
         text-decoration: underline;
     }
 
@@ -341,30 +320,30 @@ body.frontpage .table-cell .content {
     }
 
     .footer-nav,  {
-        height:35px; 
+        height:35px;
 
         margin-left: 0;
         margin-bottom: 0;
 
         @media only screen and (min-width:48em) {
-            float: right; 
+            float: right;
         }
 
-        li { 
+        li {
             list-style-type: none;
-            float: left; 
+            float: left;
             width: 50%;
             margin-bottom: 0;
 
             a {
                 display: block;
-                border-bottom:1px solid #797f7f; 
+                border-bottom:1px solid #797f7f;
                 padding: 10px 0;
                 margin-left: 10px;
                 margin-right: 10px;
             }
             @media only screen and (min-width:48em) {
-                border-right:1px solid #fff; 
+                border-right:1px solid #fff;
                 width: auto;
                 a {
                     border-bottom: none;
@@ -372,8 +351,8 @@ body.frontpage .table-cell .content {
                     margin-left: 0;
                     margin-right: 0;
                 }
-                &:last-child { 
-                    border: none; 
+                &:last-child {
+                    border: none;
                     padding-right: 0;
                 }
             }
@@ -382,23 +361,9 @@ body.frontpage .table-cell .content {
 }
 
 // IE specific CSS
-.ie6 {
-    div { zoom: 1; }
-    .hart-wrapper { padding: 0; }
-    #hart-footer { margin: 0; }
-    //#search input { padding: 8px 5px 2px; }
-    //#search input.button { padding: 0; width: 68px; line-height: 24px; }
-    input.button { overflow: visible; width: 1%; }
-}
 .ie7 {
     div { zoom: 1; }
-    //#search input { padding: 8px 5px 2px; }
-    //#search input.button { padding: 0; width: 68px; line-height: 24px; }
     input.button { overflow: visible; }
-}
-.ie8 {
-    //#search input { padding: 8px 5px 2px; }
-    //#search input.button { padding: 0; line-height: 24px; }
 }
 
 // mySociety additions
@@ -417,7 +382,7 @@ body.frontpage .table-cell .content {
 
 .main-menu ul {
   margin: 0;
-  padding-top: 8px;
+  line-height: 32px;
 }
 
 .main-menu li {
@@ -429,9 +394,6 @@ body.frontpage .table-cell .content {
   padding-right: 0;
 }
 
-.main-menu li.last a:hover, .main-menu li.last a:active {
-}
-
 //#search input { display: inline; margin: 0; @include border-radius(0em); }
 //#search input.button { font-weight: normal; text-transform: none; }
 // The footer breaks the map pages layout, easier to exclude it than
@@ -439,6 +401,7 @@ body.frontpage .table-cell .content {
 body.mappage .hart-footer-wrapper {
   display: none;
 }
+
 #hart-powered-by {
     float: left;
     width: 50%;
@@ -456,12 +419,8 @@ body.mappage .hart-footer-wrapper {
     }
 }
 
-.issue-list-a li .text small {
+.item-list--reports__item small {
     display: inline;
-}
-
-#fms_pan_zoom {
-    top: 12em;
 }
 
 #hart_hants_note {

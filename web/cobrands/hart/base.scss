@@ -1,7 +1,6 @@
 @import "../sass/h5bp";
 @import "./_colours";
 @import "../sass/mixins";
-@import "compass";
 
 @import "../sass/base";
 
@@ -12,12 +11,10 @@ a, a:visited {
     }
 }
 
-.issue-list-a {
-  li {
-      color:#666;
-      a {
-          color:#666;
-      }
+.item-list--reports__item {
+  color: #666;
+  a {
+    color: #666;
   }
 }
 
@@ -61,18 +58,6 @@ h1.main {
   width: 50px;
   height: 48px;
   background: url('/cobrands/hart/tab-blue.png') 0 0 no-repeat;
-}
-
-#problems-nav {
-    border-bottom:0.25em solid $primary;
-    ul li a {
-        text-transform: none;
-        color: #666;
-        &.active {
-            background: $primary;
-            color: #fff;
-        }
-    }
 }
 
 .big-green-banner {

@@ -63,8 +63,6 @@ subtest "does pc, (x,y), (e,n) or (lat,lon) go to /around" => sub {
     }
 };
 
-$mech->delete_problems_for_body( 2651 );
-
 my $problem_rs = FixMyStreet::App->model('DB::Problem');
 my $num = $problem_rs->count;
 
@@ -82,4 +80,24 @@ ok $mech->get('/report/' . $edinburgh_problems[2]->id);
 is $mech->res->code, 403, 'page forbidden';
 is $problem_rs->count, $num+5;
 
-done_testing();
+my $oxon = $mech->create_body_ok(2237, 'Oxfordshire County Council', id => 2237);
+subtest "prefilters /around if user has categories" => sub {
+    my $user = $mech->log_in_ok('test@example.com');
+    my $categories = [
+        $mech->create_contact_ok( body_id => $oxon->id, category => 'Cows', email => 'cows@example.net' )->id,
+        $mech->create_contact_ok( body_id => $oxon->id, category => 'Potholes', email => 'potholes@example.net' )->id,
+    ];
+    $user->from_body($oxon);
+    $user->set_extra_metadata('categories', $categories);
+    $user->update;
+
+    $mech->get_ok('/');
+    # NB can't use visible_form_values because categories field is hidden
+    $mech->content_contains("Cows,Potholes");
+};
+
+END {
+    $mech->delete_problems_for_body( 2651 );
+    $mech->delete_body($oxon);
+    done_testing();
+}

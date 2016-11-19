@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-#
 # FixMyStreet:Map::OSM::StreetView
 # OSM StreetView maps on FixMyStreet.
 #
@@ -24,6 +22,7 @@ sub base_tile_url {
 }
 
 sub copyright {
+    'Contains OS data &copy; Crown copyright and database right 2016';
 }
 
 1;

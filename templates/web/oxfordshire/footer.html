@@ -1,5 +1,5 @@
                     [% IF pagefooter %]
-                    <footer role="content-info">
+                    <footer role="contentinfo">
                         <p><a href="/privacy">Privacy and cookies</a></p>
                     </footer>
                     [% END %]
@@ -10,16 +10,19 @@
         <div class="nav-wrapper">
             <div class="nav-wrapper-2">
                 <div id="main-nav" role="navigation">
-                    <ul id="mysoc-menu">
+                    <ul class="nav-menu nav-menu--mysoc">
                         <li><a id="mysoc-logo" href="https://www.fixmystreet.com/council">Powered by <img src="/cobrands/oxfordshire/images/fms-logo-105x20.png" alt="FixMyStreet"></a></li>
                     </ul>
 
-                    <ul id="main-menu">
+                    <ul class="nav-menu nav-menu--main">
                         <li><[% IF c.req.uri.path == '/' %]span[% ELSE %]a href="/"[% END %] class="report-a-problem-btn"
                             >[% loc("Report a problem") %]</[% c.req.uri.path == '/' ? 'span' : 'a' %]></li>[%
                         %]<li><[% IF c.req.uri.path == '/my' %]span[% ELSE %]a href="/my"[% END
-                            %]>[% loc("Your reports") %]</[% c.req.uri.path == '/my' ? 'span' : 'a' %]></li>[%
-                        %]<li><[% IF c.req.uri.path == '/reports' %]span[% ELSE %]a href="/reports"[% END
+                            %]>[% c.user_exists ? loc("Your account") : loc("Sign in") %]</[% c.req.uri.path == '/my' ? 'span' : 'a' %]></li>[%
+                        %][% IF c.user_exists AND c.user.has_body_permission_to('planned_reports') %]<li>
+                            <[% IF c.req.uri.path == '/my/planned' %]span[% ELSE %]a href="/my/planned"[% END
+                             %]>[% loc('Shortlist') %]</[% c.req.uri.path == '/my/planned' ? 'span' : 'a' %]></li>[%
+                        %][% END %]<li><[% IF c.req.uri.path == '/reports' %]span[% ELSE %]a href="/reports[% IF c.user_exists AND c.user.categories.size %]?filter_category=[% c.user.categories.join(",") | uri | html %][% END %]"[% END
                             %]>[% loc("All reports") %]</[% c.req.uri.path == '/reports' ? 'span' : 'a' %]></li>[%
                         %]<li><[% IF c.req.uri.path == '/alert' %]span[% ELSE %]a href="/alert[% pc ? '/list?pc=' : '' %][% pc | uri %]"[% END
                             %]>[% loc("Local alerts") %]</[% c.req.uri.path == '/alert' ? 'span' : 'a' %]></li>[%
@@ -29,8 +32,6 @@
                 </div>
             </div>
         </div>
-
-<!-- [% INCLUDE 'debug_footer.html' %] -->
     </div> <!-- .wrapper -->
     <div id="oxford-footer" class="desk-only">
         <address>
@@ -45,5 +46,8 @@
         </ul>
     </div>
 </div> <!-- oxford-wrapper -->
+
+    [% INCLUDE 'common_footer_tags.html' %]
+
 </body>
 </html>

@@ -6,7 +6,7 @@
             <div class="nav-wrapper-2">
                 <div id="main-nav" role="navigation">
 
-                    <ul id="main-menu">
+                    <ul class="nav-menu nav-menu--main">
                         <li><[% IF c.req.uri.path == '/' %]span[% ELSE %]a href="/"[% END %] class="report-a-problem-btn"
                             >[% loc("Report a problem") %]</[% c.req.uri.path == '/' ? 'span' : 'a' %]></li>[%
                         %]<li><[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
@@ -15,8 +15,9 @@
                 </div>
             </div>
         </div>
-
-<!-- [% INCLUDE 'debug_footer.html' %] -->
     </div> <!-- .wrapper -->
+
+    [% INCLUDE 'common_footer_tags.html' %]
+
 </body>
 </html>

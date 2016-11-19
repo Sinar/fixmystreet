@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-#
 # FixMyStreet::Geocode
 # The geocoding functions for FixMyStreet.
 #
@@ -9,11 +7,17 @@
 package FixMyStreet::Geocode;
 
 use strict;
+use Digest::MD5 qw(md5_hex);
+use Encode;
+use JSON::MaybeXS;
+use LWP::Simple qw($ua);
+use Path::Tiny;
 use URI::Escape;
 use FixMyStreet::Geocode::Bing;
 use FixMyStreet::Geocode::Google;
 use FixMyStreet::Geocode::OSM;
 use FixMyStreet::Geocode::Zurich;
+use Utils;
 
 # lookup STRING CONTEXT
 # Given a user-inputted string, try and convert it into co-ordinates using either
@@ -23,6 +27,11 @@ use FixMyStreet::Geocode::Zurich;
 sub lookup {
     my ($s, $c) = @_;
     my $data = $c->cobrand->geocode_postcode($s);
+    if (defined $data->{latitude}) {
+        ( $data->{latitude}, $data->{longitude} ) =
+            map { Utils::truncate_coordinate($_) }
+            ( $data->{latitude}, $data->{longitude} );
+    }
     $data = string($s, $c)
         unless $data->{error} || defined $data->{latitude};
     $data->{error} = _('Sorry, we could not find that location.')
@@ -55,6 +64,28 @@ sub escape {
     $s = URI::Escape::uri_escape_utf8($s);
     $s =~ s/%20/+/g;
     return $s;
+}
+
+sub cache {
+    my ($type, $url, $args, $re) = @_;
+
+    my $cache_dir = path(FixMyStreet->config('GEO_CACHE'), $type)->absolute(FixMyStreet->path_to());
+    my $cache_file = $cache_dir->child(md5_hex($url));
+    my $js;
+    if (-s $cache_file && -M $cache_file <= 7 && !FixMyStreet->config('STAGING_SITE')) {
+        $js = $cache_file->slurp;
+    } else {
+        $url .= '&' . $args if $args;
+        $ua->timeout(15);
+        $js = LWP::Simple::get($url);
+        $js = encode_utf8($js) if utf8::is_utf8($js);
+        $cache_dir->mkpath;
+        if ($js && (!$re || $js !~ $re) && !FixMyStreet->config('STAGING_SITE')) {
+            $cache_file->spew($js);
+        }
+    }
+    $js = JSON->new->utf8->allow_nonref->decode($js) if $js;
+    return $js;
 }
 
 1;

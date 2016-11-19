@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 
 use mySociety::Locale;
-use FixMyStreet::App;
+use FixMyStreet::DB;
 
 use_ok 'FixMyStreet::Cobrand';
 
@@ -12,10 +12,10 @@ mySociety::Locale::gettext_domain( 'FixMyStreet' );
 
 my $c = FixMyStreet::Cobrand::FixMyStreet->new();
 
-FixMyStreet::App->model('DB::BodyArea')->search( { body_id => 1000 } )->delete;
-FixMyStreet::App->model('DB::Body')->search( { name => 'Body of a Thousand' } )->delete;
+FixMyStreet::DB->resultset('BodyArea')->search( { body_id => 1000 } )->delete;
+FixMyStreet::DB->resultset('Body')->search( { name => 'Body of a Thousand' } )->delete;
 
-my $body = FixMyStreet::App->model('DB::Body')->find_or_create({
+my $body = FixMyStreet::DB->resultset('Body')->find_or_create({
     id => 1000,
     name => 'Body of a Thousand',
 });
@@ -25,10 +25,9 @@ FixMyStreet::override_config {
     MAPIT_TYPES => [ 'LBO' ],
     MAPIT_URL => 'http://mapit.mysociety.org/',
 }, sub {
-    is_deeply $c->get_body_sender( $body ), { method => 'Email' }, 'defaults to email';
-
+    is_deeply $c->get_body_sender( $body ), { method => 'Email', contact => undef }, 'defaults to email';
     $body_area->update({ area_id => 2481 }); # Croydon LBO
-    is_deeply $c->get_body_sender( $body ), { method => 'London' }, 'returns london report it if London borough';
+    is_deeply $c->get_body_sender( $body ), { method => 'Email', contact => undef }, 'still email if London borough';
 };
 
 $body->send_method( 'TestMethod' );

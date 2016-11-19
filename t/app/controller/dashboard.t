@@ -13,17 +13,12 @@ my $test_pass = 'password';
 my $test_council = 2651;
 my $test_ward = 20723;
 
-$mech->create_body_ok($test_council, 'City of Edinburgh Council');
+my $body = $mech->create_body_ok($test_council, 'City of Edinburgh Council');
 
 $mech->delete_user( $test_user );
-my $user = FixMyStreet::App->model('DB::User')->create( {
-    email => $test_user,
-    password => $test_pass,
-} );
+my $user = $mech->create_user_ok($test_user, password => $test_pass);
 
-my $p_user = FixMyStreet::App->model('DB::User')->find_or_create( {
-    email => 'p_user@example.com'
-} );
+my $p_user = $mech->create_user_ok('p_user@example.com');
 
 # Dashboard tests assume we are not too early in year, to allow reporting
 # within same year, as a convenience.
@@ -44,7 +39,7 @@ FixMyStreet::override_config {
 
     is $mech->status, '404', 'If not council user get 404';
 
-    $user->from_body( $test_council );
+    $user->from_body( $body->id );
     $user->update;
 
     $mech->log_out_ok;
@@ -55,7 +50,7 @@ FixMyStreet::override_config {
 
     $mech->content_contains( 'City of Edinburgh' );
 
-    FixMyStreet::App->model('DB::Contact')->search( { body_id => $test_council } )
+    FixMyStreet::App->model('DB::Contact')->search( { body_id => $body->id } )
       ->delete;
 
     delete_problems();
@@ -64,7 +59,7 @@ FixMyStreet::override_config {
     for my $contact ( @cats ) {
         FixMyStreet::App->model('DB::Contact')->create(
             {
-                body_id    => $test_council,
+                body_id    => $body->id,
                 category   => $contact,
                 email      => "$contact\@example.org",
                 confirmed  => 1,
@@ -638,7 +633,7 @@ sub make_problem {
         confirmed => $args->{conf_dt},
         whensent => $args->{conf_dt},
         lastupdate => $args->{mark_dt} || $args->{conf_dt},
-        bodies_str => $test_council,
+        bodies_str => $body->id,
         postcode => 'EH99 1SP',
         latitude => '51',
         longitude => '1',
@@ -692,10 +687,10 @@ sub check_report_counts {
 
 sub delete_problems {
     FixMyStreet::App->model('DB::Comment')
-      ->search( { 'problem.bodies_str' => $test_council }, { join => 'problem' } )
+      ->search( { 'problem.bodies_str' => $body->id }, { join => 'problem' } )
       ->delete;
     FixMyStreet::App->model('DB::Problem')
-      ->search( { bodies_str => $test_council } )->delete();
+      ->search( { bodies_str => $body->id } )->delete();
 }
 
 done_testing;

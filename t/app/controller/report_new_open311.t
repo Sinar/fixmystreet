@@ -19,17 +19,9 @@ $body->update({
     api_key => 'apikey',
 });
 
-my %contact_params = (
-    confirmed => 1,
-    deleted => 0,
-    editor => 'Test',
-    whenedited => \'current_timestamp',
-    note => 'Created for test',
-);
 # Let's make some contacts to send things to!
-my $contact1 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2651, # Edinburgh
+my $contact1 = $mech->create_contact_ok(
+    body_id => $body->id, # Edinburgh
     category => 'Street lighting',
     email => '100',
     extra => [ { description => 'Lamppost number', code => 'number', required => 'True' },
@@ -37,15 +29,20 @@ my $contact1 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
                    { value => [ { name => ['Gas'], key => ['old'] }, { name => [ 'Yellow' ], key => [ 'modern' ] } ] }
                } 
              ],
-} );
-my $contact2 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2651, # Edinburgh
+);
+my $contact1b = $mech->create_contact_ok(
+    body_id => $body->id, # Edinburgh
+    category => 'Moon lighting',
+    email => '100b',
+    extra => [ { description => 'Moon type', code => 'type', required => 'False', values =>
+                   [ { name => 'Full', key => 'full' }, { name => 'New', key => 'new' } ] }
+             ],
+);
+my $contact2 = $mech->create_contact_ok(
+    body_id => $body->id, # Edinburgh
     category => 'Graffiti Removal',
     email => '101',
-} );
-ok $contact1, "created test contact 1";
-ok $contact2, "created test contact 2";
+);
 
 # test that the various bit of form get filled in and errors correctly
 # generated.
@@ -56,7 +53,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => '1',
             email         => '',
@@ -71,9 +70,9 @@ foreach my $test (
             type   => 'old',
         },
         errors  => [
+            'This information is required',
             'Please enter a subject',
             'Please enter some details',
-            'This information is required',
             'Please enter your email',
             'Please enter your name',
         ],
@@ -140,6 +139,7 @@ foreach my $test (
         my $new_values = {
             %{ $test->{fields} },     # values added to form
             %{ $test->{changes} },    # changes we expect
+            gender => undef,
         };
         is_deeply $mech->visible_form_values, $new_values,
           "values correctly changed";
@@ -169,14 +169,15 @@ foreach my $test (
         my $prob = $user->problems->first;
         ok $prob, 'problem created';
 
-        is_deeply $prob->extra, $test->{extra}, 'extra open311 data added to problem';
+        is_deeply $prob->get_extra_fields, $test->{extra}, 'extra open311 data added to problem';
 
         $user->problems->delete;
         $user->delete;
     };
 }
 
-$contact1->delete;
-$contact2->delete;
-
 done_testing();
+
+END {
+    $mech->delete_body($body);
+}

@@ -1,18 +1,17 @@
 #!/usr/bin/env perl
 
+use utf8;
 use strict;
 use warnings;
+use File::Temp 'tempdir';
+use Path::Tiny;
 use Test::More;
 use Test::Warn;
-use FixMyStreet::App;
+use FixMyStreet::DB;
 use CGI::Simple;
 use HTTP::Response;
 use DateTime;
 use DateTime::Format::W3CDTF;
-
-use FindBin;
-use lib "$FindBin::Bin/../perllib";
-use lib "$FindBin::Bin/../commonlib/perllib";
 
 use_ok( 'Open311' );
 
@@ -27,11 +26,11 @@ EOT
 is $o->_process_error( $err_text ), "400: Service Code cannot be null -- can't proceed with the request.\n", 'error text parsing';
 is $o->_process_error( '503 - service unavailable' ), 'unknown error', 'error text parsing of bad error';
 
-my $o2 = Open311->new( endpoint => 'http://192.168.50.1/open311/', jurisdiction => 'example.org' );
+my $o2 = Open311->new( endpoint => 'http://127.0.0.1/open311/', jurisdiction => 'example.org' );
 
-my $u = FixMyStreet::App->model('DB::User')->new( { email => 'test@example.org', name => 'A User' } );
+my $u = FixMyStreet::DB->resultset('User')->new( { email => 'test@example.org', name => 'A User' } );
 
-my $p = FixMyStreet::App->model('DB::Problem')->new( {
+my $p = FixMyStreet::DB->resultset('Problem')->new( {
     latitude => 1,
     longitude => 1,
     title => 'title',
@@ -48,12 +47,12 @@ warning_like {$o2->send_service_request( $p, { url => 'http://example.com/' }, 1
 
 my $dt = DateTime->now();
 
-my $user = FixMyStreet::App->model('DB::User')->new( {
+my $user = FixMyStreet::DB->resultset('User')->new( {
     name => 'Test User',
     email => 'test@example.com',
 } );
 
-my $problem = FixMyStreet::App->model('DB::Problem')->new( {
+my $problem = FixMyStreet::DB->resultset('Problem')->new( {
     id => 80,
     external_id => 81,
     state => 'confirmed',
@@ -70,14 +69,12 @@ my $problem = FixMyStreet::App->model('DB::Problem')->new( {
 subtest 'posting service request' => sub {
     my $extra = {
         url => 'http://example.com/report/1',
-        easting_northing => 'SET',
+        easting => 'SET',
     };
 
     my $results = make_service_req( $problem, $extra, $problem->category, '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>' );
 
     is $results->{ res }, 248, 'got request id';
-
-    my $req = $o->test_req_used;
 
     my $description = <<EOT;
 title: a problem
@@ -116,8 +113,6 @@ subtest 'posting service request with basic_description' => sub {
     );
 
     is $results->{ res }, 248, 'got request id';
-
-    my $req = $o->test_req_used;
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
@@ -182,7 +177,6 @@ for my $test (
         my $results = make_service_req( $problem, $extra, $problem->category,
 '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>'
         );
-        my $req = $o->test_req_used;
         my $c   = CGI::Simple->new( $results->{req}->content );
 
         for my $param ( @{ $test->{params} } ) {
@@ -207,7 +201,6 @@ for my $test (
         my $results = make_service_req( $problem, $extra, $problem->category,
 '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>'
         );
-        my $req = $o->test_req_used;
         my $c   = CGI::Simple->new( $results->{req}->content );
 
         is $c->param( 'first_name' ), $test->{first_name}, 'correct first name';
@@ -216,7 +209,7 @@ for my $test (
 }
 
 
-my $comment = FixMyStreet::App->model('DB::Comment')->new( {
+my $comment = FixMyStreet::DB->resultset('Comment')->new( {
     id => 38362,
     user => $user,
     problem => $problem,
@@ -231,8 +224,6 @@ subtest 'basic request update post parameters' => sub {
     my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
     is $results->{ res }, 248, 'got update id';
-
-    my $req = $o->test_req_used;
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
@@ -252,8 +243,6 @@ subtest 'extended request update post parameters' => sub {
 
     is $results->{ res }, 248, 'got update id';
 
-    my $req = $o->test_req_used;
-
     my $c = CGI::Simple->new( $results->{ req }->content );
 
     is $c->param('description'), 'this is a comment', 'email correct';
@@ -271,18 +260,26 @@ subtest 'extended request update post parameters' => sub {
 };
 
 subtest 'check media url set' => sub {
-    $comment->photo(1);
+    my $UPLOAD_DIR = tempdir( CLEANUP => 1 );
+
+    my $image_path = path('t/app/controller/sample.jpg');
+    $image_path->copy( path( $UPLOAD_DIR, '0123456789012345678901234567890123456789.jpeg' ) );
+
+    $comment->photo("0123456789012345678901234567890123456789");
     $comment->cobrand('fixmystreet');
 
-    my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
+    FixMyStreet::override_config {
+        UPLOAD_DIR => $UPLOAD_DIR,
+    }, sub {
+        my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
-    is $results->{ res }, 248, 'got update id';
+        is $results->{ res }, 248, 'got update id';
 
-    my $req = $o->test_req_used;
-
-    my $c = CGI::Simple->new( $results->{ req }->content );
-    my $expected_path = '/c/' . $comment->id . '.full.jpeg';
-    like $c->param('media_url'), qr/$expected_path/, 'image url included';
+        my $c = CGI::Simple->new( $results->{ req }->content );
+        my $expected_path = '/c/' . $comment->id . '.0.full.jpeg';
+        like $c->param('media_url'), qr/$expected_path/, 'image url included';
+    };
+    $comment->photo(undef);
 };
 
 foreach my $test (
@@ -409,7 +406,7 @@ for my $test (
 my $dt2 = $dt->clone;
 $dt2->add( 'minutes' => 1 );
 
-my $comment2 = FixMyStreet::App->model('DB::Comment')->new( {
+my $comment2 = FixMyStreet::DB->resultset('Comment')->new( {
     id => 38363,
     user => $user,
     problem => $problem,
@@ -664,7 +661,30 @@ for my $test (
     };
 }
 
+subtest 'check FixaMinGata' => sub {
+    $problem->cobrand('fixamingata');
+    $problem->detail("MØØse");
+    my $extra = {
+        url => 'http://example.com/report/1',
+    };
+    my $results = make_service_req( $problem, $extra, $problem->category, '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>' );
+    is $results->{ res }, 248, 'got request id';
+    my $description = <<EOT;
+Beskrivning: MØØse
+
+Länk till ärendet: http://example.com/report/1
+
+Skickad via FixaMinGata
+EOT
+;
+    my $c = CGI::Simple->new( $results->{ req }->content );
+    (my $c_description = $c->param('description')) =~ s/\r\n/\n/g;
+    utf8::decode($c_description);
+    is $c_description, $description, 'description correct';
+};
+
 done_testing();
+
 
 sub make_update_req {
     my $comment = shift;
@@ -679,7 +699,7 @@ sub make_update_req {
         open311_conf => $open311_args,
     };
 
-    return make_req( $params );
+    return _make_req( $params );
 }
 
 sub make_service_req {
@@ -689,7 +709,7 @@ sub make_service_req {
     my $xml          = shift;
     my $open311_args = shift || {};
 
-    return make_req(
+    return _make_req(
         {
             object       => $problem,
             xml          => $xml,
@@ -701,7 +721,7 @@ sub make_service_req {
     );
 }
 
-sub make_req {
+sub _make_req {
     my $args = shift;
 
     my $object       = $args->{object};

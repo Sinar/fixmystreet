@@ -37,8 +37,9 @@ __PACKAGE__->add_columns(
   "whensubscribed",
   {
     data_type     => "timestamp",
-    default_value => \"ms_current_timestamp()",
+    default_value => \"current_timestamp",
     is_nullable   => 0,
+    original      => { default_value => \"now()" },
   },
   "whendisabled",
   { data_type => "timestamp", is_nullable => 1 },
@@ -64,29 +65,21 @@ __PACKAGE__->belongs_to(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2013-09-10 17:11:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:d9yIFiTGtbtFaULXZNKstQ
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-08-13 16:33:38
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:5RNyB430T8PqtFlmGV/MUg
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration
 
-use DateTime::TimeZone;
-use Moose;
+use Moo;
 use namespace::clean -except => [ 'meta' ];
 
 with 'FixMyStreet::Roles::Abuser';
-
-my $tz = DateTime::TimeZone->new( name => "local" );
-
-my $tz_f;
-$tz_f = DateTime::TimeZone->new( name => FixMyStreet->config('TIME_ZONE') )
-    if FixMyStreet->config('TIME_ZONE');
 
 my $stz = sub {
     my ( $orig, $self ) = ( shift, shift );
     my $s = $self->$orig(@_);
     return $s unless $s && UNIVERSAL::isa($s, "DateTime");
-    $s->set_time_zone($tz);
-    $s->set_time_zone($tz_f) if $tz_f;
+    FixMyStreet->set_time_zone($s);
     return $s;
 };
 
@@ -114,13 +107,10 @@ sub confirm {
 sub disable {
     my $self = shift;
 
-    $self->whendisabled( \'ms_current_timestamp()' );
+    $self->whendisabled( \'current_timestamp' );
     $self->update;
 
     return 1;
 }
-
-# need the inline_constuctor bit as we don't inherit from Moose
-__PACKAGE__->meta->make_immutable( inline_constructor => 0 );
 
 1;

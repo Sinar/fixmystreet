@@ -1,5 +1,6 @@
 [%
     SET bodyclass = 'mappage';
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html" IF problems.size;
     INCLUDE 'header.html', title = loc('Your Reports')
 %]
@@ -7,83 +8,75 @@
 [% IF problems.size %]
     [% map_html %]
     </div>
-    <div id="side">
+    <div id="map_sidebar">
+        <div id="side">
 [% ELSE %]
-    <div id="skipped-map">
+    <div id="map_sidebar">
+        <div id="skipped-map">
 [% END %]
 
-<h1>[% loc('Your Reports') %]</h1>
+<h1>[% loc('Your account') %]</h1>
 
-<p><a href="/auth/change_password">[% loc('Change password') %]</a></p>
+<p>[% c.user.name %] [% c.user.email %]</p>
+
+<p class="my-account-buttons">
+  <a href="/auth/change_password">[% loc('Change password') %]</a>
+  <a href="/auth/change_email">[% loc('Change email') %]</a>
+  <a href="/auth/sign_out">[% loc('Sign out') %]</a>
+</p>
+
+<h2>[% loc('Your reports') %]</h2>
 
 [% IF ! has_content %]
 [% tprintf( loc('You haven&rsquo;t created any reports yet.  <a href="%s">Report a problem now.</a>'),
     c.uri_for('/') ) %]
 [% END %]
 
-[% INCLUDE 'pagination.html',
-    pager = problems_pager,
-    param = 'p'
-%]
-
-[% FOREACH p = problems.confirmed %]
-    [% IF loop.first %]<h2>[% loc('Open reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
+[% IF c.cobrand.moniker == 'hart' %]
+    [% INCLUDE '_hart_hants_note.html' %]
 [% END %]
 
-[% FOREACH p = problems.fixed %]
-    [% IF loop.first %]<h2>[% loc('Fixed reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
-[% END %]
-
-[% FOREACH p = problems.closed %]
-    [% IF loop.first %]<h2>[% loc('Closed reports') %]</h2>[% END %]
-    [% INCLUDE problem %]
-[% END %]
-
-[%# FOREACH p = problems.unconfirmed;
-    IF loop.first;
-        '<h2>' _ loc('Unconfirmed reports') _ '</h2>';
-    END;
-    INCLUDE problem;
-END %]
+<section class="full-width">
+[% INCLUDE "reports/_list-filters.html", use_form_wrapper = 1 %]
+<div class="js-pagination">
+[% INCLUDE 'pagination.html', pager = problems_pager, param = 'p' %]
+</div>
+<div id="js-reports-list">
+    [% INCLUDE 'my/_problem-list.html' %]
+</div>
+</section>
 
 [% FOREACH u IN updates %]
     [% IF loop.first %]
         <h2>[% loc('Your updates') %]</h2>
+        <section class="full-width">
         [% INCLUDE 'pagination.html',
             pager = updates_pager,
             param = 'u'
         %]
-        <ul class="issue-list full-width">
+        <ul class="item-list item-list--updates">
     [% END %]
 
-    <li>&ldquo;[% u.text | html %]&rdquo;
-    &ndash; <a href="[% c.uri_for( '/report', u.problem_id ) %]#update_[% u.id %]">[% u.problem.title | html %]</a>.
-    <em class="council_sent_info">
-        [% tprintf( loc("Added %s"), prettify_dt( u.confirmed, 'date' ) ) %]
-        </em>
+    <li class="item-list__item item-list__item--updates">
+        <div class="item-list__update-wrap">
+            [% INCLUDE 'report/photo.html' object=u %]
+            <div class="item-list__update-text">
+                [% u.text | add_links | html_para %]
+
+                <p class="meta-2">
+                    [% tprintf( loc("Added %s"), prettify_dt( u.confirmed, 'date' ) ) %]
+                    &ndash;
+                    <a href="[% c.uri_for( '/report', u.problem_id ) %]#update_[% u.id %]">
+                        [% u.problem.title | html %]
+                    </a>
+                </p>
+            </div>
+        </div>
     </li>
-    [% "</ul>" IF loop.last %]
+    [% "</ul></section>" IF loop.last %]
 [% END %]
 
-</div>
+        </div>
+    </div>
 
 [% INCLUDE 'footer.html' %]
-
-[% BLOCK problem %]
-    [% "<ul class='issue-list-a full-width'>" IF loop.first %]
-
-    <li><a href="[% c.uri_for( '/report', p.id ) %]">[% p.title | html %]</a>
-    <em class="council_sent_info"> &ndash;
-        [% IF p.whensent %]
-            [% tprintf( loc("Reported %s, to %s"), prettify_dt( p.confirmed, 'date' ), p.body(c) ) %]
-        [% ELSE %]
-            [% tprintf( loc("Reported %s"), prettify_dt( p.confirmed, 'date' ) ) %]
-        [% END %]
-        </em>
-    </li>
-
-    [% "</ul>" IF loop.last %]
-[% END %]
-

@@ -6,6 +6,7 @@ BEGIN {extends 'Catalyst::Controller'; }
 
 use Encode;
 use FixMyStreet::Geocode;
+use Utils;
 
 =head1 NAME
 
@@ -28,15 +29,17 @@ Use latitude and longitude if provided in parameters.
 sub determine_location_from_coords : Private {
     my ( $self, $c ) = @_;
 
-    my $latitude  = $c->req->param('latitude')  || $c->req->param('lat');
-    my $longitude = $c->req->param('longitude') || $c->req->param('lon');
+    my $latitude = $c->get_param('latitude') || $c->get_param('lat');
+    my $longitude = $c->get_param('longitude') || $c->get_param('lon');
+    $c->log->debug($longitude);
+    $c->log->debug($latitude);
 
     if ( defined $latitude && defined $longitude ) {
-        $c->stash->{latitude}  = $latitude;
-        $c->stash->{longitude} = $longitude;
+        ($c->stash->{latitude}, $c->stash->{longitude}) =
+            map { Utils::truncate_coordinate($_) } ($latitude, $longitude);
 
         # Also save the pc if there is one
-        if ( my $pc = $c->req->param('pc') ) {
+        if ( my $pc = $c->get_param('pc') ) {
             $c->stash->{pc} = $pc;
         }
 
@@ -50,7 +53,7 @@ sub determine_location_from_coords : Private {
 
 User has searched for a location - try to find it for them.
 
-Return -1 if nothing provided.
+Return false if nothing provided.
 
 If one match is found returns true and lat/lng is set.
 
@@ -64,18 +67,19 @@ sub determine_location_from_pc : Private {
     my ( $self, $c, $pc ) = @_;
 
     # check for something to search
-    $pc ||= $c->req->param('pc') || return -1;
+    $pc ||= $c->get_param('pc') || return;
     $c->stash->{pc} = $pc;    # for template
 
     if ( $pc =~ /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/ ) {
-        $c->stash->{latitude}  = $1;
-        $c->stash->{longitude} = $2;
+        ($c->stash->{latitude}, $c->stash->{longitude}) =
+            map { Utils::truncate_coordinate($_) } ($1, $2);
         return $c->forward( 'check_location' );
     }
     if ( $c->cobrand->country eq 'GB' && $pc =~ /^([A-Z])([A-Z])([\d\s]{4,})$/i) {
         if (my $convert = gridref_to_latlon( $1, $2, $3 )) {
-            $c->stash->{latitude}  = $convert->{latitude};
-            $c->stash->{longitude} = $convert->{longitude};
+            ($c->stash->{latitude}, $c->stash->{longitude}) =
+                map { Utils::truncate_coordinate($_) }
+                ($convert->{latitude}, $convert->{longitude});
             return $c->forward( 'check_location' );
         }
     }
@@ -93,7 +97,8 @@ sub determine_location_from_pc : Private {
     # $error doubles up to return multiple choices by being an array
     if ( ref($error) eq 'ARRAY' ) {
         foreach (@$error) {
-            my $a = decode_utf8($_->{address});
+            my $a = $_->{address};
+            $a = decode_utf8($a) if !utf8::is_utf8($a);
             $a =~ s/, United Kingdom//;
             $a =~ s/, UK//;
             $_->{address} = $a;
@@ -129,22 +134,6 @@ sub check_location : Private {
     }
 
     return 1;
-}
-
-=head2 country_message
-
-Displays the country_message template, used for displaying a message to
-people using the site from outside the host country.
-
-=cut
-
-sub country_message : Path('/country_message') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    # we do not want to cache this as we always want to check if displaying this
-    # is the right thing to do.
-    $c->res->header( 'Cache_Control' => 'max-age=0' );
-    $c->stash->{template} = 'front/international_banner.html';
 }
 
 # Utility function for if someone (rarely) enters a grid reference

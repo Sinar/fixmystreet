@@ -36,7 +36,7 @@ there are no areas then return false.
 =cut
 
 sub load_and_check_areas : Private {
-    my ( $self, $c ) = @_;
+    my ( $self, $c, $prefetched_all_areas ) = @_;
 
     my $latitude  = $c->stash->{latitude};
     my $longitude = $c->stash->{longitude};
@@ -49,20 +49,22 @@ sub load_and_check_areas : Private {
         $area_types = $c->cobrand->area_types;
     }
 
-    my $short_latitude  = Utils::truncate_coordinate($latitude);
-    my $short_longitude = Utils::truncate_coordinate($longitude);
-
     my $all_areas;
 
     my %params;
     $params{generation} = $c->config->{MAPIT_GENERATION}
         if $c->config->{MAPIT_GENERATION};
 
-    if ( $c->stash->{fetch_all_areas} ) {
+    if ($prefetched_all_areas) {
+        $all_areas = {
+            map { $_ => { id => $_ } }
+            @$prefetched_all_areas
+        };
+    } elsif ( $c->stash->{fetch_all_areas} ) {
         my %area_types = map { $_ => 1 } @$area_types;
         $all_areas =
           mySociety::MaPit::call( 'point',
-            "4326/$short_longitude,$short_latitude", %params );
+            "4326/$longitude,$latitude", %params );
         $c->stash->{all_areas_mapit} = $all_areas;
         $all_areas = {
             map { $_ => $all_areas->{$_} }
@@ -72,7 +74,7 @@ sub load_and_check_areas : Private {
     } else {
         $all_areas =
           mySociety::MaPit::call( 'point',
-            "4326/$short_longitude,$short_latitude", %params,
+            "4326/$longitude,$latitude", %params,
             type => $area_types );
     }
     if ($all_areas->{error}) {

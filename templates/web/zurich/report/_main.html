@@ -1,4 +1,4 @@
-<div class="problem-header cf">
+<div class="problem-header clearfix">
     <h1>[% tprintf( loc('Reported in the %s category'), problem.category ) %]</h1>
     <p class="sub">
         [% prettify_dt( problem.created, 'zurich' ) %]
@@ -9,7 +9,7 @@
     [% IF c.cobrand.allow_photo_display(problem) %]
       [% INCLUDE 'report/photo.html' object=problem %]
     [% END %]
-    [% add_links( problem.detail ) | html_para %]
+    [% problem.detail | add_links | html_para %]
   [% ELSE %]
     [% loc('This report is awaiting moderation.') %]
   [% END %]

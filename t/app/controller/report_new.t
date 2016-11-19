@@ -2,7 +2,6 @@ use strict;
 use utf8; # sign in error message has &ndash; in it
 use warnings;
 use Test::More;
-use utf8;
 
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
@@ -35,79 +34,65 @@ subtest "test that bare requests to /report/new get redirected" => sub {
       "pc correctly transferred";
 };
 
-my %contact_params = (
-    confirmed => 1,
-    deleted => 0,
-    editor => 'Test',
-    whenedited => \'current_timestamp',
-    note => 'Created for test',
-);
-
+my %body_ids;
+my @bodies;
 for my $body (
-    { id => 2651, name => 'City of Edinburgh Council' },
-    { id => 2226, name => 'Gloucestershire County Council' },
-    { id => 2326, name => 'Cheltenham Borough Council' },
-    { id => 2482, name => 'Bromley Council' },
-    { id => 2227, name => 'Hampshire County Council' },
-    { id => 2333, name => 'Hart Council' },
-    { id => 2504, name => 'Westminster City Council' },
+    { area_id => 2651, name => 'City of Edinburgh Council' },
+    { area_id => 2226, name => 'Gloucestershire County Council' },
+    { area_id => 2326, name => 'Cheltenham Borough Council' },
+    { area_id => 2504, name => 'Westminster City Council' },
+    # The next three have fixed IDs because bits of the code rely on
+    # the body ID === MapIt area ID.
+    { area_id => 2482, name => 'Bromley Council', id => 2482 },
+    { area_id => 2227, name => 'Hampshire County Council', id => 2227 },
+    { area_id => 2333, name => 'Hart Council', id => 2333 },
 ) {
-    $mech->create_body_ok($body->{id}, $body->{name});
+    my $body_obj = $mech->create_body_ok($body->{area_id}, $body->{name}, id => $body->{id});
+    push @bodies, $body_obj;
+    $body_ids{$body->{area_id}} = $body_obj->id;
 }
 
 # Let's make some contacts to send things to!
-FixMyStreet::App->model('DB::Contact')->search( {
-    email => { 'like', '%example.com' },
-} )->delete;
-my $contact1 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2651, # Edinburgh
+my $contact1 = $mech->create_contact_ok(
+    body_id => $body_ids{2651}, # Edinburgh
     category => 'Street lighting',
     email => 'highways@example.com',
-} );
-my $contact2 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2226, # Gloucestershire
+);
+my $contact2 = $mech->create_contact_ok(
+    body_id => $body_ids{2226}, # Gloucestershire
     category => 'Potholes',
     email => 'potholes@example.com',
-} );
-my $contact3 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2326, # Cheltenham
+);
+my $contact3 = $mech->create_contact_ok(
+    body_id => $body_ids{2326}, # Cheltenham
     category => 'Trees',
     email => 'trees@example.com',
-} );
-my $contact4 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2482, # Bromley
+);
+my $contact4 = $mech->create_contact_ok(
+    body_id => $body_ids{2482}, # Bromley
     category => 'Trees',
     email => 'trees@example.com',
-} );
-my $contact5 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2651, # Edinburgh
+);
+my $contact5 = $mech->create_contact_ok(
+    body_id => $body_ids{2651}, # Edinburgh
     category => 'Trees',
     email => 'trees@example.com',
-} );
-my $contact6 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2333, # Hart
+);
+my $contact6 = $mech->create_contact_ok(
+    body_id => $body_ids{2333}, # Hart
     category => 'Trees',
     email => 'trees@example.com',
-} );
-my $contact7 = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-    %contact_params,
-    body_id => 2227, # Hampshire
-    category => 'Street lighting',
+);
+my $contact7 = $mech->create_contact_ok(
+    body_id => $body_ids{2227}, # Hampshire
+    category => 'Street  lighting',
     email => 'highways@example.com',
-} );
-ok $contact1, "created test contact 1";
-ok $contact2, "created test contact 2";
-ok $contact3, "created test contact 3";
-ok $contact4, "created test contact 4";
-ok $contact5, "created test contact 5";
-ok $contact6, "created test contact 6";
-ok $contact7, "created test contact 7";
+);
+my $contact8 = $mech->create_contact_ok(
+    body_id => $body_ids{2504},
+    category => 'Street lighting',
+    email => 'highways@example.com'
+);
 
 # test that the various bit of form get filled in and errors correctly
 # generated.
@@ -118,7 +103,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => '1',
             email         => '',
@@ -142,7 +129,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => '1',
             email         => '',
@@ -169,7 +158,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => '1',
             email         => '',
@@ -193,7 +184,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => undef,
             email         => '',
@@ -217,7 +210,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => undef,
             email         => '',
@@ -240,7 +235,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
             email         => '',
@@ -263,7 +260,9 @@ foreach my $test (
         fields => {
             title         => "DOG SHIT\r\nON WALLS",
             detail        => "on this portakabin -\r\n\r\nmore of a portaloo HEH!!",
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
             email         => '',
@@ -286,7 +285,9 @@ foreach my $test (
         fields => {
             title         => 'Test title',
             detail        => 'Test detail',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'DUDE',
             may_show_name => '1',
             email         => '',
@@ -308,7 +309,9 @@ foreach my $test (
         fields => {
             title         => 'Test title',
             detail        => 'Test detail',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'anonymous',
             may_show_name => '1',
             email         => '',
@@ -330,7 +333,9 @@ foreach my $test (
         fields => {
             title         => 'Test title',
             detail        => 'Test detail',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => 'Joe Smith',
             may_show_name => '1',
             email         => 'not an email',
@@ -349,7 +354,9 @@ foreach my $test (
         fields => {
             title         => "   Test   title   ",
             detail        => "   first line   \n\n second\nline\n\n   ",
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '',
             may_show_name => '1',
             email         => '',
@@ -374,7 +381,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => '',
-            photo         => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
             name          => '  Bob    Jones   ',
             may_show_name => '1',
             email         => '   BOB @ExAmplE.COM   ',
@@ -396,7 +405,9 @@ foreach my $test (
         fields => {
             title         => 'Title',
             detail        => 'Detail',
-            photo         => [ [ undef, 'bad.txt', Content => 'This is not a JPEG', Content_Type => 'text/plain' ], 1 ],
+            photo1        => [ [ undef, 'bad.txt', Content => 'This is not a JPEG', Content_Type => 'text/plain' ], 1 ],
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
             email         => 'bob@example.com',
@@ -407,9 +418,9 @@ foreach my $test (
             remember_me => undef,
         },
         changes => {
-            photo => '',
+            photo1 => '',
         },
-        errors => [ "Please upload a JPEG image only" ],
+        errors => [ "Please upload an image only" ],
     },
     {
         msg    => 'bad photo upload gives error',
@@ -417,7 +428,9 @@ foreach my $test (
         fields => {
             title         => 'Title',
             detail        => 'Detail',
-            photo         => [ [ undef, 'fake.jpeg', Content => 'This is not a JPEG', Content_Type => 'image/jpeg' ], 1 ],
+            photo1        => [ [ undef, 'fake.jpeg', Content => 'This is not a JPEG', Content_Type => 'image/jpeg' ], 1 ],
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
             email         => 'bob@example.com',
@@ -428,9 +441,9 @@ foreach my $test (
             remember_me => undef,
         },
         changes => {
-            photo => '',
+            photo1 => '',
         },
-        errors => [ "That image doesn't appear to have uploaded correctly (Please upload a JPEG image only ), please try again." ],
+        errors => [ "That image doesn't appear to have uploaded correctly (Please upload an image only ), please try again." ],
     },
     {
         msg    => 'photo with octet-stream gets through okay',
@@ -438,7 +451,9 @@ foreach my $test (
         fields => {
             title         => '',
             detail        => 'Detail',
-            photo         => [ [ $sample_file, undef, Content_Type => 'application/octet-stream' ], 1 ],
+            photo1        => [ [ $sample_file, undef, Content_Type => 'application/octet-stream' ], 1 ],
+            photo2        => '',
+            photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
             email         => 'bob@example.com',
@@ -449,7 +464,7 @@ foreach my $test (
             remember_me => undef,
         },
         changes => {
-            photo => '',
+            photo1 => '',
         },
         errors => [ "Please enter a subject" ],
     },
@@ -477,12 +492,13 @@ foreach my $test (
         };
 
         # check that we got the errors expected
-        is_deeply $mech->page_errors, $test->{errors}, "check errors";
+        is_deeply [ sort @{$mech->page_errors} ], [ sort @{$test->{errors}} ], "check errors";
 
         # check that fields have changed as expected
         my $new_values = {
             %{ $test->{fields} },     # values added to form
             %{ $test->{changes} },    # changes we expect
+            gender => undef,
         };
         is_deeply $mech->visible_form_values, $new_values,
           "values correctly changed";
@@ -549,7 +565,7 @@ foreach my $test (
                 with_fields => {
                     title         => 'Test Report',
                     detail        => 'Test report details.',
-                    photo         => '',
+                    photo1        => '',
                     name          => 'Joe Bloggs',
                     may_show_name => '1',
                     email         => 'test-1@example.com',
@@ -586,15 +602,14 @@ foreach my $test (
     is $mech->get( '/report/' . $report->id )->code, 404, "report not found";
 
     # Check the report has been assigned appropriately
-    is $report->bodies_str, 2651;
+    is $report->bodies_str, $body_ids{2651};
 
     # receive token
     my $email = $mech->get_email;
     ok $email, "got an email";
-    like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+    like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-    my ($url) = $email->body =~ m{(http://\S+)};
-    ok $url, "extracted confirm url '$url'";
+    my $url = $mech->get_link_from_email($email);
 
     # confirm token
     $mech->get_ok($url);
@@ -638,8 +653,7 @@ subtest "test password errors for a user who is signing in as they report" => su
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     # setup the user.
     ok $user->update( {
@@ -667,7 +681,7 @@ subtest "test password errors for a user who is signing in as they report" => su
                 with_fields => {
                     title         => 'Test Report',
                     detail        => 'Test report details.',
-                    photo         => '',
+                    photo1        => '',
                     email         => 'test-2@example.com',
                     password_sign_in => 'secret1',
                     category      => 'Street lighting',
@@ -685,13 +699,13 @@ subtest "test password errors for a user who is signing in as they report" => su
 
 subtest "test report creation for a user who is signing in as they report" => sub {
     $mech->log_out_ok;
+    $mech->cookie_jar({});
     $mech->clear_emails_ok;
 
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     # setup the user.
     ok $user->update( {
@@ -719,7 +733,7 @@ subtest "test report creation for a user who is signing in as they report" => su
                 with_fields => {
                     title         => 'Test Report',
                     detail        => 'Test report details.',
-                    photo         => '',
+                    photo1        => '',
                     email         => 'test-2@example.com',
                     password_sign_in => 'secret2',
                     category      => 'Street lighting',
@@ -728,10 +742,8 @@ subtest "test report creation for a user who is signing in as they report" => su
             "submit good details"
         );
 
-        # check that we got the errors expected
-        is_deeply $mech->page_errors, [
-            'You have successfully signed in; please check and confirm your details are accurate:',
-        ], "check there were errors";
+        # check that we got the message expected
+        $mech->content_contains( 'You have successfully signed in; please check and confirm your details are accurate:' );
 
         # Now submit with a name
         $mech->submit_form_ok(
@@ -748,11 +760,10 @@ subtest "test report creation for a user who is signing in as they report" => su
     my $report = $user->problems->first;
     ok $report, "Found the report";
 
-    # check that we got redirected to /report/
-    is $mech->uri->path, "/report/" . $report->id, "redirected to report page";
+    $mech->content_contains('Thank you for reporting this issue');
 
     # Check the report has been assigned appropriately
-    is $report->bodies_str, 2651;
+    is $report->bodies_str, $body_ids{2651};
 
     # check that no emails have been sent
     $mech->email_count_is(0);
@@ -821,8 +832,11 @@ foreach my $test (
                     may_show_name => '1',
                     name          => 'Test User',
                     phone         => '01234 567 890',
-                    photo         => '',
+                    photo1        => '',
+                    photo2        => '',
+                    photo3        => '',
                     category      => '-- Pick a category --',
+                    gender => undef,
                 },
                 "user's details prefilled"
             );
@@ -832,7 +846,7 @@ foreach my $test (
                     with_fields => {
                         title         => "Test Report at café",
                         detail        => 'Test report details.',
-                        photo         => '',
+                        photo1        => '',
                         name          => 'Joe Bloggs',
                         may_show_name => '1',
                         phone         => '07903 123 456',
@@ -848,10 +862,9 @@ foreach my $test (
         ok $report, "Found the report";
 
         # Check the report has been assigned appropriately
-        is $report->bodies_str, $test->{council};
+        is $report->bodies_str, $body_ids{$test->{council}};
 
-        # check that we got redirected to /report/
-        is $mech->uri->path, "/report/" . $report->id, "redirected to report page";
+        $mech->content_contains('Thank you for reporting this issue');
 
         # check that no emails have been sent
         $mech->email_count_is(0);
@@ -893,8 +906,7 @@ subtest "test report creation for a category that is non public" => sub {
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     $contact1->update( { non_public => 1 } );
 
@@ -917,7 +929,7 @@ subtest "test report creation for a category that is non public" => sub {
                 with_fields => {
                     title         => 'Test Report',
                     detail        => 'Test report details.',
-                    photo         => '',
+                    photo1        => '',
                     email         => 'test-2@example.com',
                     name          => 'Joe Bloggs',
                     category      => 'Street lighting',
@@ -936,10 +948,9 @@ subtest "test report creation for a category that is non public" => sub {
 
     my $email = $mech->get_email;
     ok $email, "got an email";
-    like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+    like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-    my ($url) = $email->body =~ m{(http://\S+)};
-    ok $url, "extracted confirm url '$url'";
+    my $url = $mech->get_link_from_email($email);
 
     # confirm token
     $mech->get_ok($url);
@@ -1018,7 +1029,7 @@ for my $test (
         host  => 'www.fixmystreet.com',
         postcode => 'EH99 1SP',
         fms_extra_title => '',
-        extra => undef,
+        extra => [],
         user_title => undef,
     },
     {
@@ -1106,7 +1117,7 @@ for my $test (
         my $submission_fields = {
             title             => "Test Report",
             detail            => 'Test report details.',
-            photo             => '',
+            photo1            => '',
             email             => 'firstlast@example.com',
             may_show_name     => '1',
             phone             => '07903 123 456',
@@ -1132,10 +1143,9 @@ for my $test (
 
         my $email = $mech->get_email;
         ok $email, "got an email";
-        like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+        like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-        my ($url) = $email->body =~ m{(https?://\S+)};
-        ok $url, "extracted confirm url '$url'";
+        my $url = $mech->get_link_from_email($email);
 
         # confirm token in order to update the user details
         $mech->get_ok($url);
@@ -1146,7 +1156,7 @@ for my $test (
 
         my $report = $user->problems->first;
         ok $report, "Found the report";
-        my $extras = $report->extra;
+        my $extras = $report->get_extra_fields;
         is $user->title, $test->{'user_title'}, 'user title correct';
         is_deeply $extras, $test->{extra}, 'extra contains correct values';
 
@@ -1175,7 +1185,7 @@ subtest 'user title not reset if no user title in submission' => sub {
         my $submission_fields = {
             title             => "Test Report",
             detail            => 'Test report details.',
-            photo             => '',
+            photo1            => '',
             name              => 'Has Title',
             may_show_name     => '1',
             phone             => '07903 123 456',
@@ -1225,18 +1235,18 @@ subtest "test Hart" => sub {
             button    => 'submit_register',
           },
           {
-            desc      => 'confirm redirect for cobrand council in two tier cobrand redirects to cobrand site',
+            desc      => 'confirmation page for cobrand council in two tier cobrand links to cobrand site',
             category  => 'Trees',
             council   => 2333,
             national  => 0,
-            redirect  => 1,
+            confirm  => 1,
           },
           {
-            desc      => 'confirm redirect for non cobrand council in two tier cobrand redirect to national site',
+            desc      => 'confirmation page for non cobrand council in two tier cobrand links to national site',
             category  => 'Street Lighting',
             council   => 2227,
             national  => 1,
-            redirect  => 1,
+            confirm  => 1,
           },
     ) {
         subtest $test->{ desc } => sub {
@@ -1245,7 +1255,7 @@ subtest "test Hart" => sub {
             $mech->clear_emails_ok;
             $mech->log_out_ok;
 
-            my $user = $mech->log_in_ok($test_email) if $test->{redirect};
+            my $user = $mech->log_in_ok($test_email) if $test->{confirm};
 
             FixMyStreet::override_config {
                 ALLOWED_COBRANDS => [ 'hart', 'fixmystreet' ],
@@ -1256,20 +1266,20 @@ subtest "test Hart" => sub {
                 $mech->content_contains( "Hart Council" );
                 $mech->submit_form_ok( { with_fields => { pc => 'GU51 4AE' } }, "submit location" );
                 $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
-                my %optional_fields = $test->{redirect} ?  () :
+                my %optional_fields = $test->{confirm} ?  () :
                     ( email => $test_email, phone => '07903 123 456' );
 
                 # we do this as otherwise test::www::mechanize::catalyst
                 # goes to the value set in ->host above irregardless and
                 # that is a 404. It works but it is not pleasant.
-                $mech->clear_host if $test->{redirect} && $test->{national};
+                $mech->clear_host if $test->{confirm} && $test->{national};
                 $mech->submit_form_ok(
                     {
                         button      => $test->{button},
                         with_fields => {
                             title         => 'Test Report',
                             detail        => 'Test report details.',
-                            photo         => '',
+                            photo1        => '',
                             name          => 'Joe Bloggs',
                             may_show_name => '1',
                             category      => $test->{category},
@@ -1291,21 +1301,28 @@ subtest "test Hart" => sub {
             ok $report, "Found the report";
 
             # Check the report has been assigned appropriately
-            is $report->bodies_str, $test->{council};
+            is $report->bodies_str, $body_ids{$test->{council}};
 
-            if ( $test->{redirect} ) {
-                is $mech->uri->path, "/report/" . $report->id, "redirected to report page";
+            if ( $test->{confirm} ) {
+                is $mech->uri->path, "/report/new";
                 my $base = 'www.fixmystreet.com';
                 $base = "hart.fixmystreet.com" unless $test->{national};
-                is $mech->uri->host, $base, 'redirected to correct site';
+                $mech->content_contains("$base/report/" . $report->id, "links to correct site");
             } else {
                 # receive token
                 my $email = $mech->get_email;
                 ok $email, "got an email";
-                like $email->body, qr/to confirm that you want to send your/i, "confirm the problem";
+                my $body = $mech->get_text_body_from_email($email);
+                like $body, qr/to confirm that you want to send your/i, "confirm the problem";
 
-                my ($url) = $email->body =~ m{(http://\S+)};
-                ok $url, "extracted confirm url '$url'";
+                # does it reference the fact that this report hasn't been sent to Hart?
+                if ( $test->{national} ) {
+                    like $body, qr/Hart Council is not responsible for this type/i, "mentions report hasn't gone to Hart";
+                } else {
+                    unlike $body, qr/Hart Council is not responsible for this type/i, "doesn't mention report hasn't gone to Hart";
+                }
+
+                my $url = $mech->get_link_from_email($email);
 
                 # confirm token
                 FixMyStreet::override_config {
@@ -1355,14 +1372,13 @@ subtest "test SeeSomething" => sub {
 
     my $cobrand = FixMyStreet::Cobrand::SeeSomething->new();
 
-    $mech->create_body_ok(2535, 'Sandwell Borough Council');
-    my $bus_contact = FixMyStreet::App->model('DB::Contact')->find_or_create( {
-        %contact_params,
-        body_id => 2535,
+    my $body_ss = $mech->create_body_ok(2535, 'Sandwell Borough Council', id => 2535);
+    my $bus_contact = $mech->create_contact_ok(
+        body_id => $body_ss->id,
         category => 'Bus',
         email => 'bus@example.com',
         non_public => 1,
-    } );
+    );
 
     for my $test ( {
             desc => 'report with no user details works',
@@ -1452,12 +1468,8 @@ subtest "test SeeSomething" => sub {
 
             ok $report->confirmed, 'Report is confirmed automatically';
 
-            if ( $test->{public} ) {
-                is $mech->uri->path, '/report/' . $report->id, 'redirects to report page';
-            } else {
-                is $mech->uri->path, '/report/new', 'stays on report/new page';
-                $mech->content_contains( 'Your report has been sent', 'use report created template' );
-            }
+            is $mech->uri->path, '/report/new', 'stays on report/new page';
+            $mech->content_contains( 'Your report has been sent', 'use report created template' );
 
             $user->alerts->delete;
             $user->problems->delete;
@@ -1483,6 +1495,147 @@ subtest "categories from deleted bodies shouldn't be visible for new reports" =>
         ok $mech->content_lacks( $contact3->category );
 
         $contact3->body->update( { deleted => 0 } );
+    };
+};
+
+subtest "unresponsive body handling works" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        MAPIT_URL => 'http://mapit.mysociety.org/',
+    }, sub {
+        # Test body-level send method
+        my $old_send = $contact1->body->send_method;
+        $contact1->body->update( { send_method => 'Refused' } );
+        $mech->get_ok('/report/new/ajax?latitude=55.9&longitude=-3.2'); # Edinburgh
+        my $body_id = $contact1->body->id;
+        ok $mech->content_like( qr{Edinburgh.*accept reports.*/unresponsive\?body=$body_id} );
+
+        my $test_email = 'test-2@example.com';
+        $mech->log_out_ok;
+        $mech->get_ok('/around');
+        $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } }, "submit location" );
+        $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
+        $mech->submit_form_ok(
+            {
+                with_fields => {
+                    title         => "Test Report at café",
+                    detail        => 'Test report details.',
+                    photo1        => '',
+                    name          => 'Joe Bloggs',
+                    email         => $test_email,
+                    may_show_name => '1',
+                    phone         => '07903 123 456',
+                    category      => 'Trees',
+                }
+            },
+            "submit good details"
+        );
+
+        my $user = FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
+        ok $user, "test user does exist";
+
+        my $report = $user->problems->first;
+        ok $report, "Found the report";
+        is $report->bodies_str, undef, "Report not going anywhere";
+
+        like $mech->get_text_body_from_email, qr/despite not being sent/i, "correct email sent";
+
+        $user->problems->delete;
+        $mech->clear_emails_ok;
+
+        # Make sure the same behaviour occurs for reports from the mobile app
+        $mech->log_out_ok;
+        $mech->post_ok( '/report/new/mobile', {
+            title               => "Test Report at café",
+            detail              => 'Test report details.',
+            photo1              => '',
+            name                => 'Joe Bloggs',
+            email               => $test_email,
+            may_show_name       => '1',
+            phone               => '07903 123 456',
+            category            => 'Trees',
+            service             => 'iOS',
+            lat                 => 55.9,
+            lon                 => -3.2,
+            pc                  => '',
+            used_map            => '1',
+            submit_register     => '1',
+            password_register   => '',
+        });
+        my $res = $mech->response;
+        ok $res->header('Content-Type') =~ m{^application/json\b}, 'response should be json';
+
+        $user = FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
+        ok $user, "test user does exist";
+
+        $report = $user->problems->first;
+        ok $report, "Found the report";
+        is $report->bodies_str, undef, "Report not going anywhere";
+
+        like $mech->get_text_body_from_email, qr/despite not being sent/i, "correct email sent";
+
+        $user->problems->delete;
+        $mech->clear_emails_ok;
+
+        $contact1->body->update( { send_method => $old_send } );
+
+        # And test per-category refusing
+        my $old_email = $contact3->email;
+        $contact3->update( { email => 'REFUSED' } );
+        $mech->get_ok('/report/new/category_extras?category=Trees&latitude=51.89&longitude=-2.09');
+        ok $mech->content_like( qr/Cheltenham.*Trees.*unresponsive.*category=Trees/ );
+
+        $mech->get_ok('/around');
+        $mech->submit_form_ok( { with_fields => { pc => 'GL50 2PR', } }, "submit location" );
+        $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
+        $mech->submit_form_ok(
+            {
+                with_fields => {
+                    title         => "Test Report at café",
+                    detail        => 'Test report details.',
+                    photo1        => '',
+                    name          => 'Joe Bloggs',
+                    email         => $test_email,
+                    may_show_name => '1',
+                    phone         => '07903 123 456',
+                    category      => 'Trees',
+                }
+            },
+            "submit good details"
+        );
+
+        $report = $user->problems->first;
+        ok $report, "Found the report";
+        is $report->bodies_str, undef, "Report not going anywhere";
+
+        $contact3->update( { email => $old_email } );
+        $mech->delete_user($user);
+    };
+};
+
+subtest "unresponsive body page works" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        MAPIT_URL => 'http://mapit.mysociety.org/',
+    }, sub {
+        my $old_send = $contact1->body->send_method;
+        my $body_id = $contact1->body->id;
+        my $url = "/unresponsive?body=$body_id";
+        is $mech->get($url)->code, 404, "page not found";
+        $contact1->body->update( { send_method => 'Refused' } );
+        $mech->get_ok($url);
+        $mech->content_contains('Edinburgh');
+        $contact1->body->update( { send_method => $old_send } );
+
+        my $old_email = $contact3->email;
+        $body_id = $contact3->body->id;
+        $url = "/unresponsive?body=$body_id;category=Trees";
+        is $mech->get($url)->code, 404, "page not found";
+        $contact3->update( { email => 'REFUSED' } );
+        $mech->get_ok($url);
+        $mech->content_contains('Cheltenham');
+        $mech->content_contains('Trees');
+        $contact3->update( { email => $old_email } );
     };
 };
 
@@ -1521,7 +1674,7 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
                 with_fields => {
                     title         => "Test Report at café", 
                     detail        => 'Test report details.',
-                    photo         => '',
+                    photo1        => '',
                     name          => 'Joe Bloggs',
                     may_show_name => '1',
                     phone         => '07903 123 456',
@@ -1534,9 +1687,6 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
         # find the report
         my $report = $user->problems->first;
         ok $report, "Found the report";
-
-        # check that we got redirected to /report/
-        is $mech->uri->path, "/report/" . $report->id, "redirected to report page";
 
         $mech->content_contains( "'id': 'report/" . $report->id . "'", 'extra google code present' );
 
@@ -1566,7 +1716,7 @@ subtest "extra google analytics code displayed on email confirmation problem cre
         my $submission_fields = {
             title             => "Test Report",
             detail            => 'Test report details.',
-            photo             => '',
+            photo1            => '',
             email             => 'firstlast@example.com',
             name              => 'Test User',
             may_show_name     => '1',
@@ -1580,10 +1730,9 @@ subtest "extra google analytics code displayed on email confirmation problem cre
 
         my $email = $mech->get_email;
         ok $email, "got an email";
-        like $email->body, qr/confirm that you want to/i, "confirm the problem";
+        like $mech->get_text_body_from_email($email), qr/confirm that you want to/i, "confirm the problem";
 
-        my ($url) = $email->body =~ m{(https?://\S+)};
-        ok $url, "extracted confirm url '$url'";
+        my $url = $mech->get_link_from_email($email);
 
         # confirm token in order to update the user details
         $mech->get_ok($url);
@@ -1604,12 +1753,8 @@ subtest "extra google analytics code displayed on email confirmation problem cre
     };
 };
 
-$contact1->delete;
-$contact2->delete;
-$contact3->delete;
-$contact4->delete;
-$contact5->delete;
-$contact6->delete;
-$contact7->delete;
-
 done_testing();
+
+END {
+    $mech->delete_body($_) foreach @bodies;
+}

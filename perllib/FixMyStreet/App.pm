@@ -2,18 +2,13 @@ package FixMyStreet::App;
 use Moose;
 use namespace::autoclean;
 
-# Should move away from Email::Send, but until then:
-$Return::Value::NO_CLUCK = 1;
-
 use Catalyst::Runtime 5.80;
-use DateTime;
 use FixMyStreet;
 use FixMyStreet::Cobrand;
 use Memcached;
-use mySociety::Email;
-use mySociety::EmailUtil;
-use mySociety::Random qw(random_bytes);
 use FixMyStreet::Map;
+use FixMyStreet::Email;
+use Utils;
 
 use Path::Class;
 use URI;
@@ -90,19 +85,16 @@ __PACKAGE__->config(
 # Start the application
 __PACKAGE__->setup();
 
-# Due to some current issues with proxyings, need to manually
-# tell the code we're secure if we are.
+# If your site is secure but running behind a proxy, you might need to set the
+# SECURE_PROXY_SSL_HEADER configuration variable so this can be spotted.
 after 'prepare_headers' => sub {
     my $self = shift;
     my $base_url = $self->config->{BASE_URL};
+    my $ssl_header = $self->config->{SECURE_PROXY_SSL_HEADER};
     my $host = $self->req->headers->header('Host');
-    $self->req->secure( 1 ) if $base_url eq 'https://www.zueriwieneu.ch';
-    $self->req->secure( 1 ) if $base_url eq 'https://www.fixmystreet.com'
-        && ( $host eq 'fix.bromley.gov.uk' || $host eq 'www.fixmystreet.com' );
+    $self->req->secure(1) if $ssl_header && ref $ssl_header eq 'ARRAY'
+        && @$ssl_header == 2 && $self->req->header($ssl_header->[0]) eq $ssl_header->[1];
 };
-
-# set up DB handle for old code
-FixMyStreet->configure_mysociety_dbhandle;
 
 # disable debug logging unless in debug mode
 __PACKAGE__->log->disable('debug')    #
@@ -168,6 +160,8 @@ sub setup_request {
 
     my $cobrand = $c->cobrand;
 
+    $cobrand->add_response_headers if $cobrand->can('add_response_headers');
+
     # append the cobrand templates to the include path
     $c->stash->{additional_template_paths} = $cobrand->path_to_web_templates;
 
@@ -192,11 +186,13 @@ sub setup_request {
     $c->log->debug( sprintf "Set lang to '%s' and cobrand to '%s'",
         $set_lang, $cobrand->moniker );
 
+    $c->stash->{site_name} = Utils::trim_text($c->render_fragment('site-name.html'));
+
     $c->model('DB::Problem')->set_restriction( $cobrand->site_key() );
 
     Memcached::set_namespace( FixMyStreet->config('FMS_DB_NAME') . ":" );
 
-    FixMyStreet::Map::set_map_class( $cobrand->map_type || $c->req->param('map_override') );
+    FixMyStreet::Map::set_map_class( $cobrand->map_type || $c->get_param('map_override') );
 
     unless ( FixMyStreet->config('MAPIT_URL') ) {
         my $port = $c->req->uri->port;
@@ -206,10 +202,8 @@ sub setup_request {
 
     # XXX Put in cobrand / do properly
     if ($c->cobrand->moniker eq 'zurich') {
-        FixMyStreet::DB::Result::Problem->visible_states_add_unconfirmed();
-        DateTime->DefaultLocale( 'de_CH' );
-    } else {
-        DateTime->DefaultLocale( 'en_US' );
+        FixMyStreet::DB::Result::Problem->visible_states_add('unconfirmed');
+        FixMyStreet::DB::Result::Problem->visible_states_remove('investigating');
     }
 
     if (FixMyStreet->test_mode) {
@@ -250,7 +244,7 @@ sub setup_dev_overrides {
     delete $params{$_} for grep { !m{^_override_} } keys %params;
 
     # stop if there is nothing to add
-    return 1 unless scalar keys %params;
+    return unless scalar keys %params;
 
     # Check to see if we should clear all
     if ( $params{_override_clear_all} ) {
@@ -274,14 +268,14 @@ sub setup_dev_overrides {
 
 Checks the overrides for the value given and returns it if found, undef if not.
 
-Always returns undef unless on a staging site (avoids autovivifying overrides
-hash in session and so creating a session for all users).
+Always returns undef unless on a staging site and we already have a session
+(avoids autovivifying overrides hash and so creating a session for all users).
 
 =cut
 
 sub get_override {
     my ( $c, $key ) = @_;
-    return unless $c->config->{STAGING_SITE};
+    return unless $c->config->{STAGING_SITE} && $c->sessionid;
     return $c->session->{overrides}->{$key};
 }
 
@@ -310,108 +304,63 @@ sub send_email {
     my $sender_name = $c->cobrand->contact_name;
 
     # create the vars to pass to the email template
+    my @include_path = @{ $c->cobrand->path_to_email_templates($c->stash->{lang_code}) };
     my $vars = {
         from => [ $sender, _($sender_name) ],
         %{ $c->stash },
         %$extra_stash_values,
-        additional_template_paths => [
-            FixMyStreet->path_to( 'templates', 'email', $c->cobrand->moniker, $c->stash->{lang_code} )->stringify,
-            FixMyStreet->path_to( 'templates', 'email', $c->cobrand->moniker )->stringify,
-        ]
+        additional_template_paths => \@include_path,
     };
 
-    # render the template
-    my $content = $c->view('Email')->render( $c, $template, $vars );
+    return if FixMyStreet::Email::is_abuser($c->model('DB')->schema, $vars->{to});
 
-    # create an email - will parse headers out of content
-    my $email = Email::Simple->new($content);
-    $email->header_set( ucfirst($_), $vars->{$_} )
-      for grep { $vars->{$_} } qw( to from subject);
+    my @inline_images;
+    $vars->{inline_image} = sub { FixMyStreet::Email::add_inline_image(\@inline_images, @_); },
 
-    return if $c->is_abuser( $email->header('To') );
+    my $html_template = FixMyStreet::Email::get_html_template($template, @include_path);
+    my $html_compiled = eval {
+        $c->view('Email')->render($c, $html_template, $vars) if $html_template;
+    };
+    $c->log->debug("Error compiling HTML $template: $@") if $@;
 
-    $email->header_set( 'Message-ID', sprintf('<fms-%s-%s@%s>',
-        time(), unpack('h*', random_bytes(5, 1)), $c->config->{EMAIL_DOMAIN}
-    ) );
+    my $data = {
+        _body_ => $c->view('Email')->render( $c, $template, $vars ),
+        _attachments_ => $extra_stash_values->{attachments},
+        From => $vars->{from},
+        To => $vars->{to},
+        'Message-ID' => FixMyStreet::Email::message_id(),
+    };
+    $data->{Subject} = $vars->{subject} if $vars->{subject};
+    $data->{'Reply-To'} = $vars->{'Reply-To'} if $vars->{'Reply-To'};
+    $data->{_html_} = $html_compiled if $html_compiled;
+    $data->{_html_images_} = \@inline_images if @inline_images;
 
-    # pass the email into mySociety::Email to construct the on the wire 7bit
-    # format - this should probably happen in the transport instead but hohum.
-    my $email_text = mySociety::Locale::in_gb_locale { mySociety::Email::construct_email(
-        {
-            _template_ => $email->body,    # will get line wrapped
-            _parameters_ => {},
-            _line_indent => '',
-            $email->header_pairs
-        }
-    ) };
-
-    # send the email
-    $c->model('EmailSend')->send($email_text);
+    my $email = mySociety::Locale::in_gb_locale { FixMyStreet::Email::construct_email($data) };
+    my $return = $c->model('EmailSend')->send($email);
+    $c->log->error("$return") if !$return;
 
     return $email;
-}
-
-sub send_email_cron {
-    my ( $c, $params, $env_from, $env_to, $nomail, $cobrand, $lang_code ) = @_;
-
-    return 1 if $c->is_abuser( $env_to );
-
-    $params->{'Message-ID'} = sprintf('<fms-cron-%s-%s@%s>', time(),
-        unpack('h*', random_bytes(5, 1)), FixMyStreet->config('EMAIL_DOMAIN')
-    );
-
-    # This is all to set the path for the templates processor so we can override
-    # signature and site names in emails using templates in the old style emails.
-    # It's a bit involved as not everywhere we use it knows about the cobrand so
-    # we can't assume there will be one.
-    my $include_path = FixMyStreet->path_to( 'templates', 'email', 'default' )->stringify;
-    if ( $cobrand ) {
-        $include_path =
-            FixMyStreet->path_to( 'templates', 'email', $cobrand->moniker )->stringify . ':'
-            . $include_path;
-        if ( $lang_code ) {
-            $include_path =
-                FixMyStreet->path_to( 'templates', 'email', $cobrand->moniker, $lang_code )->stringify . ':'
-                . $include_path;
-        }
-    }
-    my $tt = Template->new({
-        INCLUDE_PATH => $include_path
-    });
-    my ($sig, $site_name);
-    $tt->process( 'signature.txt', $params, \$sig );
-    $params->{_parameters_}->{signature} = $sig;
-
-    $tt->process( 'site_name.txt', $params, \$site_name );
-    my $site_title = $cobrand ? $cobrand->site_title : '';
-    $params->{_parameters_}->{site_name} = $site_name || $site_title;
-
-    $params->{_line_indent} = '';
-    my $email = mySociety::Locale::in_gb_locale { mySociety::Email::construct_email($params) };
-
-    if ( FixMyStreet->test_mode ) {
-        my $sender = Email::Send->new({ mailer => 'Test' });
-        $sender->send( $email );
-        return 0;
-    } elsif (!$nomail) {
-        return mySociety::EmailUtil::send_email( $email, $env_from, @$env_to );
-    } else {
-        print $email;
-        return 1; # Failure
-    }
 }
 
 =head2 uri_with
 
     $uri = $c->uri_with( ... );
 
-Simply forwards on to $c->req->uri_with - this is a common typo I make!
+Forwards on to $c->req->uri_with, but also deletes keys that have a "" value
+(as undefined is passed as that from a template).
 
 =cut
 
 sub uri_with {
     my $c = shift;
-    return $c->req->uri_with(@_);
+    my $uri = $c->req->uri_with(@_);
+    my $args = $_[0];
+    my %params = %{$uri->query_form_hash};
+    foreach my $key (keys %$args) {
+        delete $params{$key} if $args->{$key} eq "";
+    }
+    $uri->query_form(\%params);
+    return $uri;
 }
 
 =head2 uri_for
@@ -474,51 +423,58 @@ call), use this method.
 
 sub render_fragment {
     my ($c, $template, $vars) = @_;
-    $vars->{additional_template_paths} = $c->cobrand->path_to_web_templates
-        if $vars;
+    $vars = { %{$c->stash}, %$vars } if $vars;
     $c->view('Web')->render($c, $template, $vars);
 }
 
-=head2 get_photo_params
+=head2 get_param
 
-Returns a hashref of details of any attached photo for use in templates.
-Hashref contains height, width and url keys.
+    $param = $c->get_param('name');
+
+Return the parameter passed in the request, or undef if not present. Like
+req->param() in a scalar context, this will return the first parameter if
+multiple were provided; unlike req->param it will always return a scalar,
+never a list, in order to avoid possible security issues.
 
 =cut
 
-sub get_photo_params {
-    my ($self, $key) = @_;
-
-    return {} unless $self->photo;
-
-    $key = ($key eq 'id') ? '' : "/$key";
-
-    my $pre = "/photo$key/" . $self->id;
-    my $post = '.jpeg';
-    my $photo = {};
-
-    if (length($self->photo) == 40) {
-        $post .= '?' . $self->photo;
-        $photo->{url_full} = "$pre.full$post";
-        # XXX Can't use size here because {url} (currently 250px height) may be
-        # being used, but at this point it doesn't yet exist to find the width
-        # $str = FixMyStreet->config('UPLOAD_DIR') . $self->photo . '.jpeg';
-    } else {
-        my $str = \$self->photo;
-        ( $photo->{width}, $photo->{height} ) = Image::Size::imgsize( $str );
-    }
-
-    $photo->{url} = "$pre$post";
-    $photo->{url_tn} = "$pre.tn$post";
-    $photo->{url_fp} = "$pre.fp$post";
-
-    return $photo;
+sub get_param {
+    my ($c, $param) = @_;
+    my $value = $c->req->params->{$param};
+    return $value->[0] if ref $value;
+    return $value;
 }
 
-sub is_abuser {
-    my ($c, $email) = @_;
-    my ($domain) = $email =~ m{ @ (.*) \z }x;
-    return $c->model('DB::Abuse')->search( { email => [ $email, $domain ] } )->first;
+=head2 get_param_list
+
+    @params = $c->get_param_list('name');
+
+Return the parameters passed in the request, as a list. This will always return
+a list, with an empty list if no parameter is present.
+
+=cut
+
+sub get_param_list {
+    my ($c, $param, $allow_commas) = @_;
+    die unless wantarray;
+    my $value = $c->req->params->{$param};
+    return () unless defined $value;
+    my @value = ref $value ? @$value : ($value);
+    return map { split /,/, $_ } @value if $allow_commas;
+    return @value;
+}
+
+=head2 set_param
+
+    $c->set_param('name', 'My Name');
+
+Sets the query parameter to the passed variable.
+
+=cut
+
+sub set_param {
+    my ($c, $param, $value) = @_;
+    $c->req->params->{$param} = $value;
 }
 
 =head1 SEE ALSO

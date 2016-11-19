@@ -1,10 +1,19 @@
-
 /* HEADINGS and TYPOGRAPHY */
 
 $body-font: MuseoSans, Helmet, Freesans, sans-serif !default;
 $meta-font: Helmet, Freesans, sans-serif !default;
 $heading-font: 'Museo300-display', MuseoSans, Helmet, Freesans, sans-serif !default;
-$image-sprite: '/cobrands/baiki/images/sprite.png' !default;
+$image-sprite: '../fixmystreet/images/sprite.png' !default;
+$menu-image: 'menu-white' !default;
+
+$itemlist_item_background: #f6f6f6 !default;
+$itemlist_item_background_hover: #e6e6e6 !default;
+$col_big_numbers: #ccc !default;
+
+$form-control-border-color: #aaaaaa !default;
+
+@import "_mixins";
+@import "_report_list";
 
 body {
   font-family: $body-font;
@@ -19,7 +28,7 @@ body {
 p {
   font-size: 1em;
   font-weight: normal;
-  margin:0 0 1em 0;
+  margin: 0 0 1em;
 }
 
 small{
@@ -72,7 +81,7 @@ h4 {
 ul, ol {
   font-size: 1em;
   margin-bottom: 2em;
-  margin-left: 2em;
+  margin-#{$left}: 2em;
   padding:0;
 }
 
@@ -97,15 +106,15 @@ ol.big-numbers {
   > li {
     position: relative;
     list-style: none;
-    padding:0 0 0 2.5em;
+    padding: flip(0 0 0 2.5em, 0 2.5em 0 0);
     margin-bottom:2em;
     &:before {
       content: counter(li); // set the content to be whatever the 'li' var is
       counter-increment: li; // add to the counter var
       position: absolute;
-      left: 0;
+      #{$left}: 0;
       top:-0.2em;
-      color:#ccc;
+      color:$col_big_numbers;
       line-height:1;
       font: {
         family: $meta-font;
@@ -127,7 +136,7 @@ dl {
   dd {
     font-weight: 1em;
     line-height: 1.5em;
-    margin:0 0 1em 0;
+    margin: 0 0 1em;
   }
 }
 
@@ -164,15 +173,18 @@ select {
   width: 100%;
 }
 
-// links
-a,
-a:visited {
-  text-decoration:none;
-  color:#0BA7D1;
+a {
+  text-decoration: none;
+  color: #0BA7D1;
+
+  &:visited {
+    color: #0BA7D1;
+  }
+
   &:hover,
   &:active {
-    text-decoration:underline;
-    color:#0D7CCE;
+    text-decoration: underline;
+    color: #0D7CCE;
   }
 }
 
@@ -212,38 +224,6 @@ h4.static-with-rule{
 
 /* FORMS */
 
-// input placeholders, these need to be on separate lines as if the browser
-// can't understand a selector it will invalidate the whole line.
-::-webkit-input-placeholder {
-  color: #666666;
-  font: {
-    style:italic;
-    size:0.9375em;
-  }
-}
-:-moz-placeholder {
-  color:#666666;
-  font: {
-    style:italic;
-    size:0.9375em;
-  }
-}
-:-ms-placeholder {
-  color:#666666;
-  font: {
-    style:italic;
-    size:0.9375em;
-  }
-}
-//this only gets used when the browser doesn't support @placeholder
-.placeholder {
-  color:#666666;
-  font: {
-    style:italic;
-    size:0.9375em;
-  }
-}
-
 input[type=file] {
     width: 100%;
 }
@@ -253,94 +233,154 @@ input[type=password],
 input[type=email],
 textarea {
   @include box-sizing(border-box);
+  display: block;
   width: 100%;
-  // adjust so the sides line up
   padding: 0.5em;
-}
-.ie7 {
-    input[type=text],
-    input[type=password],
-    input[type=email],
-    textarea {
-        max-width: 95%;
-    }
+  font-size: 1em;
+  line-height: 1em;
+
+  .ie7 & {
+    max-width: 95%;
+  }
 }
 
 textarea {
-  border: 0.125em solid #888888;
-  @include border-radius(0.25em);
-  display: block;
-  font-size: 1em;
   line-height: 1.5em;
-  font-family: $meta-font;
-  min-height:8em;
-}
-
-input[type=text],
-input[type=password],
-input[type=email] {
-  border: 0.125em solid #888888;
-  @include border-radius(0.25em);
-  display: block;
-  font-size: 1em;
-  line-height: 1em;
+  min-height: 5em;
 }
 
 label{
   display: block;
   margin-top: 1.25em;
-  margin-bottom: 0.25em;
+  margin-bottom: 0.5em;
   font-weight: bold;
-  &.inline{
+
+  &.inline {
     display: inline;
-    padding: 0 2em 0 1em;
+    padding: flip(0 2em 0 1em, 0 1em 0 2em);
+    font-weight: normal;
+  }
+
+  &.inline-text {
+    display: inline;
     font-weight: normal;
   }
 }
 
+.form-control {
+    display: block;
+    background-color: #fff;
+    border: 1px solid $form-control-border-color;
+    @include border-radius(4px);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    font-family: inherit; // eg: stop Firefox and IE10-11 using Courier in textareas
+    margin-bottom: 0.5em;
+
+    &[readonly] {
+        box-shadow: none;
+        color: #888888;
+    }
+}
+
+select.form-control {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    height: 2.2em; // roughly equal to default input height
+
+    &[multiple] {
+        height: auto;
+    }
+    .js &[multiple] {
+        height: 2.2em;
+    }
+}
+
+.form-section-heading {
+    font-family: inherit;
+    color: inherit;
+    font-weight: bold;
+    margin-bottom: 0.25em;
+}
+
+.form-section-heading--private {
+    &:before {
+        content: "";
+        display: inline-block;
+        width: 16px;
+        height: 18px;
+        background: transparent url(/cobrands/fixmystreet/images/padlock.png) 0 0 no-repeat;
+        background-size: 16px 18px;
+        margin-#{$right}: 0.5em;
+
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            background-image: url(/cobrands/fixmystreet/images/padlock@2.png);
+        }
+
+        @media all {
+            background-image: url(/cobrands/fixmystreet/images/padlock.svg), none;
+        }
+    }
+}
+
+.form-section-description {
+    color: #666;
+    line-height: 1em * (22/16);
+}
+
 // grey background, full width box
 .form-box {
-  margin: 0 -1em 0.25em -1em;
+  margin: 0 -1em 0.25em;
   background: #eee;
   padding: 1em;
-  > input[type=text], input[type=email] {
-    margin-bottom:1em;
+
+  & > input[type=text],
+  & > input[type=email] {
+    margin-bottom: 1em;
   }
+
+  & > label:first-child {
+    margin-top: 0;
+  }
+
   .title {
-    font-size:1.25em;
-    margin:0.5em 0;
+    font-size: 1.25em;
+    margin: 0.5em 0;
   }
+
+  h2 {
+    margin: 0 0 0.5em;
+  }
+
   h5 {
-    margin:0 0 1em;
-    font: {
-      size:1.125em;
-      weight:normal;
-    }
+    margin: 0 0 1em;
+    font-size: 1.125em;
+    font-weight: normal;
+
     strong {
-      font-size:2em;
-      margin-right:0.25em;
+      font-size: 2em;
+      margin-#{$right}: 0.25em;
     }
   }
 }
-// IE6 doesn't extend the grey box back with the above negative margins, and
-// the password box falls off screen for some reason. Just have boring margins,
-// it looks okay.
-.ie6 .form-box {
-    margin: 0 0 0.25em 0;
-    padding: 1em;
+
+// When the user is logged in, we show a shorter form-box,
+// without a heading before it. So add some space before.
+#form-box--logged-in-name {
+  margin-top: 1.25em;
 }
+
 // Prevent grey displaying oddly by giving it a width, and stop odd left margin issue
 .ie7 .form-box {
     width: 100%;
     > input[type=text], input[type=email] {
-        margin-left: 2em;
+        margin-#{$left}: 2em;
     }
 }
 
 .change_location {
     color: #666;
-    padding-left: 24px;
-    background: transparent url(/cobrands/fixmystreet/images/wrong-location.png) 4px 50% no-repeat;
+    padding-#{$left}: 20px;
+    background: transparent url(/cobrands/fixmystreet/images/wrong-location.png) $left 50% no-repeat;
+    border-#{$left}: solid 4px transparent;
     margin-top: -0.5em;
 }
 
@@ -350,19 +390,30 @@ label{
   input[type=text],
   input[type=email] {
     width: 65%;
-    float:left;
+    float: $left;
   }
   input[type=submit] {
-    float:right;
+    float: $right;
     width:28%;
-    margin-right:0.25em;
-    padding-top:0.7em;
-    padding-bottom:0.6em;
+    margin-#{$right}: 0.25em;
+    padding-top:0.6em;
+    padding-bottom:0.5em;
   }
 }
 
 .checkbox-group {
   margin:1em 0;
+}
+
+.label-containing-checkbox {
+  padding-#{$left}: 24px;
+  position: relative;
+
+  input {
+    position: absolute;
+    #{$left}: 0;
+    top: 0.2em;
+  }
 }
 
 
@@ -396,14 +447,12 @@ ul.error {
   @include border-radius(0.25em);
 }
 
-// don't display valid error boxes as now the page jump
-// won't be until the user submits, which is fine
-div.label-valid,
-p.label-valid {
-  display:none !important;
-  visibility: hidden;
+.form-success {
+  background: #009900;
+  color: #fff;
+  padding: 0 0.5em;
+  @include border-radius(0.25em);
 }
-
 
 
 /*** LAYOUT ***/
@@ -423,7 +472,7 @@ p.label-valid {
 #site-header{
   border-top: 0.25em solid $primary;
   height: 3em;
-  @include background(linear-gradient(#000, #222 10%, #222 90%, #000));
+  @include linear-gradient(#000, #222 10%, #222 90%, #000);
   .container {
     min-height:4em;
   }
@@ -433,73 +482,82 @@ p.label-valid {
   width: 175px;
   height: 40px;
   top: 0.4em;
-  background: url('data:image/png;base64,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') no-repeat;
-  /* background: url($image-sprite) -3px -3px no-repeat; */
+  #{$left}: 0.5em;
+  background: url($image-sprite) -3px -3px no-repeat;
   text-indent: -999999px;
   position: absolute;
   z-index:2;
 }
-.ie6 #site-logo {
-  background: url('/cobrands/fixmystreet/images/ie_logo.gif') 0 -5px no-repeat;
-}
 
 // this is a skip to nav for mobile users only
 #nav-link {
-  width: 50px;
-  height: 48px;
-  background: url($image-sprite) -5px -916px no-repeat;
+  width: 3em;
+  height: 3em; // same height as #site-header
+  background: transparent url(../fixmystreet/images/#{$menu-image}.png) center center no-repeat;
+  background-image: inline-image("../fixmystreet/images/#{$menu-image}.svg"), none;
+  background-size: 22px 18px;
   display: block;
   text-indent: -999999px;
   position: absolute;
-  right:2em;
-  top:-2px;
-  &:hover {
-    top:2px;
+  #{$right}: 0;
+  top: 0.25em; // same as border-top on #site-header
+}
+
+// A shortcut to the Reporting page, in the mobile header
+#report-cta {
+  display: block;
+  position: absolute;
+  top: (3em / 2); // half the height of #site-header
+  #{$right}: 3.5em;
+  margin-top: -0.5em;
+
+  font-size: 0.9em;
+  line-height: 1em;
+  border: 1px solid #666;
+  color: #fff;
+  padding: 0.4em;
+  border-radius: 0.3em;
+
+  &:hover, &:focus {
+    text-decoration: none;
+    background-color: #444;
   }
 }
 
 
-#main-nav{
-  ul{
-    @include list-reset-soft;
-    li{
-      a, span {
-        display: block;
-        padding: 0.5em 1em;
-        background:#f6f6f6;
-        color:#333;
-        font-size: 1.25em;
-        border-bottom: 0.25em solid #333;
-      }
-      a:hover, span.hover {
-        background:  #333;
-        color:#fff;
-        text-decoration: none;
-      }
-      span {
-        background-color: #ccc;
-      }
-    }
-    &#mysoc-menu{
-      li {
-        a {
-          color: $primary_text;
-          background: $primary;
-          &#mysoc-logo {
-            background-position: 20px 13px;
-            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHQAAAAYCAYAAAArrNkGAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABBtJREFUaN7tmT2u1DAQx/cIPgBCQUJCICH5BuQIPkIq6hzBB0AyiAP4ABQ5ghtEm54mEtVrICUNkpmsJjBvdvyR1S7hPa2lv1aJs5PEP894xjkc/tMWY+xADhRQA8iC9I7PtD6PP9xa9aC1oCnmm9lpgtHW3WiVB03HuqYeA9DlPZbJuXj8o5wgGM5os+ixLb74MeTt+Hz+kiGXva99jEDjJV7w+5Pn3aIHNoEvB/Tu7s6iejzuQAEUQRPIgxT2KTwesX+5rkvYs7yP2KDXLN7XXCKkAUgHiii3MaQuideI9x/x2GB/gxFjVZMIoY6AmtBGJ+QJluUKgdheI1LpfveuoQMciTw7XrUAbEFzot8Re4GcnwWghv23Ezx0PiejBYiBAA0/Pz7VoOV3AKnEup1LwhyBQFsr2Jkzdjy51hZyBIuwaOuFZ6fPPaaA5jQX+hvi4fS8YUC9BBzXqJOB4INXAGpAM8oAxBEUUbYSQiCD1ZWACnZGhDJIUacGaBbY34ghAxfAdHheCxBHAs6yvp7YpP/zDOgk9WHIGhMvOZ5TrjCgfUUSptigqQqg1M7A7kHhTVvWUAF8Q/r6ZObPQy4bfMf62wycoeSFOEmoPS2sQ74mdFUC1RhuHQ25QonkKurjE6CCpzTC+9CmNwBNeiHz/oGvabnweG+9E9ZDul6GDDiD53tybsoMYIMJhhQSjy/28YVzoAgKoGRt+uvHMwUaQRHkS7N/I1AjhGuuGs+2ifsOPOwKk6TLAeUe2J4DFPtG7vnsnK3MQPngTwg0ErUZoC3CPEqyWbmDJQG1cVvbCpRPmIadm6Wy5VpAeXKkpCRqQ1F/DwBAnAlQnQHaEKDzlYGGgvQWoEJy1LOx8P8SqOLJEU2uNhbhvQC0AVn76n3/9vWHpIe++/Km/fxVL17aL3ATSYU5E2h77rbkBqA2kYFHsbS7FlAhOTrJpIXwkirYRynMAEgDiignwHSgiGozCceUg5EBqs5N2hhQX8gnpDaldoquCVQn6lmV2foLbJdkSmWkANESoNPLT98UyKMUgbnIFsqWGRMxQ0JbW1G2eCHsdmQferWlMwlPxHuLnwiFa9NefU2gQiJ0UholBixm6lGV8lAEGVFDykMr6l5e5OeA1tg5ASB8wcmVMEa4rtkLqM3VnqQuDJnBmHnhT6A2oKPNBSIFuq6hoCbzCatY91Zs/ZXspED5Ws+rDu0IbZUSEps//YmQuvbrCg8NFd8I1zBl8bd66w8galBA6Q3rmWKb3YZlpIqE0Da13pLrVjtd6flxMtP7qorvse1hjyYkRfs8yMP/8E83WMIeII2wdrobnk0gG6HOnUu7WteAqRKf39QN0yagTlhf9/lwz9fNG8yzgBrmmWa3h8Ftv0HaQLi1TYlaSGX3UvsNzdBKw+waoEEAAAAASUVORK5CYII=');
-            background-repeat:no-repeat;
-            text-indent:-999999px;
-          }
-        }
-      }
-    }
+.nav-menu {
+  @include list-reset-soft;
+  a, span {
+    display: block;
+    padding: 0.5em 1em;
+    background: #f6f6f6;
+    color: #333;
+    font-size: 1.25em;
+    border-bottom: 0.25em solid #333;
+  }
+  a:hover, span.hover {
+    background: #333;
+    color: #fff;
+    text-decoration: none;
+  }
+  span {
+    background: #ccc;
   }
 }
-.ie6 #main-nav ul#mysoc-menu li a#mysoc-logo {
-  background: url('/cobrands/fixmystreet/images/ie_mysoc_logo.gif') center no-repeat;
+.nav-menu--mysoc {
+  a {
+    color: $primary_text;
+    background: $primary;
+  }
 }
-.ie7 #main-nav ul#mysoc-menu li a#mysoc-logo {
+#mysoc-logo {
+  background-origin: content-box;
+  background-position: $left 3px;
+  background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHQAAAAYCAYAAAArrNkGAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABBtJREFUaN7tmT2u1DAQx/cIPgBCQUJCICH5BuQIPkIq6hzBB0AyiAP4ABQ5ghtEm54mEtVrICUNkpmsJjBvdvyR1S7hPa2lv1aJs5PEP894xjkc/tMWY+xADhRQA8iC9I7PtD6PP9xa9aC1oCnmm9lpgtHW3WiVB03HuqYeA9DlPZbJuXj8o5wgGM5os+ixLb74MeTt+Hz+kiGXva99jEDjJV7w+5Pn3aIHNoEvB/Tu7s6iejzuQAEUQRPIgxT2KTwesX+5rkvYs7yP2KDXLN7XXCKkAUgHiii3MaQuideI9x/x2GB/gxFjVZMIoY6AmtBGJ+QJluUKgdheI1LpfveuoQMciTw7XrUAbEFzot8Re4GcnwWghv23Ezx0PiejBYiBAA0/Pz7VoOV3AKnEup1LwhyBQFsr2Jkzdjy51hZyBIuwaOuFZ6fPPaaA5jQX+hvi4fS8YUC9BBzXqJOB4INXAGpAM8oAxBEUUbYSQiCD1ZWACnZGhDJIUacGaBbY34ghAxfAdHheCxBHAs6yvp7YpP/zDOgk9WHIGhMvOZ5TrjCgfUUSptigqQqg1M7A7kHhTVvWUAF8Q/r6ZObPQy4bfMf62wycoeSFOEmoPS2sQ74mdFUC1RhuHQ25QonkKurjE6CCpzTC+9CmNwBNeiHz/oGvabnweG+9E9ZDul6GDDiD53tybsoMYIMJhhQSjy/28YVzoAgKoGRt+uvHMwUaQRHkS7N/I1AjhGuuGs+2ifsOPOwKk6TLAeUe2J4DFPtG7vnsnK3MQPngTwg0ErUZoC3CPEqyWbmDJQG1cVvbCpRPmIadm6Wy5VpAeXKkpCRqQ1F/DwBAnAlQnQHaEKDzlYGGgvQWoEJy1LOx8P8SqOLJEU2uNhbhvQC0AVn76n3/9vWHpIe++/Km/fxVL17aL3ATSYU5E2h77rbkBqA2kYFHsbS7FlAhOTrJpIXwkirYRynMAEgDiignwHSgiGozCceUg5EBqs5N2hhQX8gnpDaldoquCVQn6lmV2foLbJdkSmWkANESoNPLT98UyKMUgbnIFsqWGRMxQ0JbW1G2eCHsdmQferWlMwlPxHuLnwiFa9NefU2gQiJ0UholBixm6lGV8lAEGVFDykMr6l5e5OeA1tg5ASB8wcmVMEa4rtkLqM3VnqQuDJnBmHnhT6A2oKPNBSIFuq6hoCbzCatY91Zs/ZXspED5Ws+rDu0IbZUSEps//YmQuvbrCg8NFd8I1zBl8bd66w8galBA6Q3rmWKb3YZlpIqE0Da13pLrVjtd6flxMtP7qorvse1hjyYkRfs8yMP/8E83WMIeII2wdrobnk0gG6HOnUu7WteAqRKf39QN0yagTlhf9/lwz9fNG8yzgBrmmWa3h8Ftv0HaQLi1TYlaSGX3UvsNzdBKw+waoEEAAAAASUVORK5CYII=');
+  background-repeat: no-repeat;
+  text-indent: -999999px;
+}
+.ie7 #mysoc-logo {
   background: url($image-sprite) -240px -38px no-repeat;
 }
 
@@ -507,33 +565,20 @@ p.label-valid {
 .wrapper {
   width:100%;
   display:table;
-  caption-side:bottom;
+  // The 'caption' at large widths will be top, moving the menu up magically
+  caption-side: bottom;
+  // This is so absolutely positioned header stuff doesn't overlap banner...
+  position: relative;
 }
-// this is the user's logged in details or the login link etc
-#user-meta {
-  p {
-    position: relative;
-    color: $primary_text;
-    background: $primary;
-    padding:1em 6em 1em 1em;
-    a {
-      position: absolute;
-      right:1em;
-      @include inline-block;
-      text-transform:uppercase;
-      font-size:0.75em;
-      background:#333;
-      padding:0.25em 0.75em;
-      color:#fff;
-      @include border-radius(0.25em);
-    }
-  }
+// ...however position: relative stops the map being clickable (?), so better
+// revert it there
+body.mappage .wrapper {
+  position: static;
 }
-
 
 // #key-tools is the list that's pulled out an stick to the bottom of the page of desktop, below is mostly just aesthetic
 .shadow-wrap {
-  @extend .full-width;
+  margin: 0 -1em;
   ul#key-tools{
     @include list-reset-soft;
     margin-bottom: 1em;
@@ -543,9 +588,9 @@ p.label-valid {
       display: table-cell;
       vertical-align: bottom;
       text-align: center;
-      border-right:0.25em solid #fff;
+      border-#{$right}: 0.25em solid #fff;
       &:last-child {
-        border-right:none;
+        border-#{$right}: none;
       }
       input[type=submit] {
           width: 100%;
@@ -556,7 +601,7 @@ p.label-valid {
         background-color: #f5f5f5;
         background-repeat: no-repeat;
         color:#333;
-        padding:4em 2em 1em 2em;
+        padding:4em 2em 1em;
         text-transform:uppercase;
         font: {
           size:0.6875em;
@@ -568,24 +613,28 @@ p.label-valid {
           color:#fff;
         }
         &.abuse {
-          background-image:url($image-sprite);
-          background-position:center -2424px;
+          background-image: url($image-sprite);
+          background-position: center -2424px;
         }
         &.feed {
-          background-image:url($image-sprite);
-          background-position:center -2563px;
+          background-image: url($image-sprite);
+          background-position: center -2563px;
         }
         &.share {
           background-image: url('/cobrands/fixmystreet/images/share.png');
           background-position: center 25%;
         }
         &.chevron {
-          background-image:url($image-sprite);
-          background-position:center -2716px;
+          background-image: inline-image("../fixmystreet/images/chevron-grey-#{$right}.svg");
+          background-position: center 25%;
+          background-size: 20px 25px;
+        }
+        &.chevron.hover {
+          background-size: auto auto;
         }
         &.hover {
-          background-image:url($image-sprite);
-          background-position:center -2064px;
+          background-image: url($image-sprite);
+          background-position: center -2064px;
         }
       }
     }
@@ -593,44 +642,41 @@ p.label-valid {
 }
 
 //because display:table doesn't work we float
-.ie6, .ie7 {
+.ie7 {
   .shadow-wrap {
     ul#key-tools{
       background:#f5f5f5;
       li{
-        float:left;
+        float: $left;
         a {
-          padding-left:1.5em;
-          padding-right:3em;
+          padding-#{$left}: 1.5em;
+          padding-#{$right}: 3em;
         }
       }
     }
   }
 }
-.ie6 .shadow-wrap ul#key-tools li a {
-  &.abuse {
+.iel8 {
+  .shadow-wrap ul#key-tools li a.chevron {
     background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right 0px;
-  }
-  &.feed {
-    background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right -58px;
-  }
-  &.chevron {
-    background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite.gif');
-    background-position: right -116px;
-  }
-  &:hover {
-    background-image:url('/cobrands/fixmystreet/images/ie_key_tools_sprite_dark.gif');
+    background-position: $right -116px;
   }
 }
 
 #report-updates-data img {
-    float: right;
+    float: $right;
 }
 
-#report-share iframe {
-    vertical-align: top;
+#report-share {
+    .btn {
+        padding-left: 1.5em;
+        padding-right: 1.5em;
+        display: inline-block;
+    }
+
+    .btn + .btn {
+        margin-left: 1em;
+    }
 }
 
 //footer blocks
@@ -639,8 +685,8 @@ footer {
 }
 
 #footer-mobileapps {
-  @extend .full-width;
-  padding:1em 1em 0 1em;
+  margin: 0 -1em;
+  padding: 1em 1em 0;
   h4 {
     margin:0;
   }
@@ -660,7 +706,7 @@ footer {
         border-bottom:none;
       }
       h4 {
-        margin:0.75em 0 0.25em 0;
+        margin:0.75em 0 0.25em;
       }
       p {
         font-size:0.75em;
@@ -673,34 +719,114 @@ footer {
 
 /*BUTTONS*/
 
-// Default style set for buttons, inputs and .btn class. Red and green class available.
-
-button, input[type=submit],.btn{
+.btn {
   @include button-reset;
 }
 
-.green-btn,
-button.green-btn,
-input.green-btn{
+.btn + .btn {
+  // Ensure extra space between inline buttons placed next to each other.
+  margin-#{$left}: 0.5em;
+}
+
+.btn-primary,
+.green-btn {
   @include button-reset(#9FDE23, #7FB900, #5B9700, #fff, #9FDE23, #7FB900, #5B9700, #fff);
 }
 
-.red-btn,
-button.red-btn,
-input.red-btn{
+.btn-danger,
+.red-btn {
   @include button-reset(#FF0038, #BF002A, #80001C, #fff, #FF0038, #BF002A, #80001C, #fff);
 }
 
 .final-submit,
 input.final-submit {
-  margin:1em 0.5em;
-  float:right;
+  margin: 1em 0.5em;
+  float: $right;
 }
 
-.button-right,
-.button-left,
-a.button-right,
-a.button-left {
+.btn--facebook {
+    @include button-reset(#3b5998, darken(#3b5998, 10%), #3b5998, #fff, darken(#3b5998, 5%), darken(#3b5998, 10%), #3b5998, #fff);
+
+    img {
+        margin-right: 0.5em;
+        vertical-align: -0.2em;
+        height: 1.3em;
+        width: auto;
+    }
+}
+
+.btn--twitter {
+    @include button-reset(#55acee, darken(#55acee, 10%), #55acee, #fff, darken(#55acee, 5%), darken(#55acee, 10%), #55acee, #fff);
+
+    img {
+        margin-right: 0.5em;
+        vertical-align: -0.2em;
+        height: 1.3em;
+        width: auto;
+    }
+}
+
+.btn--navigate,
+.btn--geolocate {
+    &:before {
+        content: "";
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        background: transparent url(/cobrands/fixmystreet/images/navigate.png) no-repeat 0 0;
+        background-size: 16px 16px;
+        margin-#{$right}: 0.5em;
+        vertical-align: -0.1em; // vertically centre icon in button
+
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            background-image: url(/cobrands/fixmystreet/images/navigate@2.png);
+        }
+
+        @media all {
+            background-image: url(/cobrands/fixmystreet/images/navigate.svg), none;
+        }
+    }
+}
+
+.btn--geolocate {
+    &:before {
+        background-image: url(/cobrands/fixmystreet/images/crosshairs.png);
+
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            background-image: url(/cobrands/fixmystreet/images/crosshairs@2.png);
+        }
+
+        @media all {
+            background-image: url(/cobrands/fixmystreet/images/crosshairs.svg), none;
+        }
+    }
+}
+
+.btn--block {
+    display: block;
+    text-align: center;
+}
+
+// Under the button to override its text transform and width
+.btn--social {
+    text-transform: none;
+    text-align: center;
+}
+
+.js #js-social-email-hide {
+    display: none;
+}
+
+.button-fwd {
+  padding: flip(1em 3em 1em 1em, 1em 1em 1em 3em);
+  background: inline-image("../fixmystreet/images/chevron-grey-#{$right}.svg") $right 50% no-repeat;
+}
+.button-back {
+  padding: flip(1em 1em 1em 3em, 1em 3em 1em 1em);
+  background: inline-image("../fixmystreet/images/chevron-grey-#{$left}.svg") $left 50% no-repeat;
+}
+.button-fwd,
+.button-back {
   @include inline-block;
   cursor:pointer;
   font-size: 1em;
@@ -708,55 +834,36 @@ a.button-left {
   margin:0;
   border:1px solid #999;
   color:#333;
-  background: #eee;
+  background-color: #eee;
+  background-size: 20px+16px 25px;
   @include border-radius(4px);
   &:hover{
     color:#fff;
-    background:#777;
+    background-color: #777;
     text-decoration: none;
     border:1px solid #666;
   }
 }
-.button-right,
-a.button-right,
-:hover.button-right,
-a:hover.button-right {
-  padding:1em 3em 1em 1em;
-  background-image: url($image-sprite);
-  background-repeat:no-repeat;
-  background-position:right -686px;
-}
-
-.button-left,
-a.button-left,
-:hover.button-left,
-a:hover.button-left {
-  padding:1em 1em 1em 3em;
-  background-image: url($image-sprite);
-  background-repeat:no-repeat;
-  background-position:-18px -802px;
-}
-
-.big-green-banner {
-  position: relative;
-  top:-1.75em;
-  background: $col_click_map;
-  color: #fff;
-  padding:1em;
-  text: {
-    transform:uppercase;
-    align:center;
+.iel8 {
+  .button-fwd, .button-back {
+    background-image: url($image-sprite);
+    background-repeat: no-repeat;
   }
-  font-size:0.875em;
-  &:before {
-    content: "";
-    left:-0.5em;
-    top:0;
-    position: absolute;
-    width: 0;
-    height: 0;
-    border-left: 0.5em solid transparent;
-    border-bottom: 0.5em solid $col_click_map_dark;
+  .button-fwd {
+    background-position: right -686px;
+  }
+  .button-back {
+    background-position: -18px -802px;
+  }
+}
+
+.rap-notes-trigger {
+  &.clicked {
+    background-image: inline-image("../fixmystreet/images/cross-grey.svg");
+
+    .iel8 & {
+      background-image: url("../fixmystreet/images/cross-grey.png");
+    }
   }
 }
 
@@ -765,7 +872,7 @@ a:hover.button-left {
   p {
     position: absolute;
     top:-1.95em;
-    right:0;
+    #{$right}: 0;
     @include inline-block;
     font-size:0.6875em;//11px
     line-height:1em;
@@ -779,12 +886,12 @@ a:hover.button-left {
     }
     &:before {
       content: "";
-      left:-0.5em;
+      #{$left}: -0.5em;
       top:0;
       position: absolute;
       width: 0;
       height: 0;
-      border-left: 0.5em solid transparent;
+      border-#{$left}: 0.5em solid transparent;
       border-bottom: 0.5em solid #888;
     }
     &#fixed {
@@ -806,147 +913,117 @@ a:hover.button-left {
   }
 }
 
-.issue-list{
-  margin: 0 0 1em 0;
+.item-list {
+  margin: 0 0 1em;
   padding: 0;
   border-bottom: 0.25em solid $primary;
-  li{
-    list-style: none;
-    background: #f6f6f6;
-    margin: 0.25em 0 0 0;
-    padding: 0.5em 1em;
-    display:block;
-    .update-wrap {
-      display:table;
-      width:100%;
-      .update-text,
-      .update-img {
-        display:table-cell;
-        vertical-align:top;
-        p {
-          margin-bottom: 0.5em;
-        }
-      }
-      .update-img {
-        text-align:right;
-        img {
-          margin:-0.5em -1em 0 0.5em;
-          height:auto;
-        }
-      }
-    }
-  }
 }
-//display:table fixes
-.ie7, .ie7 {
-  .issue-list li .update-wrap {
-    .update-text {
-      float:left;
-      width:19em;
-    }
-    .update-img {
-      float:right;
-    }
+
+.item-list__item {
+  list-style: none;
+  background-color: $itemlist_item_background;
+  margin: 0.25em 0 0;
+  padding: 0.5em 1em;
+  display: block;
+}
+
+.item-list__update-wrap {
+  @include clearfix;
+}
+
+.item-list__update-text p {
+  margin-bottom: 0.5em;
+}
+
+%item-list__item--link {
+  padding: 0;
+  a {
+    color: #222222;
+    display: block;
+    padding: 0.5em 1em;
+  }
+  a:hover, a:focus, &.hovered a {
+    background-color: $itemlist_item_background_hover;
+    text-decoration: none;
   }
 }
 
-.issue-list-a {
-  margin: 0 0 1em 0;
-  padding: 0;
-  border-bottom: 0.25em solid $primary;
-  li {
-    list-style: none;
-    margin:0;
-    padding:0;
-      margin: 0.25em 0 0 0;
-      /* see note below about this */
-      display:table;
-      background: #f6f6f6;
-      color:#222222;
-      width:100%;
-      &:hover {
-        text-decoration:none;
-        color:#222222;
-        background:#e6e6e6;
-      }
-      a {
-          color:#222222;
-      }
-      a:hover {
-          color:#222222;
-          background:#e6e6e6;
-          text-decoration: none;
-      }
-      .text {
-        /* this is and the display:table above are required otherwise
-           on iphone the rows end up being slightly wider than the screen */
-        display: table-cell;
-        width: 100%;
-        vertical-align:top;
-        padding: 0px 0px 0px 1em;
-        .img {
-          width: 90px;
-          float: right;
-          height:auto;
-        }
-        h4 {
-          padding-right: 1em;
-          padding-top: 0.25em;
-          margin:0;
-        }
-        small {
-          color:#666;
-          display: block;
-          padding-right: 1em;
-          padding-top: 0.25em;
-          padding-bottom: 0.25em;
-        }
-      }
-    >p {
-      margin: 0.25em 0 0 0;
-      padding: 0.5em 1em;
-      background: #f6f6f6;
-    }
-  }
+.item-list--wards__item {
+  @extend %item-list__item--link;
 }
-.list-a {
-  @extend .issue-list-a;
+
+.item-list--reports__item {
+  @extend %item-list__item--link;
   a {
-    padding:0.5em 1em;
-    font-weight:bold;
+    @include clearfix;
+    padding: flip(0 0 0 1em, 0 1em 0 0);
   }
-}
-//display:table fixes
-.ie6, .ie7 {
-  .issue-list-a {
-    overflow:hidden;
-    li {
-      clear:both;
-      width:100%;
-      display:block;
-      overflow:hidden;
-      .text {
-        float:left;
-      }
-    }
-  }
-}
-.ie6 .issue-list-a li a {
-  height:5.5em;
   .img {
-    height:60px;
+    width: 90px;
+    float: $right;
+    height: auto;
+    margin-#{$left}: 1em;
   }
+  small {
+    color: #666;
+    display: block;
+    padding: 0.25em 0;
+  }
+}
+.item-list__heading {
+  font-size: 1em;
+  font-weight: normal;
+  line-height: 1.5;
+  padding-top: 0.25em;
+  margin: 0;
+}
+
+.item-list__item--empty p {
+  margin: 0;
+}
+
+.item-list--front-page {
+  border-bottom: none;
+}
+
+.problem-header .update-img,
+.item-list .update-img {
+    float: $right;
+    margin: flip(0.3em 0 0.5em 1em, 0.3em 1em 0.5em 0); // gutter between text and floated image
+    width: 33%;
+}
+.questionnaire-report-reminder .update-img {
+    float: $left;
+    margin: flip(0.1em 1em 1em 0, 0.1em 0 1em 1em);
+    width: 120px;
+}
+
+// A wrapper that's put around .update-imgs if there are more than 1 in a row
+.update-img-set {
+    text-align: center;
+    margin: 0 0 1em;
+
+    .update-img {
+        float: none;
+        display: inline-block;
+        margin: 0;
+        width: 31%;
+    }
+
+    .update-img + .update-img {
+        margin: flip(0 0 0 0.5em, 0 0.5em 0 0);
+    }
 }
 
 // fancybox gallery images have a magnifying glass in the corner
 .update-img {
   a {
-    @include inline-block;
-    position:relative;
+    display: block;
+    position: relative;
     span {
       position:absolute;
       top:0;
-      right:0;
+      #{$right}: 0;
       display:block;
       width:20px;
       height:20px;
@@ -961,47 +1038,122 @@ a:hover.button-left {
     }
   }
 }
-//bit of a hack - as we can't use em's, push the span out to the right
-//by how much it would be if the user did not resize the text
-.issue-list li .update-wrap .update-img a span {
-  right:-16px;
-  top:-8px;
+
+.problem-back {
+  display: block;
+  font-size: 1em;
+  line-height: 1.2em;
+  margin-bottom: 1em;
+  padding-bottom: 0.8em;
+  padding-#{$left}: 22px;
+  background: transparent url(/cobrands/fixmystreet/images/chevron-grey-#{$left}.svg) #{$left} 0 no-repeat;
+  background-size: 13px 16px;
+  border-bottom: 1px solid #eee;
+
+  &:link, &:visited, &:hover {
+    color: #666;
+  }
 }
 
 .problem-header {
-  margin-bottom:1em;
+  margin-bottom: 1em;
+
+  // Clear the admin actions after the floated photo(s).
+  .segmented-control {
+    clear: both;
+  }
 }
-.problem-header .update-img {
-    float: right;
-    margin-left: 0.5em;
-    margin-bottom: 0.5em;
+
+.report_meta_info,
+.council_sent_info {
+  font-size: 0.9em;
+}
+
+.council_sent_info {
+  color: #666;
+
+  p + & {
+    margin-top: -0.6em; // partly counteract margin-bottom on previous paragraph
+  }
+}
+
+.moderate-edit {
+  display: none; // gets shown by javascript
+
+  :disabled {
+    background: #ddd;
+  }
+
+  h1 input {
+    border-width: (0.125em/2); // compensate for 2em font-size on h1s
+  }
+}
+
+.shortlisted-status {
+  margin-top: 1em;
+  padding: 1em 1em 1em 4em; // Icon is always displayed on left, even in RtL mode
+  border-radius: 0.25em;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.5) url(/cobrands/fixmystreet/images/shortlist.png) 1em 50% no-repeat;
+  background-size: 2em 2em;
+
+  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    background-image: url(/cobrands/fixmystreet/images/shortlist@2.png);
+  }
+
+  @media all {
+    background-image: url(/cobrands/fixmystreet/images/shortlist.svg), none;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1em;
+    font-weight: bold;
+  }
+
+  p {
+    margin: 0.5em 0 0 0;
+    font-size: 0.875em;
+  }
 }
 
 // map stuff
-#map_box{
-  @extend .full-width;
+#map_box {
+  margin: 0 -1em 1em;
   background: #333;
   height: 29em;
-  margin-bottom: 1em;
   overflow: hidden;
   position: relative;
+
   #map {
     width: 100%;
     height: 100%;
-    position: relative;
+
+    // IE7 doesn't understand 100% height when the parent height is "auto",
+    // so we have to explicitly tell it to pin the element to the top and
+    // bottom of the parent. No need for an ie7-specific condition, because
+    // this makes no difference in other browsers.
+    // We keep the "height: 100%" in there to give IE7 context for the 100%
+    // height on #map's child, div.olMapViewport.
+    position: absolute;
+    top: 0;
+    bottom: 0;
   }
+}
+
+// The map's static image fallback is visible by default.
+// Hide it if javascript has loaded. (We show it again when
+// the page is printed.)
+html.js #map .noscript {
+  display: none;
 }
 
 // OpenLayers fix for navigation being top right
 // Left and right so that zoom can be left, pan right.
 #fms_pan_zoom {
-  right: 0.5em !important;
-  top: 0.5em;
-  left: 0.5em !important;
-}
-// The left and right of the above causes the navigation to move off-screen left in IE6.
-.ie6 #fms_pan_zoom {
-  left: auto !important;
+  top: 0.5em; // This will be overridden in JS if there's a full screen map with banner
+  #{$left}: 0.5em;
+  #{$right}: 0.5em;
 }
 
 // Openlayers map controls (overrides)
@@ -1011,62 +1163,59 @@ a:hover.button-left {
 #fms_pan_zoom_panright,
 #fms_pan_zoom_zoomin,
 #fms_pan_zoom_zoomout {
-  width:36px !important;
-  height:36px !important;
-  text-indent:-999999px;
-  background:url($image-sprite) no-repeat;
+  position: absolute;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  text-indent: flip(-999999px, 999999px); // text-align from OL style makes this necessary
+  background: url($image-sprite) no-repeat;
   filter: none !important; // Override OpenLayers PNG handling of the navigation
 }
 
-#fms_pan_zoom_zoomworld {
-  display:none !important;
-  visibility:none !important;
-}
-
 #fms_pan_zoom_panup {
-  background-position:-42px -222px;
-  right:30px !important;
-  left: auto !important;
-  top:0 !important;
+  background-position: -42px -222px;
+  #{$right}: 30px;
+  #{$left}: auto;
+  top: 0;
 }
 #fms_pan_zoom_pandown {
-  background-position:-42px -282px;
-  right:30px !important;
-  left: auto !important;
-  top:72px !important;
+  background-position: -42px -282px;
+  #{$right}: 30px;
+  #{$left}: auto;
+  top: 72px;
 }
 #fms_pan_zoom_panleft {
-  background-position:-12px -252px;
-  width:48px !important;
-  right:48px !important;
-  left: auto !important;
-  top:36px !important;
+  background-position: -12px -252px;
+  width: 48px;
+  #{$right}: flip(48px, 0);
+  #{$left}: auto;
+  top: 36px;
 }
 #fms_pan_zoom_panright {
-  background-position:-60px -252px;
-  width:48px !important;
-  right:0 !important;
-  left: auto !important;
-  top:36px !important;
+  background-position: -60px -252px;
+  width: 48px;
+  #{$right}: flip(0, 48px);
+  #{$left}: auto;
+  top: 36px;
 }
 #fms_pan_zoom_zoomin {
-  background-position:-152px -223px;
-  height:44px !important;
-  left:0 !important;
-  top:0 !important;
+  background-position: -152px -223px;
+  height: 44px;
+  #{$left}: 0;
+  top: 0;
 }
 #fms_pan_zoom_zoomout {
-  background-position:-152px -259px;
-  height:44px !important;
-  left:0 !important;
-  top:44px !important;
+  background-position: -152px -259px;
+  height: 44px;
+  #{$left}: 0;
+  top: 44px;
 }
 
 //hide pins, show old reports etc
 #sub_map_links {
   position: absolute;
-  left: 0;
-  right:0;
+  #{$left}: 0;
+  #{$right}: 0;
   bottom: 0;
   background:#333;
   background:rgba(0, 0, 0, 0.7);
@@ -1075,43 +1224,28 @@ a:hover.button-left {
     @include inline-block;
     font-size:0.6875em;
     color:#fff;
-    padding:0.6em 3em 0.5em 1em;
+    padding: flip(0.6em 3em 0.5em 1em, 0.6em 1em 0.5em 3em);
     background-repeat:no-repeat;
     &#hide_pins_link {
       background-image:url($image-sprite);
-      background-position: right -3976px;
+      background-position: flip(right, -341px) -3976px;
     }
     &#all_pins_link {
       background-image:url($image-sprite);
-      background-position: right -4022px;
+      background-position: flip(right, -337px) -4022px;
     }
     &#map_permalink {
       background-image:url($image-sprite);
-      background-position: right -4070px;
+      background-position: flip(right, -341px) -4070px;
     }
     &.feed {
       background-image:url($image-sprite);
-      background-position: right -3936px;
+      background-position: flip(right, -341px) -3936px;
     }
     &:hover {
       background-color:#000;
       text-decoration:none;
     }
-  }
-}
-
-.ie6 #sub_map_links a {
-  &#hide_pins_link {
-    background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right 1px;
-  }
-  &#all_pins_link {
-    background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right -45px;
-  }
-  &#map_permalink {
-    background-image:url('/cobrands/fixmystreet/images/ie_sub_map_links_sprite.gif');
-    background-position: right -93px;
   }
 }
 
@@ -1142,7 +1276,7 @@ a:hover.button-left {
     a#try_again {
       position: absolute;
       display: block;
-      left: 25%;
+      left: 25%; // along with width of 50%, centres it
       bottom: 0;
       margin-bottom: 6em;
       background: rgba(0, 0, 0, 0.8);
@@ -1151,7 +1285,7 @@ a:hover.button-left {
     a#mob_ok {
       position: absolute;
       display: block;
-      right: 1em;
+      #{$right}: 1em;
       bottom: 0;
       height: 20px;
       padding-top: 30px;
@@ -1162,13 +1296,36 @@ a:hover.button-left {
   }
 }
 
+.big-green-banner {
+  position: relative;
+  top: -1.75em;
+  background: $col_click_map;
+  color: #fff;
+  padding: 1em;
+  text-transform: uppercase;
+  text-align: center;
+  font-size: 0.875em;
+  .mobile-reporting-map & {
+    display: none;
+  }
+}
+
 .mobile-map-banner {
+  display: none;
+  .mobile-reporting-map & {
+    display: block;
+  }
+  text-transform: uppercase;
+  text-align: center;
+  font-family: $heading-font;
+  line-height: 1em;
   margin:0;
   position: absolute;
   top:0;
-  left:0;
-  right:0;
+  #{$left}: 0;
+  #{$right}: 0;
   font-size:0.75em;
+  color: #fff;
   background:rgba(0, 0, 0, 0.7);
   padding:0.75em 30px;
   a {
@@ -1180,15 +1337,15 @@ a:hover.button-left {
     line-height:1;
     padding:0.5em 0.75em;
     position:absolute;
-    left:0.3em;
+    #{$left}: 0.3em;
     top:0.3em;
   }
 }
 
 .olControlAttribution {
     bottom: 3.25em !important;
-    right: 0.25em !important;
-    left: 0.25em !important;
+    #{$right}: 0.25em !important;
+    #{$left}: 0.25em !important;
     color: #222222;
     font-size:0.75em !important;
 }
@@ -1197,7 +1354,7 @@ a:hover.button-left {
 }
 .olControlPermalink {
     bottom: 3px !important;
-    right: 3px;
+    #{$right}: 3px;
 }
 
 /* Drag is only present in noscript form. XXX Copy from core. */
@@ -1224,67 +1381,63 @@ a:hover.button-left {
     }
 }
 
-// only on mobile, this is a sidebar on desk (#report-a-problem-sidebar)
+// only on mobile
 a.rap-notes-trigger,
 a:hover.rap-notes-trigger {
-  display:block;
-  width:90%;
-  padding-left:5%;
-  padding-right:5%;
-}
-.rap-notes {
-  margin:1em 0;
+  display: block;
+  margin-bottom: 1em;
 }
 
-//report a problem tabs
-#problems-nav {
-  padding:0 1em;
-  overflow:hidden;
-  border-bottom:0.25em solid #333;
-  ul {
-    @include list-reset-soft;
-    display:table;
-    width:100%;
-    li {
-      display:table-cell;
-      border-right:0.25em solid #fff;
-      &:last-child {
-        border-right:none;
-      }
-      a {
-        display:block;
-        background:#e2e2e2;
-        color:#333;
-        padding:1em;
-        text: {
-          transform:uppercase;
-          align:center;
-        }
-        &:hover {
-          text-decoration:none;
-          background:#e6e6e6;
-        }
-        &.active {
-          background:#333;
-          color:#fff;
-        }
-      }
-    }
+#report-a-problem-sidebar {
+  margin-bottom: 2em;
+  padding: 1em;
+  background-color: #E9F2FF;
+}
+
+.mobile #map_box {
+  height: 10em; // eg: at the top of individual report pages
+}
+
+// When you're in the reporting flow on mobile, we hide the site-header
+// and make the map full screen to reduce distractions. JavaScript also
+// tweaks the text content of some of the map-related elements, to make
+// it more "app-like".
+.mobile-reporting-map {
+  #site-header {
+    display: none;
+  }
+
+  #map_box {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: auto; // override `.mobile #map_box` height:10em
+    margin: 0;
+    z-index: 1; // stack above positioned elements later on the page (eg: .report-list-filters)
+  }
+
+  #fms_pan_zoom {
+    top: 2.75em; // make space for the semi-transparent "Place pin on map" bar
+  }
+
+  .container {
+    padding: 0; // map_box needs to be full width, so remove page gutter
+  }
+
+  #map_sidebar {
+    padding: 1em; // reinstate page gutter, but on sidebar, so map_box is unaffected
   }
 }
 
-//display:table fixes
-.ie6, .ie7 {
-  #problems-nav {
-    clear:both;
-    margin:0;
-    padding:0;
-    ul li {
-      float:left;
-    }
+.mobile-reporting-map.only-map {
+  height: 100%;
+  body {
+    height: 100%;
+    overflow: hidden;
   }
 }
-
 
 /* Reporting a problem bits */
 
@@ -1296,23 +1449,20 @@ label .muted {
 .description_tips {
   @include clearfix;
 
-  h4 {
-    margin: 0.5em 0;
-  }
-
   ul {
     width: 49%;
     margin: 0;
-    float: left;
+    float: $left;
     font-size: 14px;
     line-height: 20px;
   }
 
   li {
     margin-bottom: 0;
-    padding-left: 20px;
+    padding-#{$left}: 16px;
     list-style: none;
-    background: transparent url(/cobrands/fixmystreet/images/tick-10px-8px.png) 4px 5px no-repeat;
+    background: transparent url(/cobrands/fixmystreet/images/tick-10px-8px.png) $left 5px no-repeat;
+    border-#{$left}: solid 4px transparent;
   }
 
   .do {
@@ -1320,18 +1470,69 @@ label .muted {
   }
 
   .dont {
-    float: right;
+    float: $right;
     color: #881111;
 
     li {
       background-image: url(/cobrands/fixmystreet/images/cross-7px-7px.png);
-      background-position: 6px 6px;
+      background-position: $left 6px;
+      padding-#{$left}: 14px;
+      border-#{$left}: solid 6px transparent;
     }
   }
+}
+.description_tips__heading--inline {
+  display: inline-block;
 }
 
 #problem_form > label:first-child {
   margin-top: 0;
+}
+
+.extra-category-questions {
+  background-color: #eee;
+  padding: 1em;
+  margin-top: 1.5em; // make room for the triangle
+  position: relative;
+
+  // An upwards pointing triangle
+  &:before {
+    content: "";
+    display: block;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 1em 1em 1em;
+    border-color: transparent transparent #eee transparent;
+    position: absolute;
+    top: -0.9em; // avoid hairline gap between triangle and parent
+    #{$left}: 1.5em;
+  }
+
+  & > :first-child {
+    margin-top: 0;
+  }
+}
+
+.inspect-section {
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  padding-top: 1.5em;
+  margin-top: 1.5em;
+
+  &:first-child {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  & > :first-child,
+  & > :first-child > :first-child {
+    margin-top: 0;
+  }
+}
+
+.inspect-section--hidden {
+  display: none;
 }
 
 
@@ -1366,7 +1567,7 @@ table.nicetable {
     }
   }
   .title {
-    text-align:left;
+    text-align: $left;
   }
   .data {
     width:12%;
@@ -1374,17 +1575,16 @@ table.nicetable {
 }
 
 .promo {
-  @extend .full-width;
+  margin: 0 -1em 1em;
   color: $primary_text;
   background: $primary;
   padding:1em;
-  margin-bottom:1em;
   overflow:hidden;
   position: relative;
   .close-promo {
     position:absolute;
     top:0.5em;
-    right:0.5em;
+    #{$right}: 0.5em;
     display:block;
     width:16px;
     height:16px;
@@ -1398,10 +1598,9 @@ table.nicetable {
 }
 
 .alert {
-  @extend .full-width;
+  margin: 0 -1em 1em;
   background:#ff0000;
   padding:1em;
-  margin-bottom:1em;
   color:#fff;
   a, a:hover {
     color:$primary;
@@ -1415,18 +1614,18 @@ table.nicetable {
   position:relative;
   .prev {
     position:absolute;
-    left:0.5em;
+    #{$left}: 0.5em;
   }
   .next {
     position:absolute;
-    right:0.5em;
+    #{$right}: 0.5em;
   }
   a {
     @include inline-block;
     color: $primary_text;
     background: $primary;
-    padding-left:0.5em;
-    padding-right:0.5em;
+    padding-#{$left}: 0.5em;
+    padding-#{$right}: 0.5em;
     &:hover {
       text-decoration:none;
       background:$primary/1.1;
@@ -1468,7 +1667,7 @@ table.nicetable {
     margin: 0.5em 0 0;
   }
   #postcodeForm {
-    @extend .full-width;
+    margin: 0 -1em;
     padding:1em;
     color: $primary_text;
     background: $primary;
@@ -1550,12 +1749,6 @@ table.nicetable {
   }
 }
 
-#front-recently {
-  .issue-list-a {
-    border-bottom:none;
-  }
-}
-
 #alerts {
     ul {
         margin-bottom: 1em;
@@ -1568,6 +1761,299 @@ table.nicetable {
         background: #f6f6f6;
     }
     img[width="16"] {
-        float: right;
+        float: $right;
     }
 }
+
+.alerts__nearby-activity {
+    background-color: #f6f6f6;
+    margin: 1em -1em;
+    padding: 1em;
+
+    & > :first-child {
+        margin-top: 0;
+    }
+}
+
+.alerts__nearby-activity__photos {
+    white-space: nowrap;
+    overflow: hidden;
+
+    a {
+        margin-right: 0.5em;
+        text-decoration: none; // avoid underline showing between images
+    }
+}
+
+.confirmation-header {
+  padding: 140px 0 2em;
+  text-align: center;
+
+  background: transparent url(/cobrands/fixmystreet/images/tick-in-circle-100px.png) center 1em no-repeat;
+
+  &.confirmation-header--failure {
+    background-image: url(/cobrands/fixmystreet/images/sad-face-in-circle-100px.png);
+  }
+
+  &.confirmation-header--inbox {
+    background-image: url(/cobrands/fixmystreet/images/inbox-in-circle-100px.png);
+  }
+
+  h1, h2 {
+    margin: 0;
+    line-height: 1.2em;
+  }
+
+  h1 {
+    a {
+      text-decoration: underline;
+      color: inherit;
+
+      &:hover,
+      &:focus {
+        text-decoration: none;
+        color: #0BA7D1; // default link colour
+      }
+    }
+  }
+
+  h1 + h2,
+  h1 ~ p {
+    margin-top: 12px;
+  }
+
+  p {
+    color: #666666;
+    font-size: 1.2em;
+    margin-bottom: 0.5em;
+  }
+
+  & > :last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* Questionnaire page */
+
+.questionnaire-report-header {
+  font-family: inherit;
+  font-size: 1.2em;
+  font-weight: 600;
+}
+
+.questionnaire-report-reminder {
+  @include clearfix(); // clear the floated image, in case there is no update-header to do it
+  background: #f3f3f3;
+  border-radius: 3px;
+  padding: 1em 1em 1px 1em; // basically no padding-bottom, as children have their own margin-bottom instead
+  margin-bottom: 2em;
+}
+
+.questionnaire-report-reminder__report-title {
+  margin: 0 0 0.3em 0;
+}
+
+.questionnaire-report-reminder__report-meta {
+  color: #666;
+  line-height: 1.4em;
+}
+
+.questionnaire-report-reminder__last-update-header {
+  border-top: 1px solid #ddd;
+  margin: 0;
+  padding: 0.8em 0 0.5em 0;
+  clear: left; // clear the floated image above
+
+  a {
+    float: right;
+  }
+}
+
+.questionnaire-errors {
+  margin-left: 0;
+}
+
+.segmented-control {
+  @include clearfix();
+  @include flex-container(); // fancy full-width buttons for browsers that support flexbox
+
+  & > * {
+    display: block;
+    text-align: center;
+    border-right-width: 0; // avoid double border between items
+    float: left; // float fallback for browsers that don't support flexbox
+    @include flex(1 0 auto, 1);
+  }
+
+  .btn {
+    padding: 0.75em 0.5em;
+    border-radius: 0;
+  }
+
+  .btn + .btn {
+    margin-#{$left}: 0;
+  }
+
+  & > :first-child {
+    border-radius: 4px 0 0 4px;
+  }
+
+  & > :last-child {
+    border-radius: 0 4px 4px 0;
+    border-right-width: 1px; // reinstate border on last item
+  }
+
+  & > :first-child:last-child {
+    border-radius: 4px;
+  }
+}
+
+// A special case of segmented control, where each "button" (or label) is
+// preceded by a radio button, which needs to be hidden but interactive.
+// Checked checkboxes give their following label a "pressed" appearance.
+.segmented-control--radio {
+  input {
+    position: absolute;
+    left: -999px;
+  }
+
+  input:checked + label {
+    color: $primary_text;
+    background: $primary;
+    border-color: darken($primary, 5%);
+    background-image: none; // remove gradient
+    box-shadow: inset 0 0.1em 0.2em rgba(0,0,0,0.2);
+    border-right-width: 1px; // add a realistic coloured border to all sides
+  }
+
+  input:checked + label + input + label {
+    border-left-width: 0; // in favour of the realistic coloured border on the selected label
+  }
+
+  // The first label is no longer the first child, so we need to
+  // fish it out specially with a next sibling selector.
+  input:first-child + label {
+    border-radius: 0.25em 0 0 0.25em;
+  }
+}
+
+.my-account-buttons a {
+  display: inline-block;
+  background: #f6f6f6;
+  padding: 0.5em 1em;
+  border-radius: 0.2em;
+}
+
+// Useful for inserting hidden forms on the page, but still allowing
+// inputs inside the form to be toggled by labels outside the form.
+// Try using this in combination with .segmented-control for funtimes.
+.hidden-label-target {
+  position: absolute;
+  top: -100px;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+
+  // Tell assistive devices to ignore this element.
+  visibility: hidden;
+
+  // Hack for IE8 which doesn't allow interaction with
+  // `visibility:hidden` elements.
+  visibility: visible\9;
+}
+
+
+@media screen {
+  .print-only {
+    display: none !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 3em;
+  }
+
+  // Firefox leaves a big blanking gap if the content is floated...
+  .content { float: none !important; }
+
+  .shadow-wrap,
+  .nav-wrapper,
+  #nav-link,
+  .admin-nav,
+  .olControlAttribution,
+  .olControlPanZoom,
+  #sub_map_links,
+  #fms_pan_zoom,
+  .screen-only,
+  .olMapViewport {
+    display: none !important;
+  }
+
+  #map_box {
+    position: static !important;
+    height: 256px !important;
+    width: auto !important;
+    background: #f1eee9 !important; // cream colour to match OSM image
+  }
+
+  #map {
+    -webkit-transform: scale(0.5);
+    -ms-transform: scale(0.5);
+    transform: scale(0.5);
+    -webkit-transform-origin: 0 0;
+    -ms-transform-origin: 0 0;
+    transform-origin: 0 0;
+  }
+
+  html.js #map .noscript {
+    display: block;
+  }
+}
+
+.box-warning {
+    margin: 1em -1em;
+    padding: 2em 2em;
+    background-color: mix(#fff, $primary, 70%);
+
+    h1 {
+        font-size: 1.4em;
+    }
+
+    p {
+        margin-bottom: 0.5em;
+    }
+
+    a {
+        display: inline-block;
+        margin-top: 0.5em;
+        padding: 0.5em 1em;
+        background-color: #000;
+        color: #fff;
+        border-radius: 0.3em;
+
+        &:hover,
+        &:focus {
+            text-decoration: none;
+            background-color: mix(#000, $primary, 70%);
+        }
+    }
+}
+
+.asset-spot:before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid #000;
+    background-color: #ffff00;
+    margin: 0 0.3em 0 0.2em;
+    border-radius: 100%;
+    vertical-align: -2px;
+}
+
+@import "_admin";
+@import "_fixedthead";
+@import "_dropzone";
+@import "_multiselect";

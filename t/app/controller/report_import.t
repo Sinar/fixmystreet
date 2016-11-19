@@ -1,7 +1,9 @@
 use strict;
 use warnings;
 use Test::More;
+use LWP::Protocol::PSGI;
 
+use t::Mock::MapIt;
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
 use Web::Scraper;
@@ -16,6 +18,18 @@ ok -e $sample_file, "sample file $sample_file exists";
 # disable info logs for this test run
 FixMyStreet::App->log->disable('info');
 END { FixMyStreet::App->log->enable('info'); }
+
+my $body = $mech->create_body_ok(2245, 'Wiltshire Council');
+$mech->create_contact_ok(
+    body_id => $body->id,
+    category => 'Street lighting',
+    email => 'streetlighting@example.com',
+);
+$mech->create_contact_ok(
+    body_id => $body->id,
+    category => 'Potholes',
+    email => 'highways@example.com',
+);
 
 # submit an empty report to import - check we get all errors
 subtest "Test creating bad partial entries" => sub {
@@ -78,6 +92,7 @@ subtest "Test creating bad partial entries" => sub {
 };
 
 subtest "Submit a correct entry" => sub {
+    LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.uk');
 
     $mech->get_ok('/import');
 
@@ -99,16 +114,13 @@ subtest "Submit a correct entry" => sub {
     is $mech->content, 'SUCCESS', "Got success response";
 
     # check that we have received the email
-    $mech->email_count_is(1);
-    my $email = $mech->get_email;
+    my $token_url = $mech->get_link_from_email;
     $mech->clear_emails_ok;
-
-    my ($token_url) = $email->body =~ m{(http://\S+)};
     ok $token_url, "Found a token url $token_url";
 
     # go to the token url
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok($token_url);
     };
@@ -121,11 +133,11 @@ subtest "Submit a correct entry" => sub {
       "check only pc field is shown";
 
     FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        ALLOWED_COBRANDS => [ 'fixmystreet' ],
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok(
-            { with_fields => { pc => 'SW1A 1AA' } },
+            { with_fields => { pc => 'SN15 5NG' } },
             "fill in postcode"
         );
     };
@@ -138,24 +150,27 @@ subtest "Submit a correct entry" => sub {
         name          => 'Test User',
         title         => 'Test report',
         detail        => 'This is a test report',
-        photo         => '',
+        photo1        => '',
+        photo2        => '',
+        photo3        => '',
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
+        gender => undef,
       },
       "check imported fields are shown";
 
     # Check photo present, and still there after map submission (testing bug #18)
     $mech->content_contains( '<img align="right" src="/photo/' );
-    $mech->content_contains('latitude" value="51.501009"', 'Check latitude');
-    $mech->content_contains('longitude" value="-0.141588"', 'Check longitude');
+    $mech->content_contains('latitude" value="51.5"', 'Check latitude');
+    $mech->content_contains('longitude" value="-2.1"', 'Check longitude');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok(
             {
-                button => 'tile_32742.21793',
+                button => 'tile_16192.10896',
                 x => 10,
                 y => 10,
             },
@@ -163,8 +178,8 @@ subtest "Submit a correct entry" => sub {
         );
     };
     $mech->content_contains( '<img align="right" src="/photo/' );
-    $mech->content_contains('latitude" value="51.50519"', 'Check latitude');
-    $mech->content_contains('longitude" value="-0.142608"', 'Check longitude');
+    $mech->content_contains('latitude" value="51.508475"', 'Check latitude');
+    $mech->content_contains('longitude" value="-2.108946"', 'Check longitude');
 
     # check that fields haven't changed at all
     is_deeply $mech->visible_form_values,
@@ -172,17 +187,20 @@ subtest "Submit a correct entry" => sub {
         name          => 'Test User',
         title         => 'Test report',
         detail        => 'This is a test report',
-        photo         => '',
+        photo1        => '',
+        photo2        => '',
+        photo3        => '',
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
+        gender => undef,
       },
       "check imported fields are shown";
 
     # change the details
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok(
             {
@@ -220,8 +238,8 @@ subtest "Submit a correct entry (with location)" => sub {
         {
             with_fields => {
                 service => 'test-script',
-                lat     => '51.5010096115539',           # SW1A 1AA
-                lon     => '-0.141587067110009',
+                lat     => '51.5',
+                lon     => '-2.1',
                 name    => 'Test User ll',
                 email   => 'test-ll@example.com',
                 subject => 'Test report ll',
@@ -236,11 +254,8 @@ subtest "Submit a correct entry (with location)" => sub {
     is $mech->content, 'SUCCESS', "Got success response";
 
     # check that we have received the email
-    $mech->email_count_is(1);
-    my $email = $mech->get_email;
+    my $token_url = $mech->get_link_from_email;
     $mech->clear_emails_ok;
-
-    my ($token_url) = $email->body =~ m{(http://\S+)};
     ok $token_url, "Found a token url $token_url";
 
     # go to the token url
@@ -260,10 +275,13 @@ subtest "Submit a correct entry (with location)" => sub {
         name          => 'Test User ll',
         title         => 'Test report ll',
         detail        => 'This is a test report ll',
-        photo         => '',
+        photo1        => '',
+        photo2        => '',
+        photo3        => '',
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
+        gender => undef,
       },
       "check imported fields are shown";
 
@@ -306,6 +324,7 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
     MAPIT_URL => 'http://global.mapit.mysociety.org/',
     MAPIT_TYPES => [ 'O08' ],
     MAPIT_ID_WHITELIST => [],
+    MAP_TYPE => 'Zurich,OSM',
   }, sub {
     ok $mech->host("zurich.example.org"), 'change host to zurich';
 
@@ -331,11 +350,8 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
     is $mech->content, 'SUCCESS', "Got success response";
 
     # check that we have received the email
-    $mech->email_count_is(1);
-    my $email = $mech->get_email;
+    my $token_url = $mech->get_link_from_email;
     $mech->clear_emails_ok;
-
-    my ($token_url) = $email->body =~ m{(http://\S+)};
     ok $token_url, "Found a token url $token_url";
 
     # go to the token url
@@ -349,11 +365,14 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
       {
         name          => 'Test User ll',
         detail        => 'This is a test report ll',
-        photo         => '',
+        photo1         => '',
+        photo2         => '',
+        photo3         => '',
         phone         => '',
         email => 'test-ll@example.com',
       },
-      "check imported fields are shown";
+      "check imported fields are shown"
+          or diag Dumper( $mech->visible_form_values ); use Data::Dumper;
 
     my $user =
       FixMyStreet::App->model('DB::User')
@@ -370,3 +389,7 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
 };
 
 done_testing();
+
+END {
+    $mech->delete_body($body);
+}

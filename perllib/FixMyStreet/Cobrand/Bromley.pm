@@ -10,7 +10,8 @@ sub council_name { return 'Bromley Council'; }
 sub council_url { return 'bromley'; }
 
 sub base_url {
-    return FixMyStreet->config('BASE_URL') if FixMyStreet->config('STAGING_SITE');
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
     return 'https://fix.bromley.gov.uk';
 }
 
@@ -20,13 +21,19 @@ sub disambiguate_location {
 
     my $town = 'Bromley';
 
-    # Bing turns High St Bromley into Bromley High St which is in 
-    # Bromley by Bow.
-    $town .= ', BR1' if $string =~ /^high\s+st(reet)?$/i;
+    #  There has been a road name change for a section of Ramsden Road
+    #  (BR5) between Church Hill and Court Road has changed to 'Old Priory
+    #  Avenue' - presently entering Old Priory Avenue simply takes the user to
+    #  a different Priory Avenue in Petts Wood
+    #  From Google maps search, "BR6 0PL" is a valid postcode for Old Priory Avenue
+    if ($string =~/^old\s+priory\s+av\w*$/i) {
+        $string = 'Ramsden Road';
+        $town = ', BR6 0PL';
+    }
 
-    # White Horse Hill is on boundary with Greenwich, so need a 
+    # White Horse Hill is on boundary with Greenwich, so need a
     # specific postcode
-    $town = 'chislehurst, BR7 6DH' if $string =~ /^white\s+horse/i;
+    $string = 'BR7 6DH' if $string =~ /^white\s+horse/i;
 
     $town = '' if $string =~ /orpington/i;
 
@@ -37,6 +44,10 @@ sub disambiguate_location {
         span   => '0.154963,0.24347',
         bounds => [ 51.289355, -0.081112, 51.444318, 0.162358 ],
     };
+}
+
+sub get_geocoder {
+    return 'OSM'; # default of Bing gives poor results, let's try overriding.
 }
 
 sub example_places {
@@ -71,9 +82,9 @@ sub ask_ever_reported {
     return 0;
 }
 
-sub process_extras {
+sub process_open311_extras {
     my $self = shift;
-    $self->SUPER::process_extras( @_, [ 'first_name', 'last_name' ] );
+    $self->SUPER::process_open311_extras( @_, [ 'first_name', 'last_name' ] );
 }
 
 sub contact_email {

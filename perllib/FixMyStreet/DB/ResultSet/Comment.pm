@@ -4,19 +4,24 @@ use base 'DBIx::Class::ResultSet';
 use strict;
 use warnings;
 
+sub to_body {
+    my ($rs, $bodies) = @_;
+    return FixMyStreet::DB::ResultSet::Problem::to_body($rs, $bodies, 1);
+}
+
+
 sub timeline {
-    my ( $rs, $restriction ) = @_;
+    my ( $rs ) = @_;
 
     my $prefetch = 
-        FixMyStreet::App->model('DB')->schema->storage->sql_maker->quote_char ?
+        $rs->result_source->storage->sql_maker->quote_char ?
         [ qw/user/ ] :
         [];
 
     return $rs->search(
         {
-            state => 'confirmed',
-            created => { '>=', \"ms_current_timestamp()-'7 days'::interval" },
-            %{ $restriction },
+            'me.state' => 'confirmed',
+            'me.created' => { '>=', \"current_timestamp-'7 days'::interval" },
         },
         {
             prefetch => $prefetch,
@@ -25,17 +30,14 @@ sub timeline {
 }
 
 sub summary_count {
-    my ( $rs, $restriction ) = @_;
+    my ( $rs ) = @_;
 
-    return $rs->search(
-            $restriction,
-        {
-            group_by => ['me.state'],
-            select   => [ 'me.state', { count => 'me.id' } ],
-            as       => [qw/state state_count/],
-            join     => 'problem'
-        }
-    );
+    my $params = {
+        group_by => ['me.state'],
+        select   => [ 'me.state', { count => 'me.id' } ],
+        as       => [qw/state state_count/],
+    };
+    return $rs->search(undef, $params);
 }
 
 1;

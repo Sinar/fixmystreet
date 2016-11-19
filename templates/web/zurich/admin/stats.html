@@ -2,14 +2,14 @@
 [% PROCESS 'admin/report_blocks.html' %]
 [% USE date %]
 
-<p style="float:right"><a href="[% c.uri_with( { export=1 } ) %]">[% loc('All Reports') %]</a></p>
+<p style="float:right"><a href="[% c.uri_with( { export=1 } ) %]">[% loc('All Reports as CSV') %]</a></p>
 
 [% IF start_date AND end_date %]
 <p><strong>[% tprintf( loc( 'All reports between %s and %s' ), start_date.ymd, end_date.ymd ) | html %]</strong></p>
 [% END %]
 
 <form method="get" action="[% c.uri_for('stats') %]">
-<p><select name="ym">
+<p><select class="form-control" name="ym">
     <option value="">[% loc('All reports') %]</option>
     [% FOR y IN [ 2013 .. date.format(date.now, '%Y') ];
         SET max = 12;
@@ -23,7 +23,7 @@
     [% END %]
 </select>
 
-<input type="submit" value="[% loc('Go') %]">
+<input type="submit" class="btn" value="[% loc('Go') %]">
 </form>
 
 <ul>
@@ -48,7 +48,7 @@
 
 <table>
 <tr><th>[% loc('Category') %]</th><th>[% loc('Count') %]</th></tr>
-[% WHILE ( c = per_category.next ) %]<tr><td>[% c.category %]</td><td>[% c.get_column('c') %]</td></tr>[% END %]
+[% WHILE ( cc = per_category.next ) %]<tr><td>[% cc.category %]</td><td>[% cc.get_column('c') %]</td></tr>[% END %]
 </table>
 
 [% INCLUDE 'admin/footer.html' %]

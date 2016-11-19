@@ -1,26 +1,21 @@
+[% DEFAULT list_of_names = bodies_to_list_names %]
+
 <div id="category_meta">
-    [%- IF report_meta %]
-    [%- category = report.category %]
-    <h4>Additional Information</h4>
-        [%- FOR meta IN category_extras.$category %]
-        [%- meta_name = meta.code -%]
+  [%- IF unresponsive.$category %]
+    [%# Note: this is only shown on FMS.com %]
+    [% INCLUDE "report/new/unresponsive_body.html" body_id = unresponsive.$category %]
+  [%- END %]
 
-[% IF field_errors.$meta_name %]
-    <div class='form-error'>[% field_errors.$meta_name %]</div>
-[% END -%]
-
-    <div class="form-field">
-        <label for="form_[% meta_name %]">[% meta.description _ ':' %]</label>
-        [% IF meta.exists('values') %]
-        <select name="[% meta_name %]" id="form_[% meta_name %]"[% meta.required == 'true' ? ' required' : '' %]>
-            [% FOR option IN meta.values.value.value %]
-                <option value="[% option.key.0 %]"[% IF option.key.0 == report_meta.$meta_name.value %] selected[% END %]>[% option.name.0 %]</option>
-            [% END %]
-        </select>
-        [% ELSE %]
-        <input type="text" value="[% report_meta.$meta_name | html %]" name="[% meta_name %]" id="form_[% meta_name %]"[% meta.required == 'true' ? ' required' : '' %]>
-        [% END %]
+  [%- IF category_extras.$category.size %]
+    <div class="extra-category-questions full-width">
+    <h2 class="form-section-heading">[% category %]</h2>
+    <p class="form-section-description">
+      [% tprintf(
+        loc('Help <strong>%s</strong> resolve your problem quicker, by providing some extra detail. This extra information will not be published online.'),
+        list_of_names.join( '</strong>' _ loc(' or ') _ '<strong>' )
+      ); %]
+    </p>
+    [% INCLUDE 'report/new/category_extras_fields.html' %]
     </div>
-        [%- END %]
-    [%- END %]
+  [%- END %]
 </div>

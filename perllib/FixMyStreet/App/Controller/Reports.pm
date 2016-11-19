@@ -3,6 +3,7 @@ use Moose;
 use namespace::autoclean;
 
 use File::Slurp;
+use JSON::MaybeXS;
 use List::MoreUtils qw(any);
 use POSIX qw(strcoll);
 use RABX;
@@ -33,6 +34,7 @@ sub index : Path : Args(0) {
 
     # Zurich goes straight to map page, with all reports
     if ( $c->cobrand->moniker eq 'zurich' ) {
+        $c->forward( 'stash_report_filter_status' );
         $c->forward( 'load_and_group_problems' );
         my $pins = $c->stash->{pins};
         $c->stash->{page} = 'reports';
@@ -53,7 +55,9 @@ sub index : Path : Args(0) {
     }
 
     # Fetch all bodies
-    my @bodies = $c->model('DB::Body')->search({}, {
+    my @bodies = $c->model('DB::Body')->search({
+        deleted => 0,
+    }, {
         '+select' => [ { count => 'area_id' } ],
         '+as' => [ 'area_count' ],
         join => 'body_areas',
@@ -67,14 +71,14 @@ sub index : Path : Args(0) {
         my $data = File::Slurp::read_file(
             FixMyStreet->path_to( '../data/all-reports.json' )->stringify
         );
-        my $j = JSON->new->utf8->decode($data);
+        my $j = decode_json($data);
         $c->stash->{fixed} = $j->{fixed};
         $c->stash->{open} = $j->{open};
     };
     if ($@) {
         $c->stash->{message} = _("There was a problem showing the All Reports page. Please try again later.");
         if ($c->config->{STAGING_SITE}) {
-            $c->stash->{message} .= '</p><p>Perhaps the bin/update-all-reports script needs running. Use: bin/cron-wrapper bin/update-all-reports</p><p>'
+            $c->stash->{message} .= '</p><p>Perhaps the bin/update-all-reports script needs running. Use: bin/update-all-reports</p><p>'
                 . sprintf(_('The error was: %s'), $@);
         }
         $c->stash->{template} = 'errors/generic.html';
@@ -109,7 +113,12 @@ sub ward : Path : Args(2) {
     $c->forward( 'ward_check', [ $ward ] )
         if $ward;
     $c->forward( 'check_canonical_url', [ $body ] );
+    $c->forward( 'stash_report_filter_status' );
     $c->forward( 'load_and_group_problems' );
+
+    if ($c->get_param('ajax')) {
+        $c->detach('ajax', [ 'reports/_problem-list.html' ]);
+    }
 
     my $body_short = $c->cobrand->short_name( $c->stash->{body} );
     $c->stash->{rss_url} = '/rss/reports/' . $body_short;
@@ -120,6 +129,15 @@ sub ward : Path : Args(2) {
 
     $c->stash->{stats} = $c->cobrand->get_report_stats();
 
+    my @categories = $c->stash->{body}->contacts->not_deleted->search( undef, {
+        columns => [ 'category' ],
+        distinct => 1,
+        order_by => [ 'category' ],
+    } )->all;
+    @categories = map { $_->category } @categories;
+    $c->stash->{filter_categories} = \@categories;
+    $c->stash->{filter_category} = [ $c->get_param_list('filter_category', 1) ];
+
     my $pins = $c->stash->{pins};
 
     $c->stash->{page} = 'reports'; # So the map knows to make clickable pins
@@ -129,15 +147,9 @@ sub ward : Path : Args(2) {
         area      => $c->stash->{ward} ? $c->stash->{ward}->{id} : [ keys %{$c->stash->{body}->areas} ],
         any_zoom  => 1,
     );
-    if ( $c->cobrand->moniker eq 'emptyhomes' ) {
-        FixMyStreet::Map::display_map(
-            $c, %map_params, latitude => 0, longitude => 0,
-        );
-    } else {
-        FixMyStreet::Map::display_map(
-            $c, %map_params, pins => $pins,
-        );
-    }
+    FixMyStreet::Map::display_map(
+        $c, %map_params, pins => $pins,
+    );
 
     $c->cobrand->tweak_all_reports_map( $c );
 
@@ -176,15 +188,6 @@ sub rss_area_ward : Path('/rss/area') : Args(2) {
     # We're checking an area here, but this function is currently doing that.
     return if $c->cobrand->reports_body_check( $c, $area );
 
-    # If we're passed an ID number (don't think this is used anywhere, it
-    # certainly shouldn't be), just look that up on mapit and redirect
-    if ($area =~ /^\d+$/) {
-        my $council = mySociety::MaPit::call('area', $area);
-        $c->detach( 'redirect_index') if $council->{error};
-        $c->stash->{body} = $council;
-        $c->detach( 'redirect_body' );
-    }
-
     # We must now have a string to check on mapit
     my $areas = mySociety::MaPit::call( 'areas', $area,
         type => $c->cobrand->area_types,
@@ -208,7 +211,7 @@ sub rss_area_ward : Path('/rss/area') : Args(2) {
     $url .= '/' . $c->cobrand->short_name( $c->stash->{ward} ) if $c->stash->{ward};
     $c->stash->{qs} = "/$url";
 
-    if ($c->stash->{area}{type} ne 'DIS' && $c->stash->{area}{type} ne 'CTY') {
+    if ($c->cobrand->moniker eq 'fixmystreet' && $c->stash->{area}{type} ne 'DIS' && $c->stash->{area}{type} ne 'CTY') {
         # UK-specific types - two possibilites are the same for one-tier councils, so redirect one to the other
         # With bodies, this should presumably redirect if only one body covers
         # the area, and then it will need that body's name (rather than
@@ -259,9 +262,7 @@ sub rss_ward : Path('/rss/reports') : Args(2) {
         # Problems sent to a council
         $c->stash->{type} = 'council_problems';
         $c->stash->{title_params} = { COUNCIL => $c->stash->{body}->name };
-        # XXX This looks up in both bodies_str and areas, but is only using body ID.
-        # This will not work properly in any install where body IDs are not === area IDs.
-        $c->stash->{db_params} = [ $c->stash->{body}->id, $c->stash->{body}->id ];
+        $c->stash->{db_params} = [ $c->stash->{body}->id ];
     }
 
     # Send on to the RSS generation
@@ -285,15 +286,6 @@ sub body_check : Private {
     # Check cobrand specific incantations - e.g. ONS codes for UK,
     # Oslo/ kommunes sharing a name in Norway
     return if $c->cobrand->reports_body_check( $c, $q_body );
-
-    # If we're passed an ID number (don't think this is used anywhere, it
-    # certainly shouldn't be), just look that up on MaPit and redirect
-    if ($q_body =~ /^\d+$/) {
-        my $area = mySociety::MaPit::call('area', $q_body);
-        $c->detach( 'redirect_index') if $area->{error};
-        $c->stash->{body} = $area;
-        $c->detach( 'redirect_body' );
-    }
 
     # We must now have a string to check
     my @bodies = $c->model('DB::Body')->search( { name => { -like => "$q_body%" } } )->all;
@@ -373,67 +365,58 @@ sub check_canonical_url : Private {
 sub load_and_group_problems : Private {
     my ( $self, $c ) = @_;
 
-    my $page = $c->req->params->{p} || 1;
-    my $type = $c->req->params->{t} || 'all';
-    my $category = $c->req->params->{c} || '';
+    $c->forward('stash_report_sort', [ $c->cobrand->reports_ordering ]);
 
+    my $page = $c->get_param('p') || 1;
+    # NB: If 't' is specified, it will override 'status'.
+    my $type = $c->get_param('t') || 'all';
+    my $category = [ $c->get_param_list('filter_category', 1) ];
+
+    my $states = $c->stash->{filter_problem_states};
     my $where = {
         non_public => 0,
-        state      => [ FixMyStreet::DB::Result::Problem->visible_states() ]
+        state      => [ keys %$states ]
     };
 
     my $not_open = [ FixMyStreet::DB::Result::Problem::fixed_states(), FixMyStreet::DB::Result::Problem::closed_states() ];
     if ( $type eq 'new' ) {
-        $where->{confirmed} = { '>', \"ms_current_timestamp() - INTERVAL '4 week'" };
+        $where->{confirmed} = { '>', \"current_timestamp - INTERVAL '4 week'" };
         $where->{state} = { 'IN', [ FixMyStreet::DB::Result::Problem::open_states() ] };
     } elsif ( $type eq 'older' ) {
-        $where->{confirmed} = { '<', \"ms_current_timestamp() - INTERVAL '4 week'" };
-        $where->{lastupdate} = { '>', \"ms_current_timestamp() - INTERVAL '8 week'" };
+        $where->{confirmed} = { '<', \"current_timestamp - INTERVAL '4 week'" };
+        $where->{lastupdate} = { '>', \"current_timestamp - INTERVAL '8 week'" };
         $where->{state} = { 'IN', [ FixMyStreet::DB::Result::Problem::open_states() ] };
     } elsif ( $type eq 'unknown' ) {
-        $where->{lastupdate} = { '<', \"ms_current_timestamp() - INTERVAL '8 week'" };
+        $where->{lastupdate} = { '<', \"current_timestamp - INTERVAL '8 week'" };
         $where->{state} = { 'IN',  [ FixMyStreet::DB::Result::Problem::open_states() ] };
     } elsif ( $type eq 'fixed' ) {
-        $where->{lastupdate} = { '>', \"ms_current_timestamp() - INTERVAL '8 week'" };
+        $where->{lastupdate} = { '>', \"current_timestamp - INTERVAL '8 week'" };
         $where->{state} = $not_open;
     } elsif ( $type eq 'older_fixed' ) {
-        $where->{lastupdate} = { '<', \"ms_current_timestamp() - INTERVAL '8 week'" };
+        $where->{lastupdate} = { '<', \"current_timestamp - INTERVAL '8 week'" };
         $where->{state} = $not_open;
     }
 
-    if ($category) {
+    if (@$category) {
         $where->{category} = $category;
     }
 
+    my $problems = $c->cobrand->problems;
+
     if ($c->stash->{ward}) {
         $where->{areas} = { 'like', '%,' . $c->stash->{ward}->{id} . ',%' };
-        $where->{bodies_str} = [
-            undef,
-            $c->stash->{body}->id,
-            { 'like', $c->stash->{body}->id . ',%' },
-            { 'like', '%,' . $c->stash->{body}->id },
-        ];
+        $problems = $problems->to_body($c->stash->{body});
     } elsif ($c->stash->{body}) {
-        # XXX FixMyStreet used to have the following line so that reports not
-        # currently sent anywhere could still be listed in the appropriate
-        # (body/area), as they were the same.  Now they're not, not sure if
-        # there's a way to do this easily.
-        #$where->{areas} = { 'like', '%,' . $c->stash->{body}->id . ',%' };
-        $where->{bodies_str} = [
-        #    undef,
-            $c->stash->{body}->id,
-            { 'like', $c->stash->{body}->id . ',%' },
-            { 'like', '%,' . $c->stash->{body}->id },
-        ];
+        $problems = $problems->to_body($c->stash->{body});
     }
 
-    my $problems = $c->cobrand->problems->search(
+    $problems = $problems->search(
         $where,
         {
-            order_by => { -desc => 'lastupdate' },
+            order_by => $c->stash->{sort_order},
             rows => $c->cobrand->reports_per_page,
         }
-    )->page( $page );
+    )->include_comment_counts->page( $page );
     $c->stash->{pager} = $problems->pager;
 
     my ( %problems, @pins );
@@ -451,7 +434,6 @@ sub load_and_group_problems : Private {
             }
         } else {
             # Add to bodies it was sent to
-            # XXX Assumes body ID matches "council ID"
             my $bodies = $problem->bodies_str_ids;
             foreach ( @$bodies ) {
                 next if $_ != $c->stash->{body}->id;
@@ -485,16 +467,95 @@ sub redirect_body : Private {
     $c->res->redirect( $c->uri_for($url, $c->req->params ) );
 }
 
+sub stash_report_filter_status : Private {
+    my ( $self, $c ) = @_;
+
+    my @status = $c->get_param_list('status', 1);
+    @status = ($c->cobrand->on_map_default_status) unless @status;
+    my %status = map { $_ => 1 } @status;
+
+    my %filter_problem_states;
+    my %filter_status;
+
+    if ($status{open}) {
+        my $s = FixMyStreet::DB::Result::Problem->open_states();
+        %filter_problem_states = (%filter_problem_states, %$s);
+        $filter_status{open} = 1;
+    }
+    if ($status{closed}) {
+        my $s = FixMyStreet::DB::Result::Problem->closed_states();
+        %filter_problem_states = (%filter_problem_states, %$s);
+        $filter_status{closed} = 1;
+    }
+    if ($status{fixed}) {
+        my $s = FixMyStreet::DB::Result::Problem->fixed_states();
+        %filter_problem_states = (%filter_problem_states, %$s);
+        $filter_status{fixed} = 1;
+    }
+
+    if ($status{all}) {
+        my $s = FixMyStreet::DB::Result::Problem->visible_states();
+        # %filter_status = ();
+        %filter_problem_states = %$s;
+    }
+
+    $c->stash->{filter_problem_states} = \%filter_problem_states;
+    $c->stash->{filter_status} = \%filter_status;
+    return 1;
+}
+
+sub stash_report_sort : Private {
+    my ( $self, $c, $default ) = @_;
+
+    my %types = (
+        updated => 'lastupdate',
+        created => 'confirmed',
+        comments => 'comment_count',
+    );
+
+    my $sort = $c->get_param('sort') || $default;
+    $sort = $default unless $sort =~ /^((updated|created)-(desc|asc)|comments-desc)$/;
+    $sort =~ /^(updated|created|comments)-(desc|asc)$/;
+    my $order_by = $types{$1} || $1;
+    my $dir = $2;
+    $order_by = { -desc => $order_by } if $dir eq 'desc';
+
+    $c->stash->{sort_key} = $sort;
+    $c->stash->{sort_order} = $order_by;
+    return 1;
+}
+
 sub add_row {
     my ( $c, $problem, $body, $problems, $pins ) = @_;
     push @{$problems->{$body}}, $problem;
-    push @$pins, {
-        latitude  => $problem->latitude,
-        longitude => $problem->longitude,
-        colour    => $c->cobrand->pin_colour( $problem, 'reports' ),
-        id        => $problem->id,
-        title     => $problem->title_safe,
+    push @$pins, $problem->pin_data($c, 'reports');
+}
+
+sub ajax : Private {
+    my ($self, $c, $template) = @_;
+
+    $c->res->content_type('application/json; charset=utf-8');
+    $c->res->header( 'Cache_Control' => 'max-age=0' );
+
+    my @pins = map {
+        my $p = $_;
+        [ $p->{latitude}, $p->{longitude}, $p->{colour}, $p->{id}, $p->{title} ]
+    } @{$c->stash->{pins}};
+
+    my $list_html = $c->render_fragment($template);
+
+    my $pagination = $c->render_fragment('pagination.html', {
+        pager => $c->stash->{problems_pager} || $c->stash->{pager},
+        param => 'p',
+    });
+
+    my $json = {
+        pins => \@pins,
+        pagination => $pagination,
     };
+    $json->{reports_list} = $list_html if $list_html;
+    my $body = encode_json($json);
+    $c->res->body($body);
 }
 
 =head1 AUTHOR

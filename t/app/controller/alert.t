@@ -1,9 +1,12 @@
 use strict;
 use warnings;
 use Test::More;
+use LWP::Protocol::PSGI;
 
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
+
+use t::Mock::Nominatim;
 
 # check that we can get the page
 $mech->get_ok('/alert');
@@ -15,6 +18,7 @@ $mech->content_contains('html class="no-js" lang="en-gb"');
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
     MAPIT_URL => 'http://mapit.mysociety.org/',
+    GEOCODER => '',
 }, sub {
     $mech->get_ok('/alert/list');
     $mech->title_like(qr/^Local RSS feeds and email alerts/);
@@ -25,7 +29,7 @@ FixMyStreet::override_config {
     $mech->title_like(qr/^Local RSS feeds and email alerts/);
     $mech->content_contains('Here are the types of local problem alerts for &lsquo;EH99&nbsp;1SP&rsquo;');
     $mech->content_contains('html class="no-js" lang="en-gb"');
-    $mech->content_contains('Problems within 8.5km');
+    $mech->content_contains('Problems within 10.0km');
     $mech->content_contains('rss/pc/EH991SP/2');
     $mech->content_contains('rss/pc/EH991SP/5');
     $mech->content_contains('rss/pc/EH991SP/10');
@@ -37,8 +41,11 @@ FixMyStreet::override_config {
     $mech->content_contains('council:2651:City_of_Edinburgh');
     $mech->content_contains('ward:2651:20728:City_of_Edinburgh:City_Centre');
 
-    $mech->get_ok('/alert/list?pc=High Street');
-    $mech->content_contains('We found more than one match for that location');
+    subtest "Test Nominatim lookup" => sub {
+        LWP::Protocol::PSGI->register(t::Mock::Nominatim->run_if_script, host => 'nominatim.openstreetmap.org');
+        $mech->get_ok('/alert/list?pc=High Street');
+        $mech->content_contains('We found more than one match for that location');
+    };
 
     $mech->get_ok('/alert/list?pc=');
     $mech->content_contains('To find out what local alerts we have for you');

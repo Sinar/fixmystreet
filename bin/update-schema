@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 =head1 NAME
 
@@ -31,24 +31,27 @@ backup of your database before running.
 use strict;
 use warnings;
 
-# Horrible boilerplate to set up appropriate library paths.
-use FindBin;
-use lib "$FindBin::Bin/../commonlib/perllib";
+my $bin_dir;
+BEGIN {
+    use File::Basename qw(dirname);
+    use File::Spec;
+    $bin_dir = dirname(File::Spec->rel2abs($0));
+    require "$bin_dir/../setenv.pl";
+}
 
-use mySociety::Config;
+use FixMyStreet;
 use mySociety::DBHandle qw(dbh);
 use mySociety::MaPit;
 use Getopt::Long;
 use Pod::Usage;
 
-mySociety::Config::set_file("$FindBin::Bin/../conf/general");
 my %args = (
-    Name => mySociety::Config::get('FMS_DB_NAME'),
-    User => mySociety::Config::get('FMS_DB_USER'),
-    Password => mySociety::Config::get('FMS_DB_PASS'),
+    Name => FixMyStreet->config('FMS_DB_NAME'),
+    User => FixMyStreet->config('FMS_DB_USER'),
+    Password => FixMyStreet->config('FMS_DB_PASS'),
 );
-$args{Host} = mySociety::Config::get('FMS_DB_HOST', undef) if mySociety::Config::get('FMS_DB_HOST');
-$args{Port} = mySociety::Config::get('FMS_DB_PORT', undef) if mySociety::Config::get('FMS_DB_PORT');
+$args{Host} = FixMyStreet->config('FMS_DB_HOST', undef) if FixMyStreet->config('FMS_DB_HOST');
+$args{Port} = FixMyStreet->config('FMS_DB_PORT', undef) if FixMyStreet->config('FMS_DB_PORT');
 mySociety::DBHandle::configure( %args );
 
 my ($commit, $version, $downgrade, $help);
@@ -91,8 +94,8 @@ sub get_statements {
         next if /^--/; # Ignore comments
         $s .= $_;
         # Functions may have semicolons within them
-        $in_function = 1 if /create function/i;
-        $in_function = 0 if /language 'plpgsql'/i;
+        $in_function = 1 if /create (or replace )?function/i;
+        $in_function = 0 if /language (sql|'plpgsql')/i;
         if ($s =~ /;/ && !$in_function) {
             push @statements, $s;
             $s = '';
@@ -115,7 +118,7 @@ if ($upgrade) {
     if ($version) {
         die "Not currently implemented";
     }
-    for my $path (glob("$FindBin::Bin/../db/schema_*")) {
+    for my $path (glob("$bin_dir/../db/schema_*")) {
         my ($name) = $path =~ /schema_(.*)\.sql$/;
         next if $name le $current_version;
         next if $name =~ /$current_version-/; # For number only match
@@ -146,7 +149,7 @@ if ($upgrade) {
 
 if ($downgrade) {
     my %downgrades;
-    for my $path (glob("$FindBin::Bin/../db/downgrade_*")) {
+    for my $path (glob("$bin_dir/../db/downgrade_*")) {
         my ($from, $to) = $path =~ /downgrade_(.*)---(.*)\.sql$/;
         next unless $from eq $current_version;
         $downgrades{$to} = $path;
@@ -191,6 +194,21 @@ else {
 # By querying the database schema, we can see where we're currently at
 # (assuming schema change files are never half-applied, which should be the case)
 sub get_db_version {
+    return '0047' if column_exists('response_priorities', 'description');
+    return '0046' if column_exists('users', 'extra');
+    return '0045' if table_exists('response_priorities');
+    return '0044' if table_exists('contact_response_templates');
+    return '0043' if column_exists('users', 'area_id');
+    return '0042' if table_exists('user_planned_reports');
+    return '0041' if column_exists('users', 'is_superuser') && ! constraint_exists('user_body_permissions_permission_type_check');
+    return '0040' if column_exists('users', 'is_superuser');
+    return '0039' if column_exists('users', 'facebook_id');
+    return '0038' if column_exists('admin_log', 'time_spent');
+    return '0037' if table_exists('response_templates');
+    return '0036' if constraint_contains('problem_cobrand_check', 'a-z0-9_');
+    return '0035' if column_exists('problem', 'bodies_missing');
+    return '0034' if ! function_exists('ms_current_timestamp');
+    return '0033' if ! function_exists('angle_between');
     return '0032' if table_exists('moderation_original_data');
     return '0031' if column_exists('body', 'external_url');
     return '0030' if ! constraint_exists('admin_log_action_check');
@@ -250,3 +268,15 @@ sub constraint_exists {
     return dbh()->selectrow_array('select count(*) from pg_constraint where conname = ?', {}, $constraint);
 }
 
+# Returns true if a check constraint contains a certain string
+sub constraint_contains {
+    my ( $constraint, $check ) = @_;
+    my ($consrc) = dbh()->selectrow_array('select consrc from pg_constraint where conname = ?', {}, $constraint);
+    return $consrc =~ /$check/;
+}
+
+# Returns true if a function exists
+sub function_exists {
+    my $fn = shift;
+    return dbh()->selectrow_array('select count(*) from pg_proc where proname = ?', {}, $fn);
+}

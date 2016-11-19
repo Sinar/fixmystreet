@@ -1,8 +1,7 @@
 <!doctype html>
-<!--[if lt IE 7]><html class="no-js ie6 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 7]>   <html class="no-js ie7 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 8]>   <html class="no-js ie8 oldie" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 9]>   <html class="no-js ie9 oldie" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 7]>   <html class="no-js ie7 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 8]>   <html class="no-js ie8 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 9]>   <html class="no-js ie9" lang="[% lang_code %]"><![endif]-->
 <!--[if gt IE 9]><!--><html class="no-js" lang="[% lang_code %]"><!--<![endif]-->
     <head>
         <meta name="viewport" content="initial-scale=1.0">
@@ -11,23 +10,16 @@
         <meta name="HandHeldFriendly" content="true">
         <meta name="mobileoptimized" content="0">
 
-[% SET start = c.config.ADMIN_BASE_URL IF admin %]
-
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/base.css') %]">
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]" media="(min-width:48em)">
+        <link rel="stylesheet" href="[% version('/cobrands/' _ c.cobrand.moniker _ '/base.css') %]">
+        <link rel="stylesheet" href="[% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]" media="screen and (min-width:48em)">
         [% extra_css %]
         <!--[if (lt IE 9) & (!IEMobile)]>
-            <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]">
+            <link rel="stylesheet" href="[% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]">
         <![endif]-->
 
         <link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/themes/redmond/jquery-ui.css">
 
-        <script src="[% start %][% version('/js/modernizr.custom.js') %]" charset="utf-8"></script>
-        <script src="[% start %][% version('/cobrands/fixmystreet/position_map.js') %]" charset="utf-8"></script>
-        [% INCLUDE 'common_header_tags.html', js_override = '/cobrands/fixmystreet/fixmystreet.js', site_title = 'Züri wie neu' %]
-        [% extra_js %]
-
-        <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js" charset="utf-8"></script>
+        [% INCLUDE 'common_header_tags.html' %]
 
         [% INCLUDE 'tracking_code.html' %]
 
@@ -68,8 +60,13 @@
             <li [% IF pagename == 'users' OR pagename == 'user_edit' %]class="current"[% END %]>
                 <a href="/admin/users">[% loc('Users') %]</a>
             </li>
+            [% END %]
             <li [% IF pagename == 'stats' %]class="current"[% END %]>
                 <a href="/admin/stats">[% loc('Stats') %]</a>
+            </li>
+            [% IF admin_type == 'dm' %]
+            <li [% IF pagename == 'templates' OR pagename == 'template' %]class="current"[% END %]>
+                <a href="/admin/templates">[% loc('Templates') %]</a>
             </li>
             [% END %]
             <li class="search-box">

@@ -1,10 +1,17 @@
 # general.yml-example:
-# Example values for the "general" config file.
+# This file contains example values for the "general.yml" config file. It
+# contains various configuration parameters, in YAML syntax.
 #
-# Configuration parameters, in YAML syntax.
+# For more information about this file, and general documentation on setting up
+# the FixMyStreet platform, please see http://fixmystreet.org/
 #
-# Copy this file to one called "general.yml" in the same directory.  Or
-# have multiple config files and use a symlink to change between them.
+# Specific details about this file can be found at
+# http://fixmystreet.org/customising/config/
+#
+# To start, you can copy this file to one called "general.yml" in the same
+# directory. Or have multiple config files and use a symlink to change between
+# them. Using the install script or AMI will have created a general.yml file
+# for you.
 
 # PostgreSQL database details for FixMyStreet
 FMS_DB_HOST: 'localhost'
@@ -17,6 +24,10 @@ FMS_DB_PASS: ''
 BASE_URL: 'http://www.example.org'
 # Use the below if you're using the Catalyst development server
 #   BASE_URL: 'http://localhost:3000'
+SECURE_PROXY_SSL_HEADER: ''
+# If you're behind a proxy, set this to a two-element list containing the
+# trusted HTTP header and the required value. For example:
+#   SECURE_PROXY_SSL_HEADER: [ 'X-Forwarded-Proto', 'https' ]
 
 # Email domain used for emails, and contact name/email for admin use.
 EMAIL_DOMAIN: 'example.org'
@@ -30,11 +41,14 @@ DO_NOT_REPLY_EMAIL: 'do-not-reply@example.org'
 # Whether this is a development site or not. It will mean e.g. templates/
 # CSS modified times aren't cached
 STAGING_SITE: 1
-# Normally, a staging site will route all reports to CONTACT_EMAIL on a
+# Normally, a staging site will route all reports to the reporter on a
 # development site (when STAGING_SITE is 1), to guard against sending fake
 # reports to live places. Set this to 1 if you want a dev site to route
 # reports as normal.
 SEND_REPORTS_ON_STAGING: 0
+# Manual testing of multiple cobrands can be made easier by skipping some
+# checks they have in them, if this variable is set
+SKIP_CHECKS_ON_STAGING: 0
 
 # What to use as front page/alert example places placeholder
 # Defaults to High Street, Main Street
@@ -42,7 +56,6 @@ EXAMPLE_PLACES: [ 'High Street', 'Main Street' ]
 
 # An array of languages for the site, in the following format:
 # <language code>,<pretty name>,<locale>
-# Do not remove the en-gb line as it is needed for correct operation.
 LANGUAGES:
   - 'en-gb,English,en_GB'
 
@@ -51,6 +64,7 @@ LANGUAGES:
 TIME_ZONE: ""
 
 # File locations for uploaded photos and cached geocoding results.
+# Absolute paths, or relative to the project's root directory
 UPLOAD_DIR: '../upload/'
 GEO_CACHE: '../cache/'
 
@@ -110,9 +124,7 @@ BING_MAPS_API_KEY: ''
 #     bing_culture: <culture code, see http://msdn.microsoft.com/en-us/library/hh441729.aspx>
 #     bing_country: <country name, only accept results that match this>
 #
-# If using Google, you can use:
-#     centre: "<lat>,<lon>"
-#     span: "<lat span>,<lon span>"
+# If using Google, you can use bounds, plus:
 #     google_country: <.ccTLD to restrict results to>
 #     lang: <language for results>
 #
@@ -147,14 +159,21 @@ ALLOWED_COBRANDS:
   - cobrand2: 'hostname_substring2'
   - cobrand3
 
-# This is only used in "offensive report" emails to provide a link directly to
-# the admin interface. If wanted, set to the full URL of your admin interface.
+# This is used in e.g. "offensive report" emails to provide a link directly to
+# the admin interface. Defaults to BASE_URL with "/admin" on the end.
 ADMIN_BASE_URL: ''
 
-# How many items are returned in the GeoRSS feeds by default
+# How many items are returned in the GeoRSS and Open311 feeds by default
 RSS_LIMIT: '20'
+OPEN311_LIMIT: 1000
 # How many reports to show per page on the All Reports pages
 ALL_REPORTS_PER_PAGE: 100
+
+# Social networking
+FACEBOOK_APP_ID: ''
+FACEBOOK_APP_SECRET: ''
+TWITTER_KEY: ''
+TWITTER_SECRET: ''
 
 # If you wish to send email through a SMTP server elsewhere, change these
 # variables. SMTP_TYPE should be one of '', 'ssl' or 'tls'.
@@ -166,7 +185,7 @@ SMTP_PASSWORD: ''
 
 # Gaze is a world-wide service for population density lookups. You can leave
 # this as is.
-GAZE_URL: 'http://gaze.mysociety.org/gaze'
+GAZE_URL: 'https://gaze.mysociety.org/gaze'
 
 # Should problem reports link to the council summary pages?
 AREA_LINKS_FROM_PROBLEMS: '0'
@@ -176,14 +195,3 @@ TESTING_COUNCILS: ''
 
 # if you're using Message Manager, include the URL here (see https://github.com/mysociety/message-manager/)
 MESSAGE_MANAGER_URL: ''
-
-# -----------------------------------------------------------------------
-
-# fixmystreet.com specific config variables. You won't need any of these.
-KASABI_API_KEY: ''
-LONDON_REPORTIT_URL: ''
-LONDON_REPORTIT_KEY: ''
-LONDON_REPORTIT_SECRET: ''
-AUTH_SHARED_SECRET: ''
-HEARFROMYOURMP_BASE_URL: ''
-

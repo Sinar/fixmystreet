@@ -1,7 +1,6 @@
 @import "../sass/h5bp";
 @import "./_colours";
 @import "../sass/mixins";
-@import "compass";
 
 @import "../sass/base";
 
@@ -42,7 +41,6 @@ body {
 #site-header {
     height: auto;
     background: white;
-    border-top-width: 4px;
 
     nav ul li, ul.nav li {
         list-style: none;
@@ -56,6 +54,10 @@ body {
 
 body.mappage > div.container {
     padding-top: 0;
+}
+
+.footer-container {
+    font-size: 16px;
 }
 
 @media (max-width: 767px) {

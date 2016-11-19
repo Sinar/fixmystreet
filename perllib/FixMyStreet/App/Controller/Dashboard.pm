@@ -4,6 +4,7 @@ use namespace::autoclean;
 
 use DateTime;
 use File::Slurp;
+use JSON::MaybeXS;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
@@ -32,15 +33,15 @@ sub example : Local : Args(0) {
     #$c->forward( '/report/new/setup_categories_and_bodies' );
 
     # See if we've had anything from the dropdowns - perhaps vary results if so
-    $c->stash->{ward} = $c->req->param('ward');
-    $c->stash->{category} = $c->req->param('category');
-    $c->stash->{q_state} = $c->req->param('state');
+    $c->stash->{ward} = $c->get_param('ward');
+    $c->stash->{category} = $c->get_param('category');
+    $c->stash->{q_state} = $c->get_param('state');
 
     eval {
         my $data = File::Slurp::read_file(
             FixMyStreet->path_to( 'data/dashboard.json' )->stringify
         );
-        my $j = JSON->new->utf8->decode($data);
+        my $j = decode_json($data);
         if ( !$c->stash->{ward} && !$c->stash->{category} ) {
             $c->stash->{problems} = $j->{counts_all};
         } else {
@@ -89,6 +90,7 @@ sub index : Path : Args(0) {
     my ( $self, $c ) = @_;
 
     my $body = $c->forward('check_page_allowed');
+    $c->stash->{body} = $body;
 
     # Set up the data for the dropdowns
 
@@ -108,11 +110,10 @@ sub index : Path : Args(0) {
 
     # See if we've had anything from the dropdowns
 
-    $c->stash->{ward} = $c->req->param('ward');
-    $c->stash->{category} = $c->req->param('category');
+    $c->stash->{ward} = $c->get_param('ward');
+    $c->stash->{category} = $c->get_param('category');
 
     my %where = (
-        bodies_str => $body->id, # XXX Does this break in a two tier council? Restriction needs looking at...
         'problem.state' => [ FixMyStreet::DB::Result::Problem->visible_states() ],
     );
     $where{areas} = { 'like', '%,' . $c->stash->{ward} . ',%' }
@@ -128,7 +129,7 @@ sub index : Path : Args(0) {
     my $dtf = $c->model('DB')->storage->datetime_parser;
 
     my %counts;
-    my $now = DateTime->now( time_zone => 'local' );
+    my $now = DateTime->now( time_zone => FixMyStreet->local_time_zone );
     my $t = $now->clone->truncate( to => 'day' );
     $counts{wtd} = $c->forward( 'updates_search',
         [ $dtf->format_datetime( $t->clone->subtract( days => $t->dow - 1 ) ) ] );
@@ -143,7 +144,7 @@ sub index : Path : Args(0) {
 
     # List of reports underneath summary table
 
-    $c->stash->{q_state} = $c->req->param('state') || '';
+    $c->stash->{q_state} = $c->get_param('state') || '';
     if ( $c->stash->{q_state} eq 'fixed' ) {
         $prob_where->{'me.state'} = [ FixMyStreet::DB::Result::Problem->fixed_states() ];
     } elsif ( $c->stash->{q_state} ) {
@@ -155,7 +156,7 @@ sub index : Path : Args(0) {
         %$prob_where,
         'me.confirmed' => { '>=', $dtf->format_datetime( $now->clone->subtract( days => 30 ) ) },
     };
-    my $problems_rs = $c->cobrand->problems->search( $params );
+    my $problems_rs = $c->cobrand->problems->to_body($body)->search( $params );
     my @problems = $problems_rs->all;
 
     my %problems;
@@ -170,7 +171,7 @@ sub index : Path : Args(0) {
     }
     $c->stash->{lists} = \%problems;
 
-    if ( $c->req->params->{export} ) {
+    if ( $c->get_param('export') ) {
         $self->export_as_csv($c, $problems_rs, $body);
     }
 }
@@ -270,12 +271,14 @@ sub export_as_csv {
 sub updates_search : Private {
     my ( $self, $c, $time ) = @_;
 
+    my $body = $c->stash->{body};
+
     my $params = {
         %{$c->stash->{where}},
         'me.confirmed' => { '>=', $time },
     };
 
-    my $comments = $c->model('DB::Comment')->search(
+    my $comments = $c->model('DB::Comment')->to_body($body)->search(
         $params,
         {
             group_by => [ 'problem_state' ],
@@ -302,7 +305,7 @@ sub updates_search : Private {
         my $col = shift @$vars;
         my $substmt = "select min(id) from comment where me.problem_id=comment.problem_id and problem_state in ('"
             . join("','", @$vars) . "')";
-        $comments = $c->model('DB::Comment')->search(
+        $comments = $c->model('DB::Comment')->to_body($body)->search(
             { %$params,
                 problem_state => $vars,
                 'me.id' => \"= ($substmt)",
@@ -319,7 +322,7 @@ sub updates_search : Private {
         $counts{$col} = int( ($comments->get_column('time')||0) / 60 / 60 / 24 + 0.5 );
     }
 
-    $counts{fixed_user} = $c->model('DB::Comment')->search(
+    $counts{fixed_user} = $c->model('DB::Comment')->to_body($body)->search(
         { %$params, mark_fixed => 1, problem_state => undef }, { join     => 'problem' }
     )->count;
 
@@ -327,7 +330,7 @@ sub updates_search : Private {
         %{$c->stash->{prob_where}},
         'me.confirmed' => { '>=', $time },
     };
-    $counts{total} = $c->cobrand->problems->search( $params )->count;
+    $counts{total} = $c->cobrand->problems->to_body($body)->search( $params )->count;
 
     $params = {
         %{$c->stash->{prob_where}},
@@ -335,7 +338,7 @@ sub updates_search : Private {
         state => 'confirmed',
         '(select min(id) from comment where me.id=problem_id and problem_state is not null)' => undef,
     };
-    $counts{not_marked} = $c->cobrand->problems->search( $params )->count;
+    $counts{not_marked} = $c->cobrand->problems->to_body($body)->search( $params )->count;
 
     return \%counts;
 }

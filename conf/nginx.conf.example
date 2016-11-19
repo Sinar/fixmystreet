@@ -22,6 +22,8 @@ server {
     gzip_disable "msie6";
     gzip_types application/javascript application/x-javascript text/css;
 
+    client_max_body_size 10m;
+
     # Set a long expiry time for CSS and Javascript, and prevent
     # the mangling of Javascript by proxies:
 
@@ -47,12 +49,6 @@ server {
     location /mapit {
         proxy_pass http://mapit.mysociety.org/;
         proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /admin {
-        auth_basic "FixMyStreet admin interface";
-        auth_basic_user_file /var/www/fixmystreet/admin-htpasswd;
-        try_files $uri @catalyst;
     }
 
     location / {

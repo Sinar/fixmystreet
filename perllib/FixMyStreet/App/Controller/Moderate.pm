@@ -28,8 +28,7 @@ data to change.
 
 The original data of the report is stored in moderation_original_data, so
 that it can be reverted/consulted if required.  All moderation events are
-stored in moderation_log.  (NB: In future, this could be combined with
-admin_log).
+stored in admin_log.
 
 =head1 SEE ALSO
 
@@ -55,7 +54,9 @@ sub report : Chained('moderate') : PathPart('report') : CaptureArgs(1) {
 
     # ... and immediately, if the user isn't authorized
     $c->detach unless $c->user_exists;
-    $c->detach unless $c->user->has_permission_to(moderate => $problem->bodies_str);
+    $c->detach unless $c->user->has_permission_to(moderate => $problem->bodies_str_ids);
+
+    $c->forward('/auth/check_csrf_token');
 
     my $original = $problem->find_or_new_related( moderation_original_data => {
         title => $problem->title,
@@ -65,7 +66,7 @@ sub report : Chained('moderate') : PathPart('report') : CaptureArgs(1) {
     });
     $c->stash->{problem} = $problem;
     $c->stash->{problem_original} = $original;
-    $c->stash->{moderation_reason} = $c->req->param('moderation_reason') // '';
+    $c->stash->{moderation_reason} = $c->get_param('moderation_reason') // '';
 }
 
 sub moderate_report : Chained('report') : PathPart('') : Args(0) {
@@ -100,20 +101,18 @@ sub report_moderate_audit : Private {
         reason => (sprintf '%s (%s)', $reason, $types_csv),
     });
 
-    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($problem->cobrand)->new();
-
-    my $sender = FixMyStreet->config('DO_NOT_REPLY_EMAIL');
-    my $sender_name = _($cobrand->contact_name);
+    my $token = $c->model("DB::Token")->create({
+        scope => 'moderation',
+        data => { id => $problem->id }
+    });
 
     $c->send_email( 'problem-moderated.txt', {
-
-        to      => [ [ $user->email, $user->name ] ],
-        from    => [ $sender, $sender_name ],
+        to => [ [ $problem->user->email, $problem->name ] ],
         types => $types_csv,
-        user => $user,
+        user => $problem->user,
         problem => $problem,
         report_uri => $c->stash->{report_uri},
-        report_complain_uri => $c->stash->{cobrand_base} . '/contact?m=1&id=' . $problem->id,
+        report_complain_uri => $c->stash->{cobrand_base} . '/contact?m=' . $token->token,
     });
 }
 
@@ -122,7 +121,7 @@ sub report_moderate_hide : Private {
 
     my $problem = $c->stash->{problem} or die;
 
-    if ($c->req->param('problem_hide')) {
+    if ($c->get_param('problem_hide')) {
 
         $problem->update({ state => 'hidden' });
 
@@ -140,9 +139,9 @@ sub report_moderate_title : Private {
     my $old_title = $problem->title;
     my $original_title = $original->title;
 
-    my $title = $c->req->param('problem_revert_title') ?
+    my $title = $c->get_param('problem_revert_title') ?
         $original_title
-        : $self->diff($original_title, $c->req->param('problem_title'));
+        : $self->diff($original_title, $c->get_param('problem_title'));
 
     if ($title ne $old_title) {
         $original->insert unless $original->in_storage;
@@ -161,9 +160,9 @@ sub report_moderate_detail : Private {
 
     my $old_detail = $problem->detail;
     my $original_detail = $original->detail;
-    my $detail = $c->req->param('problem_revert_detail') ?
+    my $detail = $c->get_param('problem_revert_detail') ?
         $original_detail
-        : $self->diff($original_detail, $c->req->param('problem_detail'));
+        : $self->diff($original_detail, $c->get_param('problem_detail'));
 
     if ($detail ne $old_detail) {
         $original->insert unless $original->in_storage;
@@ -179,7 +178,7 @@ sub report_moderate_anon : Private {
     my $problem = $c->stash->{problem} or die;
     my $original = $c->stash->{problem_original};
 
-    my $show_user = $c->req->param('problem_show_name') ? 1 : 0;
+    my $show_user = $c->get_param('problem_show_name') ? 1 : 0;
     my $anonymous = $show_user ? 0 : 1;
     my $old_anonymous = $problem->anonymous ? 1 : 0;
 
@@ -200,7 +199,7 @@ sub report_moderate_photo : Private {
 
     return unless $original->photo;
 
-    my $show_photo = $c->req->param('problem_show_photo') ? 1 : 0;
+    my $show_photo = $c->get_param('problem_show_photo') ? 1 : 0;
     my $old_show_photo = $problem->photo ? 1 : 0;
 
     if ($show_photo != $old_show_photo) {
@@ -263,7 +262,7 @@ sub update_moderate_hide : Private {
     my $problem = $c->stash->{problem} or die;
     my $comment = $c->stash->{comment} or die;
 
-    if ($c->req->param('update_hide')) {
+    if ($c->get_param('update_hide')) {
         $comment->update({ state => 'hidden' });
         $c->detach( 'update_moderate_audit', ['hide'] ); # break chain here.
     }
@@ -279,9 +278,9 @@ sub update_moderate_detail : Private {
 
     my $old_detail = $comment->text;
     my $original_detail = $original->detail;
-    my $detail = $c->req->param('update_revert_detail') ?
+    my $detail = $c->get_param('update_revert_detail') ?
         $original_detail
-        : $self->diff($original_detail, $c->req->param('update_detail'));
+        : $self->diff($original_detail, $c->get_param('update_detail'));
 
     if ($detail ne $old_detail) {
         $original->insert unless $original->in_storage;
@@ -298,7 +297,7 @@ sub update_moderate_anon : Private {
     my $comment = $c->stash->{comment} or die;
     my $original = $c->stash->{comment_original};
 
-    my $show_user = $c->req->param('update_show_name') ? 1 : 0;
+    my $show_user = $c->get_param('update_show_name') ? 1 : 0;
     my $anonymous = $show_user ? 0 : 1;
     my $old_anonymous = $comment->anonymous ? 1 : 0;
 
@@ -319,7 +318,7 @@ sub update_moderate_photo : Private {
 
     return unless $original->photo;
 
-    my $show_photo = $c->req->param('update_show_photo') ? 1 : 0;
+    my $show_photo = $c->get_param('update_show_photo') ? 1 : 0;
     my $old_show_photo = $comment->photo ? 1 : 0;
 
     if ($show_photo != $old_show_photo) {

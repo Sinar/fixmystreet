@@ -1,15 +1,17 @@
 package Open311::GetServiceRequestUpdates;
 
-use Moose;
+use Moo;
 use Open311;
-use FixMyStreet::App;
+use FixMyStreet::DB;
+use FixMyStreet::App::Model::PhotoSet;
 use DateTime::Format::W3CDTF;
 
 has system_user => ( is => 'rw' );
-has start_date => ( is => 'ro', default => undef );
-has end_date => ( is => 'ro', default => undef );
+has start_date => ( is => 'ro', default => sub { undef } );
+has end_date => ( is => 'ro', default => sub { undef } );
 has suppress_alerts => ( is => 'rw', default => 0 );
 has verbose => ( is => 'ro', default => 0 );
+has schema => ( is =>'ro', lazy => 1, default => sub { FixMyStreet::DB->connect } );
 
 Readonly::Scalar my $AREA_ID_BROMLEY     => 2482;
 Readonly::Scalar my $AREA_ID_OXFORDSHIRE => 2237;
@@ -17,7 +19,7 @@ Readonly::Scalar my $AREA_ID_OXFORDSHIRE => 2237;
 sub fetch {
     my $self = shift;
 
-    my $bodies = FixMyStreet::App->model('DB::Body')->search(
+    my $bodies = $self->schema->resultset('Body')->search(
         {
             send_method     => 'Open311',
             send_comments   => 1,
@@ -48,12 +50,12 @@ sub fetch {
 
         $self->suppress_alerts( $body->suppress_alerts );
         $self->system_user( $body->comment_user );
-        $self->update_comments( $o, { areas => $body->areas }, );
+        $self->update_comments( $o, $body );
     }
 }
 
 sub update_comments {
-    my ( $self, $open311, $body_details ) = @_;
+    my ( $self, $open311, $body ) = @_;
 
     my @args = ();
 
@@ -63,7 +65,7 @@ sub update_comments {
         push @args, $self->start_date;
         push @args, $self->end_date;
     # default to asking for last 2 hours worth if not Bromley
-    } elsif ( ! $body_details->{areas}->{$AREA_ID_BROMLEY} ) {
+    } elsif ( ! $body->areas->{$AREA_ID_BROMLEY} ) {
         my $end_dt = DateTime->now();
         my $start_dt = $end_dt->clone;
         $start_dt->add( hours => -2 );
@@ -75,7 +77,7 @@ sub update_comments {
     my $requests = $open311->get_service_request_updates( @args );
 
     unless ( $open311->success ) {
-        warn "Failed to fetch ServiceRequest Updates for " . join(",", keys %{$body_details->{areas}}) . ":\n" . $open311->error
+        warn "Failed to fetch ServiceRequest Updates for " . $body->name . ":\n" . $open311->error
             if $self->verbose;
         return 0;
     }
@@ -87,21 +89,25 @@ sub update_comments {
         # what problem it belongs to so just skip
         next unless $request_id;
 
+        my $comment_time = eval {
+            DateTime::Format::W3CDTF->parse_datetime( $request->{updated_datetime} || "" );
+        };
+        next if $@;
+        my $updated = DateTime::Format::W3CDTF->format_datetime($comment_time->clone->set_time_zone('UTC'));
+        next if @args && ($updated lt $args[0] || $updated gt $args[1]);
+
         my $problem;
         my $criteria = {
             external_id => $request_id,
-            # XXX This assumes that areas will actually only be one area.
-            bodies_str => { like => '%' . join(",", keys %{$body_details->{areas}}) . '%' },
         };
-        $problem = FixMyStreet::App->model('DB::Problem')->search( $criteria );
+        $problem = $self->schema->resultset('Problem')->to_body($body)->search( $criteria );
 
         if (my $p = $problem->first) {
+            next unless defined $request->{update_id} && defined $request->{description};
             my $c = $p->comments->search( { external_id => $request->{update_id} } );
 
             if ( !$c->first ) {
-                my $comment_time = DateTime::Format::W3CDTF->parse_datetime( $request->{updated_datetime} );
-
-                my $comment = FixMyStreet::App->model('DB::Comment')->new(
+                my $comment = $self->schema->resultset('Comment')->new(
                     {
                         problem => $p,
                         user => $self->system_user,
@@ -116,6 +122,17 @@ sub update_comments {
                         state => 'confirmed',
                     }
                 );
+
+                if ($request->{media_url}) {
+                    my $ua = LWP::UserAgent->new;
+                    my $res = $ua->get($request->{media_url});
+                    if ( $res->is_success && $res->content_type eq 'image/jpeg' ) {
+                        my $photoset = FixMyStreet::App::Model::PhotoSet->new({
+                            data_items => [ $res->decoded_content ],
+                        });
+                        $comment->photo($photoset->data);
+                    }
+                }
 
                 # if the comment is older than the last update
                 # do not change the status of the problem as it's
@@ -139,7 +156,7 @@ sub update_comments {
                 $comment->insert();
 
                 if ( $self->suppress_alerts ) {
-                    my @alerts = FixMyStreet::App->model('DB::Alert')->search( {
+                    my @alerts = $self->schema->resultset('Alert')->search( {
                         alert_type => 'new_updates',
                         parameter  => $p->id,
                         confirmed  => 1,
@@ -147,7 +164,7 @@ sub update_comments {
                     } );
 
                     for my $alert (@alerts) {
-                        my $alerts_sent = FixMyStreet::App->model('DB::AlertSent')->find_or_create( {
+                        my $alerts_sent = $self->schema->resultset('AlertSent')->find_or_create( {
                             alert_id  => $alert->id,
                             parameter => $comment->id,
                         } );

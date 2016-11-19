@@ -1,6 +1,18 @@
 [% INCLUDE 'admin/header.html' title=loc('Summary') -%]
+[% PROCESS 'admin/report_blocks.html' %]
 
-[% IF total_bodies == 0 %]
+<div class="fms-admin-info fms-admin-floated">
+This is the administration interface for [% site_name %]. If you
+need any help or guidance, there is <a href="http://fixmystreet.org/">plenty of
+online documentation</a>. The FixMyStreet Platform is
+<a href="https://github.com/mysociety/fixmystreet">actively supported</a> by
+its developers, and has a community of people using or working on the code.
+Please <a href="http://fixmystreet.org/community/">sign up to the mailing list
+or get in touch</a> to let us know about your use of the FixMyStreet Platform,
+and to receive notices of updates.
+</div>
+
+[% IF bodies.size == 0 %]
   <p class="fms-admin-info">
     [% loc('Currently no bodies have been created.') %]
     <br>
@@ -8,43 +20,55 @@
   </p>
 [% END %]
 
-[%- BLOCK states -%]
-<h2>[% title %]</h2>
+<form method="get" action="[% c.uri_for('reports') %]" accept-charset="utf-8">
+    <p><label for="search_reports">[% loc('Search Reports') %]</label>
+        <input type="text" class="form-control" name="search"  size="30" id="search_reports" value="[% searched | html %]">
+</form>
 
-[%- FOREACH state IN object.keys.sort %]
-[%- '<ul>' IF loop.first %]
-    <li>[% object.$state %] [% state %]</li>
-[%- "\n</ul>" IF loop.last %]
-[%- END %]
-[% END -%]
+<form method="get" action="[% c.uri_for('users') %]" accept-charset="utf-8">
+    <p><label for="search_users">[% loc('Search Users') %]</label>
+        <input type="text" class="form-control" name="search"  size="30" id="search_users" value="[% searched | html %]">
+</form>
 
-    <ul>
-        <li>[% tprintf( loc('<strong>%d</strong> live problems'), total_problems_live ) %];
-        [% tprintf( loc('from %d different users'), total_problems_users ) %]</li>
-        <li>[% tprintf( loc('%d live updates'), comments.confirmed || 0 ) %]</li>
-        <li>[% tprintf( loc('%d confirmed alerts, %d unconfirmed'), alerts.1, alerts.0) %]</li>
-        <li>[% tprintf( loc('%d questionnaires sent &ndash; %d answered (%s%%)'), questionnaires.total, questionnaires.1, questionnaires_pc) %]</li>
-        <li>[% tprintf( loc('%d council contacts &ndash; %d confirmed, %d unconfirmed'), contacts.total, contacts.1, contacts.0) %]</li>
-    </ul>
+[% IF c.user.is_superuser %]
+  <form method="get" action="[% c.uri_for('bodies') %]">
+  <label for="search_body">[% loc('Edit body details') %]</label>
+  <select class="form-control" id="search_body" name="body">
+  [% FOREACH body IN bodies %]
+    [%- SET id = body.id %]
+      <option[% IF body.deleted %] class="adminhidden"[% END %] value="[% body.id %]">
+          [% body.name | html %]
+          [%- IF body.parent %], [% body.parent.name | html %][% END -%]
+      </option>
+  [% END %]
+  </select>
+  <input type="submit" class="btn" value="[% loc('Go') %]">
+  </form>
+[% END %]
+
+[% IF unsent_reports.size %]
+<h2>[% loc('Reports waiting to be sent') %]</h2>
+
+<table cellspacing="0" cellpadding="2" border="1">
+    <tr>
+        <th>[% loc('ID') %]</th>
+        <th>[% loc('Title') %]</th>
+        <th>[% loc('Name') %]</th>
+        <th>[% loc('Body') %]</th>
+        <th>[% loc('State') %]</th>
+        <th>*</th>
+    </tr>
+    [% INCLUDE 'admin/problem_row.html' problems = unsent_reports %]
+</table>
+[% END %]
+
+<h2>[% loc('Stats') %]</h2>
+[% INCLUDE 'status/stats.html' admin_include_users=1 %]
 
 [% IF c.cobrand.admin_show_creation_graph -%]
     <p>
         <a href="[% c.config.BASE_URL %]/fms-live-creation.png" class="admin-offsite-link">[% loc('Graph of problem creation by status over time') %]</a>
     </p>
 [% END -%]
-
-[% PROCESS states title=loc('Problem breakdown by state') object=problems %]
-
-[% PROCESS states title=loc('Update breakdown by state') object=comments %]
-
-[% FOREACH category IN categories %]
-    [% IF loop.first %]
-    <h2>[% loc('Category fix rate for problems > 4 weeks old') %]</h2>
-    <table>
-        <tr><th>[% loc('Category') %]</th><th>[% loc('Total') %]</th><th>[% loc('Fixed') %]</th></tr>
-    [% END %]
-        <tr><td>[% category.key %]</td><td>[% category.value.total %]</td><td>[% category.value.fixed / category.value.total * 100 | format('%.1f') %]%</td></tr>
-    [% '</table>' IF loop.last %]
-[% END %]
 
 [% INCLUDE 'admin/footer.html' %]

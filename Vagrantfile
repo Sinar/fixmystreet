@@ -29,16 +29,40 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.provision :shell, :inline => <<-EOS
     # To prevent "dpkg-preconfigure: unable to re-open stdin: No such file or directory" warnings
     export DEBIAN_FRONTEND=noninteractive
+    # Make sure git submodules are checked out!
+    if [ ! -e fixmystreet/commonlib/.git ]; then
+      echo "Checking out submodules"
+      apt-get -qq install -y git >/dev/null
+      cd fixmystreet
+      git submodule --quiet update --init --recursive
+      cd commonlib
+      git config core.worktree "../../../commonlib"
+      echo "gitdir: ../.git/modules/commonlib" > .git
+      cd ../..
+    fi
     # Fetch and run install script
     wget -O install-site.sh --no-verbose https://github.com/mysociety/commonlib/raw/master/bin/install-site.sh
     sh install-site.sh --dev fixmystreet vagrant 127.0.0.1.xip.io
-    # We want to be on port 3000 for development
-    sed -i -r -e "s,^( *BASE_URL: .*)',\\1:3000'," fixmystreet/conf/general.yml
-    # All done
-    echo "****************"
-    echo "You can now ssh into your vagrant box: vagrant ssh"
-    echo "The website code is found in: ~/fixmystreet"
-    echo "You can run the dev server with: bin/cron-wrapper script/fixmystreet_app_server.pl [-d] [-r] [--fork]"
+    SUCCESS=$?
+    # Even if it failed somehow, we might as well update the port if possible
+    if [ -e fixmystreet/conf/general.yml ]; then
+        # We want to be on port 3000 for development
+        sed -i -r -e "s,^( *BASE_URL: .*)',\\1:3000'," fixmystreet/conf/general.yml
+    fi
+    # Create a superuser for the admin
+    su vagrant -c 'fixmystreet/bin/createsuperuser superuser@example.org password'
+    if [ $SUCCESS -eq 0 ]; then
+        # All done
+        echo "****************"
+        echo "You can now ssh into your vagrant box: vagrant ssh"
+        echo "The website code is found in: ~/fixmystreet"
+        echo "You can run the dev server with: script/fixmystreet_app_server.pl [-d] [-r] [--fork]"
+        echo "Access the admin with username: superuser@example.org and password: password"
+    else
+        echo "Unfortunately, something appears to have gone wrong with the installation."
+        echo "Please see above for any errors, and do ask on our mailing list for help."
+        exit 1
+    fi
   EOS
 
   # Create a private network, which allows host-only access to the machine

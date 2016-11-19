@@ -1,33 +1,30 @@
 use strict;
 use warnings;
 use Test::More;
+use LWP::Protocol::PSGI;
 
+use t::Mock::MapIt;
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new;
 
-my $secret = FixMyStreet::App->model('DB::Secret')->search();
+my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
-# don't explode if there's nothing in the secret table
-if ( $secret == 0 ) {
-    diag "You need to put an entry in the secret table for the admin tests to run";
-    plan skip_all => 'No entry in secret table';
-}
+my $user2 = $mech->create_user_ok('test2@example.com', name => 'Test User 2');
 
-my $user =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
-ok $user, "created test user";
+my $superuser = $mech->create_user_ok('superuser@example.com', name => 'Super User', is_superuser => 1);
 
-my $user2 =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test2@example.com', name => 'Test User 2' } );
-ok $user2, "created second test user";
+my $oxfordshire = $mech->create_body_ok(2237, 'Oxfordshire County Council', id => 2237);
+my $oxfordshirecontact = $mech->create_contact_ok( body_id => $oxfordshire->id, category => 'Potholes', email => 'potholes@example.com' );
+$mech->create_contact_ok( body_id => $oxfordshire->id, category => 'Traffic lights', email => 'lights@example.com' );
+my $oxfordshireuser = $mech->create_user_ok('counciluser@example.com', name => 'Council User', from_body => $oxfordshire);
 
+my $oxford = $mech->create_body_ok(2421, 'Oxford City Council');
+$mech->create_contact_ok( body_id => $oxford->id, category => 'Graffiti', email => 'graffiti@example.net' );
 
-my $user3 =
-  FixMyStreet::App->model('DB::User')
-  ->find( { email => 'test3@example.com', name => 'Test User 2' } );
+my $bromley = $mech->create_body_ok(2482, 'Bromley Council', id => 2482);
+
+my $user3 = $mech->create_user_ok('test3@example.com', name => 'Test User 2');
 
 if ( $user3 ) {
   $mech->delete_user( $user3 );
@@ -70,12 +67,14 @@ my $report = FixMyStreet::App->model('DB::Problem')->find_or_create(
 
 my $alert = FixMyStreet::App->model('DB::Alert')->find_or_create(
     {
-        alert_type => 'new_updates',
-        parameter => $report->id,
+        alert_type => 'area_problems',
+        parameter => 2482,
         confirmed => 1,
         user => $user,
     },
 );
+
+$mech->log_in_ok( $superuser->email );
 
 subtest 'check summary counts' => sub {
     my $problems = FixMyStreet::App->model('DB::Problem')->search( { state => { -in => [qw/confirmed fixed closed investigating planned/, 'in progress', 'fixed - user', 'fixed - council'] } } );
@@ -88,7 +87,7 @@ subtest 'check summary counts' => sub {
     FixMyStreet::App->model('DB::Problem')->search( { bodies_str => 2489 } )->update( { bodies_str => 1 } );
 
     my $q = FixMyStreet::App->model('DB::Questionnaire')->find_or_new( { problem => $report, });
-    $q->whensent( \'ms_current_timestamp()' );
+    $q->whensent( \'current_timestamp' );
     $q->in_storage ? $q->update : $q->insert;
 
     my $alerts =  FixMyStreet::App->model('DB::Alert')->search( { confirmed => { '>' => 0 } } );
@@ -111,9 +110,9 @@ subtest 'check summary counts' => sub {
     $mech->content_contains( "$q_count questionnaires sent" );
 
     FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ 'barnet' ],
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
     }, sub {
-        ok $mech->host('barnet.fixmystreet.com');
+        ok $mech->host('oxfordshire.fixmystreet.com');
 
         $mech->get_ok('/admin');
         $mech->title_like(qr/Summary/);
@@ -122,11 +121,11 @@ subtest 'check summary counts' => sub {
         my ($num_alerts) = $mech->content =~ /(\d+) confirmed alerts/;
         my ($num_qs) = $mech->content =~ /(\d+) questionnaires sent/;
 
-        $report->bodies_str(2489);
-        $report->cobrand('barnet');
+        $report->bodies_str(2237);
+        $report->cobrand('oxfordshire');
         $report->update;
 
-        $alert->cobrand('barnet');
+        $alert->cobrand('oxfordshire');
         $alert->update;
 
         $mech->get_ok('/admin');
@@ -155,29 +154,30 @@ FixMyStreet::override_config {
 }, sub {
 
 my $body = $mech->create_body_ok(2650, 'Aberdeen City Council');
-$mech->get_ok('/admin/body/2650');
+$mech->get_ok('/admin/body/' . $body->id);
 $mech->content_contains('Aberdeen City Council');
 $mech->content_like(qr{AB\d\d});
 $mech->content_contains("http://www.example.org/around");
 
 subtest 'check contact creation' => sub {
     my $contact = FixMyStreet::App->model('DB::Contact')->search(
-        { body_id => 2650, category => [ 'test category', 'test/category' ] }
+        { body_id => $body->id, category => [ 'test category', 'test/category' ] }
     );
     $contact->delete_all;
 
     my $history = FixMyStreet::App->model('DB::ContactsHistory')->search(
-        { body_id => 2650, category => [ 'test category', 'test/category' ] }
+        { body_id => $body->id, category => [ 'test category', 'test/category' ] }
     );
     $history->delete_all;
 
-    $mech->get_ok('/admin/body/2650');
+    $mech->get_ok('/admin/body/' . $body->id);
 
     $mech->submit_form_ok( { with_fields => { 
         category   => 'test category',
         email      => 'test@example.com',
         note       => 'test note',
         non_public => undef,
+        confirmed  => 0,
     } } );
 
     $mech->content_contains( 'test category' );
@@ -201,12 +201,12 @@ subtest 'check contact creation' => sub {
         note     => 'test/note',
         non_public => 'on',
     } } );
-    $mech->get_ok('/admin/body_edit/2650/test/category');
+    $mech->get_ok('/admin/body/' . $body->id . '/test/category');
 
 };
 
 subtest 'check contact editing' => sub {
-    $mech->get_ok('/admin/body_edit/2650/test%20category');
+    $mech->get_ok('/admin/body/' . $body->id .'/test%20category');
 
     $mech->submit_form_ok( { with_fields => { 
         email    => 'test2@example.com',
@@ -219,7 +219,7 @@ subtest 'check contact editing' => sub {
     $mech->content_contains( '<td>test2 note' );
     $mech->content_contains( 'Private:&nbsp;No' );
 
-    $mech->get_ok('/admin/body_edit/2650/test%20category');
+    $mech->get_ok('/admin/body/' . $body->id . '/test%20category');
     $mech->submit_form_ok( { with_fields => { 
         email    => 'test2@example.com',
         note     => 'test2 note',
@@ -228,29 +228,29 @@ subtest 'check contact editing' => sub {
 
     $mech->content_contains( 'Private:&nbsp;Yes' );
 
-    $mech->get_ok('/admin/body_edit/2650/test%20category');
+    $mech->get_ok('/admin/body/' . $body->id . '/test%20category');
     $mech->content_contains( '<td><strong>test2@example.com' );
 };
 
 subtest 'check contact updating' => sub {
-    $mech->get_ok('/admin/body_edit/2650/test%20category');
+    $mech->get_ok('/admin/body/' . $body->id . '/test%20category');
     $mech->content_like(qr{test2\@example.com</strong>[^<]*</td>[^<]*<td>No}s);
 
-    $mech->get_ok('/admin/body/2650');
+    $mech->get_ok('/admin/body/' . $body->id);
 
     $mech->form_number( 1 );
     $mech->tick( 'confirmed', 'test category' );
     $mech->submit_form_ok({form_number => 1});
 
     $mech->content_like(qr'test2@example.com</td>[^<]*<td>\s*Confirmed:&nbsp;Yes's);
-    $mech->get_ok('/admin/body_edit/2650/test%20category');
+    $mech->get_ok('/admin/body/' . $body->id . '/test%20category');
     $mech->content_like(qr{test2\@example.com[^<]*</td>[^<]*<td><strong>Yes}s);
 };
 
 $body->update({ send_method => undef }); 
 
 subtest 'check open311 configuring' => sub {
-    $mech->get_ok('/admin/body/2650');
+    $mech->get_ok('/admin/body/' . $body->id);
     $mech->content_lacks('Council contacts configured via Open311');
 
     $mech->form_number(3);
@@ -266,9 +266,9 @@ subtest 'check open311 configuring' => sub {
         }
     );
     $mech->content_contains('Council contacts configured via Open311');
-    $mech->content_contains('Configuration updated - contacts will be generated automatically later');
+    $mech->content_contains('Values updated');
 
-    my $conf = FixMyStreet::App->model('DB::Body')->find( 2650 );
+    my $conf = FixMyStreet::App->model('DB::Body')->find( $body->id );
     is $conf->endpoint, 'http://example.com/open311', 'endpoint configured';
     is $conf->api_key, 'api key', 'api key configured';
     is $conf->jurisdiction, 'mySociety', 'jurisdiction configures';
@@ -286,16 +286,16 @@ subtest 'check open311 configuring' => sub {
         }
     );
 
-    $mech->content_contains('Configuration updated');
+    $mech->content_contains('Values updated');
 
-    $conf = FixMyStreet::App->model('DB::Body')->find( 2650 );
+    $conf = FixMyStreet::App->model('DB::Body')->find( $body->id );
     is $conf->endpoint, 'http://example.org/open311', 'endpoint updated';
     is $conf->api_key, 'new api key', 'api key updated';
     is $conf->jurisdiction, 'open311', 'jurisdiction configures';
 };
 
 subtest 'check text output' => sub {
-    $mech->get_ok('/admin/body/2650?text=1');
+    $mech->get_ok('/admin/body/' . $body->id . '?text=1');
     is $mech->content_type, 'text/plain';
     $mech->content_contains('test category');
 };
@@ -333,7 +333,6 @@ foreach my $test (
             non_public => undef,
         },
         changes     => { title => 'Edited Report', },
-        log_count   => 1,
         log_entries => [qw/edit/],
         resend      => 0,
     },
@@ -350,7 +349,6 @@ foreach my $test (
             non_public => undef,
         },
         changes     => { detail => 'Edited Detail', },
-        log_count   => 2,
         log_entries => [qw/edit edit/],
         resend      => 0,
     },
@@ -367,7 +365,6 @@ foreach my $test (
             non_public => undef,
         },
         changes     => { name => 'Edited User', },
-        log_count   => 3,
         log_entries => [qw/edit edit edit/],
         resend      => 0,
         user        => $user,
@@ -387,7 +384,6 @@ foreach my $test (
         changes => {
             flagged    => 'on',
         },
-        log_count   => 4,
         log_entries => [qw/edit edit edit edit/],
         resend      => 0,
         user        => $user,
@@ -405,7 +401,6 @@ foreach my $test (
             non_public => undef,
         },
         changes     => { email => $user2->email, },
-        log_count   => 5,
         log_entries => [qw/edit edit edit edit edit/],
         resend      => 0,
         user        => $user2,
@@ -423,8 +418,7 @@ foreach my $test (
             non_public => undef,
         },
         changes   => { state => 'unconfirmed' },
-        log_count => 6,
-        log_entries => [qw/state_change edit edit edit edit edit/],
+        log_entries => [qw/edit state_change edit edit edit edit edit/],
         resend      => 0,
     },
     {
@@ -440,8 +434,7 @@ foreach my $test (
             non_public => undef,
         },
         changes   => { state => 'confirmed' },
-        log_count => 7,
-        log_entries => [qw/state_change state_change edit edit edit edit edit/],
+        log_entries => [qw/edit state_change edit state_change edit edit edit edit edit/],
         resend      => 0,
     },
     {
@@ -457,9 +450,8 @@ foreach my $test (
             non_public => undef,
         },
         changes   => { state => 'fixed' },
-        log_count => 8,
         log_entries =>
-          [qw/state_change state_change state_change edit edit edit edit edit/],
+          [qw/edit state_change edit state_change edit state_change edit edit edit edit edit/],
         resend => 0,
     },
     {
@@ -475,9 +467,8 @@ foreach my $test (
             non_public => undef,
         },
         changes     => { state => 'hidden' },
-        log_count   => 9,
         log_entries => [
-            qw/state_change state_change state_change state_change edit edit edit edit edit/
+            qw/edit state_change edit state_change edit state_change edit state_change edit edit edit edit edit/
         ],
         resend => 0,
     },
@@ -497,9 +488,8 @@ foreach my $test (
             state     => 'confirmed',
             anonymous => 1,
         },
-        log_count   => 11,
         log_entries => [
-            qw/edit state_change state_change state_change state_change state_change edit edit edit edit edit/
+            qw/edit state_change edit state_change edit state_change edit state_change edit state_change edit edit edit edit edit/
         ],
         resend => 0,
     },
@@ -516,9 +506,8 @@ foreach my $test (
             non_public => undef,
         },
         changes     => {},
-        log_count   => 12,
         log_entries => [
-            qw/resend edit state_change state_change state_change state_change state_change edit edit edit edit edit/
+            qw/resend edit state_change edit state_change edit state_change edit state_change edit state_change edit edit edit edit edit/
         ],
         resend => 1,
     },
@@ -537,9 +526,8 @@ foreach my $test (
         changes     => {
             non_public => 'on',
         },
-        log_count   => 13,
         log_entries => [
-            qw/edit resend edit state_change state_change state_change state_change state_change edit edit edit edit edit/
+            qw/edit resend edit state_change edit state_change edit state_change edit state_change edit state_change edit edit edit edit edit/
         ],
         resend => 0,
     },
@@ -549,6 +537,7 @@ foreach my $test (
         $log_entries->reset;
         $mech->get_ok("/admin/report_edit/$report_id");
 
+        @{$test->{fields}}{'external_id', 'external_body', 'external_team', 'category'} = (13, "", "", "Other");
         is_deeply( $mech->visible_form_values(), $test->{fields}, 'initial form values' );
 
         my $new_fields = {
@@ -563,12 +552,12 @@ foreach my $test (
         }
 
         is_deeply( $mech->visible_form_values(), $new_fields, 'changed form values' );
-        is $log_entries->count, $test->{log_count}, 'log entry count';
+        is $log_entries->count, scalar @{$test->{log_entries}}, 'log entry count';
         is $log_entries->next->action, $_, 'log entry added' for @{ $test->{log_entries} };
 
         $report->discard_changes;
 
-        if ( $report->state eq 'confirmed' ) {
+        if ($report->state eq 'confirmed' && $report->whensent) {
             $mech->content_contains( 'type="submit" name="resend"', 'resend button' );
         } else {
             $mech->content_lacks( 'type="submit" name="resend"', 'no resend button' );
@@ -590,6 +579,34 @@ foreach my $test (
     };
 }
 
+FixMyStreet::override_config {
+    MAPIT_URL => 'http://mapit.mysociety.org/',
+    ALLOWED_COBRANDS => 'fixmystreet',
+}, sub {
+
+subtest 'change report category' => sub {
+    my ($ox_report) = $mech->create_problems_for_body(1, $oxfordshire->id, 'Unsure', {
+        category => 'Potholes',
+        areas => ',2237,2421,', # Cached used by categories_for_point...
+        latitude => 51.7549262252,
+        longitude => -1.25617899435,
+        whensent => \'current_timestamp',
+    });
+    $mech->get_ok("/admin/report_edit/" . $ox_report->id);
+
+    $mech->submit_form_ok( { with_fields => { category => 'Traffic lights' } }, 'form_submitted' );
+    $ox_report->discard_changes;
+    is $ox_report->category, 'Traffic lights';
+    isnt $ox_report->whensent, undef;
+
+    $mech->submit_form_ok( { with_fields => { category => 'Graffiti' } }, 'form_submitted' );
+    $ox_report->discard_changes;
+    is $ox_report->category, 'Graffiti';
+    is $ox_report->whensent, undef;
+};
+
+};
+
 subtest 'change email to new user' => sub {
     $log_entries->delete;
     $mech->get_ok("/admin/report_edit/$report_id");
@@ -599,9 +616,13 @@ subtest 'change email to new user' => sub {
         state  => $report->state,
         name   => $report->name,
         email  => $report->user->email,
+        category => 'Other',
         anonymous => 1,
         flagged => 'on',
         non_public => 'on',
+        external_id => '13',
+        external_body => '',
+        external_team => '',
     };
 
     is_deeply( $mech->visible_form_values(), $fields, 'initial form values' );
@@ -851,7 +872,9 @@ for my $test (
     };
 }
 
-$mech->create_body_ok(2504, 'Westminster City Council');
+my $westminster = $mech->create_body_ok(2504, 'Westminster City Council');
+$report->bodies_str($westminster->id);
+$report->update;
 
 for my $test (
     {
@@ -871,8 +894,8 @@ for my $test (
         update_fixed  => 0,
         update_reopen => 0,
         update_state  => undef,
-        user_body     => 2504,
-        content       => 'user is from same council as problem - 2504',
+        user_body     => $westminster->id,
+        content       => 'user is from same council as problem - ' . $westminster->id,
     },
     {
         desc          => 'update changed problem state',
@@ -881,7 +904,7 @@ for my $test (
         update_fixed  => 0,
         update_reopen => 0,
         update_state  => 'planned',
-        user_body     => 2504,
+        user_body     => $westminster->id,
         content       => 'Update changed problem state to planned',
     },
     {
@@ -1081,7 +1104,7 @@ subtest 'report search' => sub {
 
 subtest 'search abuse' => sub {
     $mech->get_ok( '/admin/users?search=example' );
-    $mech->content_like(qr{test4\@example.com.*</td>\s*<td>.*?</td>\s*<td>\(Email in abuse table});
+    $mech->content_like(qr{test4\@example.com.*</td>\s*<td>.*?</td>\s*<td>\(Email in abuse table}s);
 };
 
 subtest 'show flagged entries' => sub {
@@ -1096,7 +1119,7 @@ subtest 'show flagged entries' => sub {
     $mech->content_contains( $user->email );
 };
 
-$mech->create_body_ok(2509, 'Haringey Borough Council');
+my $haringey = $mech->create_body_ok(2509, 'Haringey Borough Council');
 
 subtest 'user search' => sub {
     $mech->get_ok('/admin/users');
@@ -1110,10 +1133,34 @@ subtest 'user search' => sub {
 
     $mech->content_like( qr{user_edit/$u_id">Edit</a>} );
 
-    $user->from_body(2509);
+    $user->from_body($haringey->id);
     $user->update;
-    $mech->get_ok('/admin/users?search=2509' );
+    $mech->get_ok('/admin/users?search=' . $haringey->id );
     $mech->content_contains('Haringey');
+};
+
+subtest 'search does not show user from another council' => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
+    }, sub {
+        $mech->get_ok('/admin/users');
+        $mech->get_ok('/admin/users?search=' . $user->name);
+
+        $mech->content_contains( "Searching found no users." );
+
+        $mech->get_ok('/admin/users?search=' . $user->email);
+        $mech->content_contains( "Searching found no users." );
+    };
+};
+
+subtest 'user_edit does not show user from another council' => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
+    }, sub {
+        $mech->get('/admin/user_edit/' . $user->id);
+        ok !$mech->res->is_success(), "want a bad response";
+        is $mech->res->code, 404, "got 404";
+    };
 };
 
 $log_entries = FixMyStreet::App->model('DB::AdminLog')->search(
@@ -1131,99 +1178,196 @@ is $log_entries->count, 0, 'no admin log entries';
 $user->flagged( 0 );
 $user->update;
 
-$mech->create_body_ok(2607, 'Southend-on-Sea Borough Council');
+my $southend = $mech->create_body_ok(2607, 'Southend-on-Sea Borough Council');
 
-for my $test (
-    {
-        desc => 'edit user name',
-        fields => {
-            name => 'Test User',
-            email => 'test@example.com',
-            body => 2509,
-            flagged => undef,
-        },
-        changes => {
-            name => 'Changed User',
-        },
-        log_count => 1,
-        log_entries => [qw/edit/],
-    },
-    {
-        desc => 'edit user email',
-        fields => {
-            name => 'Changed User',
-            email => 'test@example.com',
-            body => 2509,
-            flagged => undef,
-        },
-        changes => {
-            email => 'changed@example.com',
-        },
-        log_count => 2,
-        log_entries => [qw/edit edit/],
-    },
-    {
-        desc => 'edit user body',
-        fields => {
-            name => 'Changed User',
-            email => 'changed@example.com',
-            body => 2509,
-            flagged => undef,
-        },
-        changes => {
-            body => 2607,
-        },
-        log_count => 3,
-        log_entries => [qw/edit edit edit/],
-    },
-    {
-        desc => 'edit user flagged',
-        fields => {
-            name => 'Changed User',
-            email => 'changed@example.com',
-            body => 2607,
-            flagged => undef,
-        },
-        changes => {
-            flagged => 'on',
-        },
-        log_count => 4,
-        log_entries => [qw/edit edit edit edit/],
-    },
-    {
-        desc => 'edit user remove flagged',
-        fields => {
-            name => 'Changed User',
-            email => 'changed@example.com',
-            body => 2607,
-            flagged => 'on',
-        },
-        changes => {
-            flagged => undef,
-        },
-        log_count => 4,
-        log_entries => [qw/edit edit edit edit/],
-    },
-) {
-    subtest $test->{desc} => sub {
-        $mech->get_ok( '/admin/user_edit/' . $user->id );
+my %default_perms = (
+    "permissions[moderate]" => undef,
+    "permissions[planned_reports]" => undef,
+    "permissions[report_edit]" => undef,
+    "permissions[report_edit_category]" => undef,
+    "permissions[report_edit_priority]" => undef,
+    "permissions[report_inspect]" => undef,
+    "permissions[report_instruct]" => undef,
+    "permissions[contribute_as_another_user]" => undef,
+    "permissions[contribute_as_body]" => undef,
+    "permissions[user_edit]" => undef,
+    "permissions[user_manage_permissions]" => undef,
+    "permissions[user_assign_body]" => undef,
+    "permissions[user_assign_areas]" => undef,
+    "permissions[template_edit]" => undef,
+    "permissions[responsepriority_edit]" => undef,
+    "permissions[category_edit]" => undef,
+    trusted_bodies => undef,
+);
 
-        my $visible = $mech->visible_form_values;
-        is_deeply $visible, $test->{fields}, 'expected user';
+FixMyStreet::override_config {
+    MAPIT_URL => 'http://mapit.uk/',
+}, sub {
+    LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.uk');
+    for my $test (
+        {
+            desc => 'edit user name',
+            fields => {
+                name => 'Test User',
+                email => 'test@example.com',
+                body => $haringey->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                name => 'Changed User',
+            },
+            log_count => 1,
+            log_entries => [qw/edit/],
+        },
+        {
+            desc => 'edit user email',
+            fields => {
+                name => 'Changed User',
+                email => 'test@example.com',
+                body => $haringey->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                email => 'changed@example.com',
+            },
+            log_count => 2,
+            log_entries => [qw/edit edit/],
+        },
+        {
+            desc => 'edit user body',
+            fields => {
+                name => 'Changed User',
+                email => 'changed@example.com',
+                body => $haringey->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                body => $southend->id,
+            },
+            log_count => 3,
+            log_entries => [qw/edit edit edit/],
+        },
+        {
+            desc => 'edit user flagged',
+            fields => {
+                name => 'Changed User',
+                email => 'changed@example.com',
+                body => $southend->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                flagged => 'on',
+            },
+            log_count => 4,
+            log_entries => [qw/edit edit edit edit/],
+        },
+        {
+            desc => 'edit user remove flagged',
+            fields => {
+                name => 'Changed User',
+                email => 'changed@example.com',
+                body => $southend->id,
+                phone => '',
+                flagged => 'on',
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                flagged => undef,
+            },
+            log_count => 4,
+            log_entries => [qw/edit edit edit edit/],
+        },
+        {
+            desc => 'edit user add is_superuser',
+            fields => {
+                name => 'Changed User',
+                email => 'changed@example.com',
+                body => $southend->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => undef,
+                area_id => '',
+                %default_perms,
+            },
+            changes => {
+                is_superuser => 'on',
+            },
+            removed => [
+                keys %default_perms,
+            ],
+            log_count => 5,
+            log_entries => [qw/edit edit edit edit edit/],
+        },
+        {
+            desc => 'edit user remove is_superuser',
+            fields => {
+                name => 'Changed User',
+                email => 'changed@example.com',
+                body => $southend->id,
+                phone => '',
+                flagged => undef,
+                is_superuser => 'on',
+                area_id => '',
+            },
+            changes => {
+                is_superuser => undef,
+            },
+            added => {
+                %default_perms,
+            },
+            log_count => 5,
+            log_entries => [qw/edit edit edit edit edit/],
+        },
+    ) {
+        subtest $test->{desc} => sub {
+            $mech->get_ok( '/admin/user_edit/' . $user->id );
 
-        my $expected = {
-            %{ $test->{fields} },
-            %{ $test->{changes} }
+            my $visible = $mech->visible_form_values;
+            is_deeply $visible, $test->{fields}, 'expected user';
+
+            my $expected = {
+                %{ $test->{fields} },
+                %{ $test->{changes} }
+            };
+
+            $mech->submit_form_ok( { with_fields => $expected } );
+
+            # Some actions cause visible fields to be added/removed
+            foreach my $x (@{ $test->{removed} }) {
+                delete $expected->{$x};
+            }
+            if ( $test->{added} ) {
+                $expected = {
+                    %$expected,
+                    %{ $test->{added} }
+                };
+            }
+
+            $visible = $mech->visible_form_values;
+            is_deeply $visible, $expected, 'user updated';
+
+            $mech->content_contains( 'Updated!' );
         };
-
-        $mech->submit_form_ok( { with_fields => $expected } );
-
-        $visible = $mech->visible_form_values;
-        is_deeply $visible, $expected, 'user updated';
-
-        $mech->content_contains( 'Updated!' );
-    };
-}
+    }
+};
 
 subtest "Test setting a report from unconfirmed to something else doesn't cause a front end error" => sub {
     $report->update( { confirmed => undef, state => 'unconfirmed', non_public => 0 } );
@@ -1234,9 +1378,175 @@ subtest "Test setting a report from unconfirmed to something else doesn't cause 
     $mech->get_ok("/report/$report_id");
 };
 
-$mech->delete_user( $user );
-$mech->delete_user( $user2 );
-$mech->delete_user( $user3 );
-$mech->delete_user( 'test4@example.com' );
+subtest "Check admin_base_url" => sub {
+    my $rs = FixMyStreet::App->model('DB::Problem');
+    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($report->cobrand)->new();
 
-done_testing();
+    is ($report->admin_url($cobrand),
+        (sprintf 'http://www.example.org/admin/report_edit/%d', $report_id),
+        'get_admin_url OK');
+};
+
+# Finished with the superuser tests
+$mech->log_out_ok;
+
+subtest "Users without from_body can't access admin" => sub {
+    $user->from_body( undef );
+    $user->update;
+
+    $mech->log_in_ok( $user->email );
+
+    ok $mech->get('/admin');
+    is $mech->res->code, 403, "got 403";
+
+    $mech->log_out_ok;
+};
+
+subtest "Users with from_body can access their own council's admin" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
+    }, sub {
+        $mech->log_in_ok( $oxfordshireuser->email );
+
+        $mech->get_ok('/admin');
+        $mech->content_contains( 'FixMyStreet admin:' );
+
+        $mech->log_out_ok;
+    };
+};
+
+subtest "Users with from_body can't access another council's admin" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'bristol' ],
+    }, sub {
+        $mech->log_in_ok( $oxfordshireuser->email );
+
+        ok $mech->get('/admin');
+        is $mech->res->code, 403, "got 403";
+
+        $mech->log_out_ok;
+    };
+};
+
+subtest "Users with from_body can't access fixmystreet.com admin" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'fixmystreet' ],
+    }, sub {
+        $mech->log_in_ok( $oxfordshireuser->email );
+
+        ok $mech->get('/admin');
+        is $mech->res->code, 403, "got 403";
+
+        $mech->log_out_ok;
+    };
+};
+
+subtest "response templates can be added" => sub {
+    is $oxfordshire->response_templates->count, 0, "No response templates yet";
+    $mech->log_in_ok( $superuser->email );
+    $mech->get_ok( "/admin/templates/" . $oxfordshire->id . "/new" );
+
+    my $fields = {
+        title => "Report acknowledgement",
+        text => "Thank you for your report. We will respond shortly.",
+        auto_response => undef,
+        "contacts[".$oxfordshirecontact->id."]" => 1,
+    };
+    $mech->submit_form_ok( { with_fields => $fields } );
+
+     is $oxfordshire->response_templates->count, 1, "Response template was added";
+};
+
+subtest "response templates are included on page" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
+    }, sub {
+        $report->update({ category => $oxfordshirecontact->category, bodies_str => $oxfordshire->id });
+        $mech->log_in_ok( $oxfordshireuser->email );
+
+        $mech->get_ok("/report/" . $report->id);
+        $mech->content_contains( $oxfordshire->response_templates->first->text );
+
+        $mech->log_out_ok;
+    };
+};
+
+$mech->log_in_ok( $superuser->email );
+
+subtest "response priorities can be added" => sub {
+    is $oxfordshire->response_priorities->count, 0, "No response priorities yet";
+    $mech->get_ok( "/admin/responsepriorities/" . $oxfordshire->id . "/new" );
+
+    my $fields = {
+        name => "Cat 1A",
+        description => "Fixed within 24 hours",
+        deleted => undef,
+        "contacts[".$oxfordshirecontact->id."]" => 1,
+    };
+    $mech->submit_form_ok( { with_fields => $fields } );
+
+     is $oxfordshire->response_priorities->count, 1, "Response template was added to body";
+     is $oxfordshirecontact->response_priorities->count, 1, "Response template was added to contact";
+};
+
+subtest "response priorities can be listed" => sub {
+    $mech->get_ok( "/admin/responsepriorities/" . $oxfordshire->id );
+
+    $mech->content_contains( $oxfordshire->response_priorities->first->name );
+    $mech->content_contains( $oxfordshire->response_priorities->first->description );
+};
+
+subtest "response priorities are limited by body" => sub {
+    my $bromleypriority = $bromley->response_priorities->create( {
+        deleted => 0,
+        name => "Bromley Cat 0",
+    } );
+
+     is $bromley->response_priorities->count, 1, "Response template was added to Bromley";
+     is $oxfordshire->response_priorities->count, 1, "Response template wasn't added to Oxfordshire";
+
+     $mech->get_ok( "/admin/responsepriorities/" . $oxfordshire->id );
+     $mech->content_lacks( $bromleypriority->name );
+
+     $mech->get_ok( "/admin/responsepriorities/" . $bromley->id );
+     $mech->content_contains( $bromleypriority->name );
+};
+
+$mech->log_out_ok;
+
+subtest "response priorities can't be viewed across councils" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshire' ],
+    }, sub {
+        $oxfordshireuser->user_body_permissions->create({
+            body => $oxfordshire,
+            permission_type => 'responsepriority_edit',
+        });
+        $mech->log_in_ok( $oxfordshireuser->email );
+        $mech->get_ok( "/admin/responsepriorities/" . $oxfordshire->id );
+        $mech->content_contains( $oxfordshire->response_priorities->first->name );
+
+
+        $mech->get( "/admin/responsepriorities/" . $bromley->id );
+        ok !$mech->res->is_success(), "want a bad response";
+        is $mech->res->code, 404, "got 404";
+
+        my $bromley_priority_id = $bromley->response_priorities->first->id;
+        $mech->get( "/admin/responsepriorities/" . $bromley->id . "/" . $bromley_priority_id );
+        ok !$mech->res->is_success(), "want a bad response";
+        is $mech->res->code, 404, "got 404";
+    };
+};
+
+END {
+    $mech->delete_user( $user );
+    $mech->delete_user( $user2 );
+    $mech->delete_user( $user3 );
+    $mech->delete_user( $superuser );
+    $mech->delete_user( 'test4@example.com' );
+    $mech->delete_body( $oxfordshire );
+    $mech->delete_body( $oxford );
+    $mech->delete_body( $bromley );
+    $mech->delete_body( $westminster );
+    done_testing();
+}

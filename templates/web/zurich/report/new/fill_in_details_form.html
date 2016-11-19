@@ -1,32 +1,7 @@
+[% sidebar_html %]
+
 <div id="report-a-problem-main">
     <h1>[% loc('Reporting a problem') %]</h1>
-
-    <div id="report-a-problem-sidebar">
-        <!--
-            The text for this section needs checking, but I can't work out which bit comes from where
-        -->
-        <div class="sidebar-tips">
-            [% IF report.used_map %]
-                [% IF partial_token %]
-                    <p id="unknown">[% loc('Please note your report has <strong>not yet been sent</strong>. Choose a category and add further information below, then submit.') %]</p>
-                [% END %]
-            <p>[% loc('You have located the problem at the point marked with a green pin on the map. If this is not the correct location, simply click on the map again. ') %]</p>
-            [% END %]
-
-            <p>
-            [% IF report.used_map %]
-                [% INCLUDE 'report/new/fill_in_details_text.html' %]
-            [% ELSE %]
-                [% loc('Please fill in the form below with details of the problem, and describe the location as precisely as possible in the details box.') %]
-            [% END %]
-            </p>
-        </div>
-
-        <div class="sidebar-notes">
-            [% INCLUDE 'report/new/notes.html' %]
-        </div>
-
-    </div>
 
     [% INCLUDE 'errors.html' %]
     <fieldset>
@@ -39,73 +14,63 @@
                 <p class='form-error'>[% field_errors.bodies %]</p>
             [% END %]
 
+          [% IF c.cobrand.allow_photo_upload %]
+            <input type="hidden" name="upload_fileid" value="[% upload_fileid %]">
+                <label for="form_photo">
+                    <span data-singular="[% loc('Photo') %]" data-plural="[% loc('Photos') %]">[% loc('Photo') %]</span>
+                    [% loc('(Defect &amp; location of defect)') %]
+                </label>
+
+              [% IF field_errors.photo %]
+                <p class='form-error'>[% field_errors.photo %]</p>
+              [% END %]
+
+            <div id="form_photos">
+              [% IF upload_fileid %]
+                <p>[% loc('You have already attached photos to this report.  Note that you can attach a maximum of 3 to this report (if you try to upload more, the oldest will be removed).') %]</p>
+                [% FOREACH id IN upload_fileid.split(',') %]
+                <img align="right" src="/photo/temp.[% id %]" alt="">
+                [% END %]
+              [% END %]
+                <input type="file" name="photo1" id="form_photo">
+                <label for="form_photo2">[% loc('Photo') %]</label>
+                <input type="file" name="photo2" id="form_photo2">
+                <label for="form_photo3">[% loc('Photo') %]</label>
+                <input type="file" name="photo3" id="form_photo3">
+            </div>
+          [% END %]
+
+          [% TRY %][% PROCESS 'report/new/after_photo.html' %][% CATCH file %][% END %]
+
             <label for="form_detail">[% loc('Details') %]</label>
             [% IF field_errors.detail %]
                 <p class='form-error'>[% field_errors.detail %]</p>
             [% END %]
-            <textarea rows="7" cols="26" name="detail" id="form_detail" placeholder="[% loc('Please fill in details of the problem.') %]" required>[% report.detail | html %]</textarea>
+            <textarea class="form-control" rows="7" cols="26" name="detail" id="form_detail" placeholder="[% loc('Please fill in details of the problem.') %]" required>[% report.detail | html %]</textarea>
 
-            [% IF js %]
-                <div id="form_category_row">
-                    <label for="form_category">[% loc('Category') %]</label>
-                    <select name="category" id="form_category" required><option>[% loc('Loading...') %]</option></select>
-                </div>
-            [% ELSE %]
-                [% IF category_options.size %]
-                    [% IF field_errors.category %]
-                        <p class='form-error'>[% field_errors.category %]</p>
-                    [% END %]
-
-                    [% PROCESS "report/new/category.html" %]
-                [% END %]
-            [% END %]
-
-            [%- IF category_extras %]
-                [% PROCESS "report/new/category_extras.html" %]
-            [%- END %]
-
-            [% IF c.cobrand.allow_photo_upload %]
-                <label for="form_photo">[% loc('Photo') %]</label>
-                [% IF upload_fileid || report.photo %]
-                    [% IF upload_fileid %]
-                        <img align="right" src="/photo/[% upload_fileid %].temp.jpeg" alt="">
-                        <input type="hidden" name="upload_fileid" value="[% upload_fileid %]">
-                    [% END %]
-
-                    <p>[% loc('You have already attached a photo to this report, attaching another one will replace it.') %]</p>
-
-                    [% IF report.photo %]
-                        <img align="right" src="/photo/[% report.id %].jpeg">
-                    [% END %]
-                [% END %]
-
-                [% IF field_errors.photo %]
-                    <p class='form-error'>[% field_errors.photo %]</p>
-                [% END %]
-                <input type="file" name="photo" id="form_photo">
-            [% END %]
+            [% PROCESS "report/new/category_wrapper.html" %]
 
                 <label for="form_email">[% loc('Your email') %]</label>
                 [% IF field_errors.email %]
                     <p class='form-error'>[% field_errors.email %]</p>
                 [% END %]
-                <input type="email" value="[% report.user.email | html %]" name="email" id="form_email" placeholder="[% loc('Please enter your email address') %]" required>
+                <input class="form-control" type="email" value="[% report.user.email | html %]" name="email" id="form_email" placeholder="[% loc('Please enter your email address') %]" required>
 
                 <label for="form_name">[% loc('Name') %] [% loc('(optional)') %]</label>
                 [% IF field_errors.name %]
                     <p class='form-error'>[% field_errors.name %]</p>
                 [% END %]
-                <input type="text" value="[% report.name | html %]" name="name" id="form_name" placeholder="[% loc('Your name') %]">
+                <input class="form-control js-form-name" type="text" value="[% report.name | html %]" name="name" id="form_name" placeholder="[% loc('Your name') %]">
 
                 <label for="form_phone">[% loc('Phone number') %]</label>
                 [% IF field_errors.phone %]
                     <p class='form-error'>[% field_errors.phone %]</p>
                 [% END %]
-                <input type="text" value="[% report.user.phone | html %]" name="phone" id="form_phone" placeholder="[% loc('Your phone number') %]">
+                <input class="form-control" type="text" value="[% report.user.phone | html %]" name="phone" id="form_phone" placeholder="[% loc('Your phone number') %]" required>
 
                 <div class="form-txt-submit-box">
-                    [%# ID of submit_sign_in so name can be option, name of submit_register so it doesn't try and sign us in %]
-                    <p><input class="green-btn" type="submit" id="submit_sign_in" name="submit_register" value="[% loc('Submit') %]">
+                    [%# class of submit_sign_in so name can be optional, name of submit_register so it doesn't try and sign us in %]
+                    <p><input class="green-btn js-submit_sign_in" type="submit" name="submit_register" value="[% loc('Submit') %]">
                 </div>
 
         </div>
