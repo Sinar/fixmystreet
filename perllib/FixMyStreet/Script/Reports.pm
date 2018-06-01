@@ -14,6 +14,7 @@ use FixMyStreet;
 use FixMyStreet::Cobrand;
 use FixMyStreet::DB;
 use FixMyStreet::Email;
+use FixMyStreet::Map;
 use FixMyStreet::SendReport;
 
 sub send(;$) {
@@ -22,12 +23,13 @@ sub send(;$) {
 
     # Set up site, language etc.
     my ($verbose, $nomail, $debug_mode) = CronFns::options();
+    my $test_data;
 
     my $base_url = FixMyStreet->config('BASE_URL');
     my $site = $site_override || CronFns::site($base_url);
 
-    my $states = [ 'confirmed', 'fixed' ];
-    $states = [ 'unconfirmed', 'confirmed', 'in progress', 'planned', 'closed', 'investigating' ] if $site eq 'zurich';
+    my $states = [ FixMyStreet::DB::Result::Problem::open_states() ];
+    $states = [ 'submitted', 'confirmed', 'in progress', 'feedback pending', 'external', 'wish' ] if $site eq 'zurich';
     my $unsent = $rs->search( {
         state => $states,
         whensent => undef,
@@ -43,6 +45,7 @@ sub send(;$) {
     while (my $row = $unsent->next) {
 
         my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($row->cobrand)->new();
+        FixMyStreet::DB->schema->cobrand($cobrand);
 
         if ($debug_mode) {
             $debug_unsent_count++;
@@ -60,6 +63,7 @@ sub send(;$) {
         }
 
         $cobrand->set_lang_and_domain($row->lang, 1);
+        FixMyStreet::Map::set_map_class($cobrand->map_type);
         if ( $row->is_from_abuser) {
             $row->update( { state => 'hidden' } );
             debug_print("hiding because its sender is flagged as an abuser", $row->id) if $debug_mode;
@@ -73,6 +77,8 @@ sub send(;$) {
         # Template variables for the email
         my $email_base_url = $cobrand->base_url_for_report($row);
         my %h = map { $_ => $row->$_ } qw/id title detail name category latitude longitude used_map/;
+        $h{report} = $row;
+        $h{cobrand} = $cobrand;
         map { $h{$_} = $row->user->$_ || '' } qw/email phone/;
         $h{confirmed} = DateTime::Format::Pg->format_datetime( $row->confirmed->truncate (to => 'second' ) )
             if $row->confirmed;
@@ -80,10 +86,11 @@ sub send(;$) {
         $h{query} = $row->postcode;
         $h{url} = $email_base_url . $row->url;
         $h{admin_url} = $row->admin_url($cobrand);
-        $h{phone_line} = $h{phone} ? _('Phone:') . " $h{phone}\n\n" : '';
         if ($row->photo) {
             $h{has_photo} = _("This web page also contains a photo of the problem, provided by the user.") . "\n\n";
-            $h{image_url} = $email_base_url . '/photo/' . $row->id . '.full.jpeg';
+            $h{image_url} = $email_base_url . $row->photos->[0]->{url_full};
+            my @all_images = map { $email_base_url . $_->{url_full} } @{ $row->photos };
+            $h{all_image_urls} = \@all_images;
         } else {
             $h{has_photo} = '';
             $h{image_url} = '';
@@ -94,7 +101,7 @@ sub send(;$) {
 
         $h{osm_url} = Utils::OpenStreetMap::short_url($h{latitude}, $h{longitude});
         if ( $row->used_map ) {
-            $h{closest_address} = $cobrand->find_closest( $h{latitude}, $h{longitude}, $row );
+            $h{closest_address} = $cobrand->find_closest($row);
             $h{osm_url} .= '?m';
         }
 
@@ -102,17 +109,9 @@ sub send(;$) {
              $row->user->email eq $cobrand->anonymous_account->{'email'}
          ) {
             $h{anonymous_report} = 1;
-            $h{user_details} = _('This report was submitted anonymously');
-        } else {
-            $h{user_details} = sprintf(_('Name: %s'), $row->name) . "\n\n";
-            $h{user_details} .= sprintf(_('Email: %s'), $row->user->email) . "\n\n";
         }
 
-        $h{easting_northing} = '';
-
-        if ($cobrand->can('process_additional_metadata_for_email')) {
-            $cobrand->process_additional_metadata_for_email($row, \%h);
-        }
+        $cobrand->call_hook(process_additional_metadata_for_email => $row, \%h);
 
         my $bodies = FixMyStreet::DB->resultset('Body')->search(
             { id => $row->bodies_str_ids },
@@ -141,28 +140,36 @@ sub send(;$) {
             }
             $reporters{ $sender } ||= $sender->new();
 
-            if ( $reporters{ $sender }->should_skip( $row ) ) {
+            my $inspection_required = $sender_info->{contact}->get_extra_metadata('inspection_required') if $sender_info->{contact};
+            if ( $inspection_required ) {
+                my $reputation_threshold = $sender_info->{contact}->get_extra_metadata('reputation_threshold') || 0;
+                my $reputation_threshold_met = 0;
+                if ( $reputation_threshold > 0 ) {
+                    my $user_reputation = $row->user->get_extra_metadata('reputation') || 0;
+                    $reputation_threshold_met = $user_reputation >= $reputation_threshold;
+                }
+                unless (
+                        $row->get_extra_metadata('inspected') ||
+                        $row->user->has_permission_to( trusted => $row->bodies_str_ids ) ||
+                        $reputation_threshold_met
+                ) {
+                    $skip = 1;
+                    debug_print("skipped because not yet inspected", $row->id) if $debug_mode;
+                }
+            }
+
+            if ( $reporters{ $sender }->should_skip( $row, $debug_mode ) ) {
                 $skip = 1;
                 debug_print("skipped by sender " . $sender_info->{method} . " (might be due to previous failed attempts?)", $row->id) if $debug_mode;
             } else {
-                debug_print("OK, adding recipient body " . $body->id . ":" . $body->name . ", " . $body->send_method, $row->id) if $debug_mode;
+                debug_print("OK, adding recipient body " . $body->id . ":" . $body->name . ", " . $sender_info->{method}, $row->id) if $debug_mode;
                 push @dear, $body->name;
                 $reporters{ $sender }->add_body( $body, $sender_info->{config} );
             }
 
-            # If we are in the UK include eastings and northings, and nearest stuff
+            # If we are in the UK include eastings and northings
             if ( $cobrand->country eq 'GB' && !$h{easting} ) {
-                my $coordsyst = 'G';
-                my $first_area = $body->body_areas->first->area_id;
-                my $area_info = mySociety::MaPit::call('area', $first_area);
-                $coordsyst = 'I' if $area_info->{type} eq 'LGD';
-
-                ( $h{easting}, $h{northing} ) = Utils::convert_latlon_to_en( $h{latitude}, $h{longitude}, $coordsyst );
-
-                # email templates don't have conditionals so we need to format this here
-                $h{easting_northing} = "Easting/Northing";
-                $h{easting_northing} .= " (IE)" if $coordsyst eq 'I';
-                $h{easting_northing} .= ": $h{easting}/$h{northing}\n\n";
+                ( $h{easting}, $h{northing}, $h{coordsyst} ) = $row->local_coords;
             }
         }
 
@@ -174,16 +181,8 @@ sub send(;$) {
 
         if ($h{category} eq _('Other')) {
             $h{category_footer} = _('this type of local problem');
-            $h{category_line} = '';
         } else {
             $h{category_footer} = "'" . $h{category} . "'";
-            $h{category_line} = sprintf(_("Category: %s"), $h{category}) . "\n\n";
-        }
-
-        if ( $row->subcategory ) {
-            $h{subcategory_line} = sprintf(_("Subcategory: %s"), $row->subcategory) . "\n\n";
-        } else {
-            $h{subcategory_line} = "\n\n";
         }
 
         $h{bodies_name} = join(_(' and '), @dear);
@@ -201,9 +200,9 @@ sub send(;$) {
               . " ]\n\n";
         }
 
-        if (FixMyStreet->config('STAGING_SITE') && !FixMyStreet->config('SEND_REPORTS_ON_STAGING')) {
+        if (FixMyStreet->staging_flag('send_reports', 0)) {
             # on a staging server send emails to ourselves rather than the bodies
-            %reporters = map { $_ => $reporters{$_} } grep { /FixMyStreet::SendReport::(Email|EmptyHomes)/ } keys %reporters;
+            %reporters = map { $_ => $reporters{$_} } grep { /FixMyStreet::SendReport::Email/ } keys %reporters;
             unless (%reporters) {
                 %reporters = ( 'FixMyStreet::SendReport::Email' => FixMyStreet::SendReport::Email->new() );
             }
@@ -214,18 +213,20 @@ sub send(;$) {
 
         for my $sender ( keys %reporters ) {
             debug_print("sending using " . $sender, $row->id) if $debug_mode;
-            $result *= $reporters{ $sender }->send( $row, \%h );
-            if ( $reporters{ $sender }->unconfirmed_counts) {
-                foreach my $e (keys %{ $reporters{ $sender }->unconfirmed_counts } ) {
-                    foreach my $c (keys %{ $reporters{ $sender }->unconfirmed_counts->{$e} }) {
-                        $notgot{$e}{$c} += $reporters{ $sender }->unconfirmed_counts->{$e}{$c};
+            $sender = $reporters{$sender};
+            my $res = $sender->send( $row, \%h );
+            $result *= $res;
+            $row->add_send_method($sender) if !$res;
+            if ( $sender->unconfirmed_counts) {
+                foreach my $e (keys %{ $sender->unconfirmed_counts } ) {
+                    foreach my $c (keys %{ $sender->unconfirmed_counts->{$e} }) {
+                        $notgot{$e}{$c} += $sender->unconfirmed_counts->{$e}{$c};
                     }
                 }
-                %note = (
-                    %note,
-                    %{ $reporters{ $sender }->unconfirmed_notes }
-                );
+                %note = (%note, %{ $sender->unconfirmed_notes });
             }
+            $test_data->{test_req_used} = $sender->open311_test_req_used
+                if FixMyStreet->test_mode && $sender->can('open311_test_req_used');
         }
 
         unless ($result) {
@@ -266,7 +267,7 @@ sub send(;$) {
         }
         my $sending_errors = '';
         my $unsent = $rs->search( {
-            state => [ 'confirmed', 'fixed' ],
+            state => [ FixMyStreet::DB::Result::Problem::open_states() ],
             whensent => undef,
             bodies_str => { '!=', undef },
             send_fail_count => { '>', 0 }
@@ -281,6 +282,8 @@ sub send(;$) {
             print "The following reports had problems sending:\n$sending_errors";
         }
     }
+
+    return $test_data;
 }
 
 sub _send_report_sent_email {
@@ -289,19 +292,24 @@ sub _send_report_sent_email {
     my $nomail = shift;
     my $cobrand = shift;
 
-    my $template = FixMyStreet->get_email_template($row->cobrand, $row->lang, 'confirm_report_sent.txt');
+    # Don't send 'report sent' text
+    return unless $row->user->email_verified;
+
+    my $contributed_as = $row->get_extra_metadata('contributed_as') || '';
+    return if $contributed_as eq 'body' || $contributed_as eq 'anonymous_user';
 
     FixMyStreet::Email::send_cron(
         $row->result_source->schema,
+        'confirm_report_sent.txt',
+        $h,
         {
-            _template_ => $template,
-            _parameters_ => $h,
             To => $row->user->email,
-            From => [ FixMyStreet->config('CONTACT_EMAIL'), $cobrand->contact_name ],
+            From => [ $cobrand->contact_email, $cobrand->contact_name ],
         },
-        FixMyStreet->config('CONTACT_EMAIL'),
+        undef,
         $nomail,
-        $cobrand
+        $cobrand,
+        $row->lang,
     );
 }
 

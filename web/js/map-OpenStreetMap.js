@@ -1,16 +1,17 @@
-function set_map_config(perm) {
+fixmystreet.maps.config = function() {
     var permalink_id;
     if ($('#map_permalink').length) {
         permalink_id = 'map_permalink';
     }
     fixmystreet.controls = [
         new OpenLayers.Control.ArgParser(),
+        new OpenLayers.Control.Attribution(),
         //new OpenLayers.Control.LayerSwitcher(),
         new OpenLayers.Control.Navigation(),
         new OpenLayers.Control.PermalinkFMS(permalink_id),
         new OpenLayers.Control.PanZoomFMS({id: 'fms_pan_zoom' })
     ];
-}
+};
 
 // http://www.openstreetmap.org/openlayers/OpenStreetMap.js (added maxResolution)
 
@@ -63,10 +64,10 @@ OpenLayers.Layer.OSM.MapQuestOpen = OpenLayers.Class(OpenLayers.Layer.OSM, {
      */
     initialize: function(name, options) {
         var url = [
-            "http://otile1.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
-            "http://otile2.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
-            "http://otile3.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
-            "http://otile4.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png"
+            "https://otile1-s.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
+            "https://otile2-s.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
+            "https://otile3-s.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png",
+            "https://otile4-s.mqcdn.com/tiles/1.0.0/map/${z}/${x}/${y}.png"
         ];
         options = OpenLayers.Util.extend({
             /* Below line added to OSM's file in order to allow minimum zoom level */

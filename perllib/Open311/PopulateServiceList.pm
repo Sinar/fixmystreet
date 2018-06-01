@@ -6,7 +6,7 @@ use Open311;
 has bodies => ( is => 'ro' );
 has found_contacts => ( is => 'rw', default => sub { [] } );
 has verbose => ( is => 'ro', default => 0 );
-has schema => ( is => 'ro', lazy => 1, default => sub { FixMyStreet::DB->connect } );
+has schema => ( is => 'ro', lazy => 1, default => sub { FixMyStreet::DB->schema->connect } );
 
 has _current_body => ( is => 'rw' );
 has _current_open311 => ( is => 'rw' );
@@ -18,7 +18,6 @@ sub process_bodies {
     while ( my $body = $self->bodies->next ) {
         next unless $body->endpoint;
         next unless lc($body->send_method) eq 'open311';
-        next if $body->jurisdiction =~ /^fixmybarangay_\w+$/; # FMB depts. not using service discovery yet
         $self->_current_body( $body );
         $self->process_body;
     }
@@ -72,8 +71,6 @@ sub process_services {
 
     $self->found_contacts( [] );
     my $services = $list->{service};
-    # XML might only have one result and then squashed the 'array'-ness
-    $services = [ $services ] unless ref $services eq 'ARRAY';
     foreach my $service ( @$services ) {
         $self->_current_service( $service );
         $self->process_service;
@@ -84,17 +81,21 @@ sub process_services {
 sub process_service {
     my $self = shift;
 
-    my $category = $self->_current_body->areas->{2218} ?
-                    $self->_current_service->{description} :
-                    $self->_current_service->{service_name};
+    my $service_name = $self->_normalize_service_name;
 
-    print $self->_current_service->{service_code} . ': ' . $category .  "\n" if $self->verbose >= 2;
+    unless (defined $self->_current_service->{service_code}) {
+        warn "Service $service_name has no service code for body @{[$self->_current_body->id]}\n"
+            if $self->verbose >= 1;
+        return;
+    }
+
+    print $self->_current_service->{service_code} . ': ' . $service_name .  "\n" if $self->verbose >= 2;
     my $contacts = $self->schema->resultset('Contact')->search(
         {
             body_id => $self->_current_body->id,
             -OR => [
                 email => $self->_current_service->{service_code},
-                category => $category,
+                category => $service_name,
             ]
         }
     );
@@ -103,7 +104,7 @@ sub process_service {
         printf(
             "Multiple contacts for service code %s, category %s - Skipping\n",
             $self->_current_service->{service_code},
-            $category,
+            $service_name,
         );
 
         # best to not mark them as deleted as we don't know what we're doing
@@ -130,14 +131,13 @@ sub _handle_existing_contact {
 
     print $self->_current_body->id . " already has a contact for service code " . $self->_current_service->{service_code} . "\n" if $self->verbose >= 2;
 
-    if ( $contact->deleted || $service_name ne $contact->category || $self->_current_service->{service_code} ne $contact->email ) {
+    if ( $contact->state eq 'deleted' || $service_name ne $contact->category || $self->_current_service->{service_code} ne $contact->email ) {
         eval {
             $contact->update(
                 {
                     category => $service_name,
                     email => $self->_current_service->{service_code},
-                    confirmed => 1,
-                    deleted => 0,
+                    state => 'confirmed',
                     editor => $0,
                     whenedited => \'current_timestamp',
                     note => 'automatically undeleted by script',
@@ -156,7 +156,13 @@ sub _handle_existing_contact {
     if ( $contact and lc($metadata) eq 'true' ) {
         $self->_add_meta_to_contact( $contact );
     } elsif ( $contact and $contact->extra and lc($metadata) eq 'false' ) {
-        $contact->update( { extra => undef } );
+        $contact->set_extra_fields();
+        $contact->update;
+    }
+
+    if (my $group = $self->_current_service->{group}) {
+        $contact->set_extra_metadata(group => $group);
+        $contact->update;
     }
 
     push @{ $self->found_contacts }, $self->_current_service->{service_code};
@@ -174,14 +180,19 @@ sub _create_contact {
                 email => $self->_current_service->{service_code},
                 body_id => $self->_current_body->id,
                 category => $service_name,
-                confirmed => 1,
-                deleted => 0,
+                state => 'confirmed',
                 editor => $0,
                 whenedited => \'current_timestamp',
                 note => 'created automatically by script',
             }
         );
     };
+
+    if (my $group = $self->_current_service->{group}) {
+        $contact->set_extra_metadata(group => $group);
+        $contact->update;
+    }
+
 
     if ( $@ ) {
         warn "Failed to create contact for service code " . $self->_current_service->{service_code} . " for body @{[$self->_current_body->id]}: $@\n"
@@ -206,17 +217,12 @@ sub _add_meta_to_contact {
     print "Fetching meta data for " . $self->_current_service->{service_code} . "\n" if $self->verbose >= 2;
     my $meta_data = $self->_current_open311->get_service_meta_info( $self->_current_service->{service_code} );
 
-    if ( ref $meta_data->{ attributes }->{ attribute } eq 'HASH' ) {
-        $meta_data->{ attributes }->{ attribute } = [
-            $meta_data->{ attributes }->{ attribute }
-        ];
-    }
-
-    if ( ! $meta_data->{attributes}->{attribute} ) {
+    unless (ref $meta_data->{attributes} eq 'ARRAY') {
         warn sprintf( "Empty meta data for %s at %s",
                       $self->_current_service->{service_code},
                       $self->_current_body->endpoint )
-        if $self->verbose;
+        # Bristol has a habit of returning empty metadata, stop noise from that.
+        if $self->verbose and $self->_current_body->name ne 'Bristol City Council';
         return;
     }
 
@@ -226,32 +232,32 @@ sub _add_meta_to_contact {
         map { $_->{description} =~ s/:\s*//; $_ }
         # there is a display order and we only want to sort once
         sort { $a->{order} <=> $b->{order} }
-        @{ $meta_data->{attributes}->{attribute} };
+        @{ $meta_data->{attributes} };
 
     # Some Open311 endpoints, such as Bromley and Warwickshire send <metadata>
     # for attributes which we *don't* want to display to the user (e.g. as
     # fields in "category_extras"
 
+    if ($self->_current_body->name eq 'Bromley Council') {
+        $contact->set_extra_metadata( id_field => 'service_request_id_ext');
+    } elsif ($self->_current_body->name eq 'Warwickshire County Council') {
+        $contact->set_extra_metadata( id_field => 'external_id');
+    }
+
     my %override = (
         #2482
         'Bromley Council' => [qw(
-            service_request_id_ext
             requested_datetime
             report_url
             title
             last_name
             email
-            easting
-            northing
             report_title
             public_anonymity_required
             email_alerts_requested
         ) ],
-        #2243, 
+        #2243,
         'Warwickshire County Council' => [qw(
-            external_id
-            easting
-            northing
             closest_address
         ) ],
     );
@@ -283,27 +289,36 @@ sub _normalize_service_name {
 sub _delete_contacts_not_in_service_list {
     my $self = shift;
 
-    my $found_contacts = $self->schema->resultset('Contact')->search(
+    my $found_contacts = $self->schema->resultset('Contact')->not_deleted->search(
         {
             email => { -not_in => $self->found_contacts },
             body_id => $self->_current_body->id,
-            deleted => 0,
         }
     );
 
-    # for Warwickshire, which is mixed Open311 and email, don't delete the email
-    # addresses
-    if ($self->_current_body->name eq 'Warwickshire County Council') {
+    # for Warwickshire/Bristol/BANES, which are mixed Open311 and email, don't delete
+    # the email addresses
+    if ($self->_current_body->name eq 'Warwickshire County Council' ||
+        $self->_current_body->name eq 'Bristol City Council' ||
+        $self->_current_body->name eq 'Bath and North East Somerset Council') {
         $found_contacts = $found_contacts->search(
             {
                 email => { -not_like => '%@%' }
+            }
+        );
+    } elsif ($self->_current_body->name eq 'East Hertfordshire District Council') {
+        # For EHDC we need to leave the 'Other' category alone or reports made
+        # in this category will be sent only to Hertfordshire County Council.
+        $found_contacts = $found_contacts->search(
+            {
+                category => { '!=' => 'Other' }
             }
         );
     }
 
     $found_contacts->update(
         {
-            deleted => 1,
+            state => 'deleted',
             editor  => $0,
             whenedited => \'current_timestamp',
             note => 'automatically marked as deleted by script'

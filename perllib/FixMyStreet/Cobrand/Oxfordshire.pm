@@ -4,15 +4,21 @@ use base 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2237; }
+sub council_area_id { return 2237; }
 sub council_area { return 'Oxfordshire'; }
 sub council_name { return 'Oxfordshire County Council'; }
 sub council_url { return 'oxfordshire'; }
 sub is_two_tier { return 1; }
 
+sub is_council_with_case_management {
+    # XXX Change this to return 1 when OCC FMSfC goes live.
+    return FixMyStreet->config('STAGING_SITE');
+}
+
 sub base_url {
-    return FixMyStreet->config('BASE_URL') if FixMyStreet->config('STAGING_SITE');
-    return 'http://fixmystreet.oxfordshire.gov.uk';
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
+    return 'https://fixmystreet.oxfordshire.gov.uk';
 }
 
 sub enter_postcode_text {
@@ -52,12 +58,19 @@ sub default_show_name { 0 }
 Returns the number of working days that are expected to elapse
 between the problem being reported and it being responded to by
 the council/body.
+If the value 'emergency' is returned, a different template block
+is triggered that has custom wording.
 
 =cut
 
 sub problem_response_days {
     my $self = shift;
     my $p = shift;
+
+    return 'emergency' if $p->category eq 'Street lighting';
+
+    # Temporary, see https://github.com/mysociety/fixmystreetforcouncils/issues/291
+    return 0;
 
     return 10 if $p->category eq 'Bridges';
     return 10 if $p->category eq 'Carriageway Defect'; # phone if urgent
@@ -79,26 +92,72 @@ sub problem_response_days {
     return 10 if $p->category eq 'Road traffic signs';
     return 10 if $p->category eq 'Roads/highways';
     return 10 if $p->category eq 'Skips and scaffolding';
-    return 10 if $p->category eq 'Street lighting';
     return 10 if $p->category eq 'Traffic lights'; # phone if urgent
     return 10 if $p->category eq 'Traffic';
     return 10 if $p->category eq 'Trees';
     return 10 if $p->category eq 'Utilities';
     return 10 if $p->category eq 'Vegetation';
 
-    return undef;
+    return 0;
 }
 
 sub reports_ordering {
-    return { -desc => 'confirmed' };
+    return 'created-desc';
 }
 
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
-    return 'grey' if $p->state eq 'not responsible';
-    return 'green' if $p->is_fixed || $p->is_closed;
-    return 'red' if $p->state eq 'confirmed';
+    return 'grey' unless $self->owns_problem( $p );
+    return 'grey' if $p->is_closed;
+    return 'green' if $p->is_fixed;
+    return 'yellow' if $p->state eq 'confirmed';
+    return 'orange'; # all the other `open_states` like "in progress"
+}
+
+sub pin_new_report_colour {
     return 'yellow';
+}
+
+sub path_to_pin_icons {
+    return '/cobrands/oxfordshire/images/';
+}
+
+sub pin_hover_title {
+    my ($self, $problem, $title) = @_;
+    my $state = FixMyStreet::DB->resultset("State")->display($problem->state, 1);
+    return "$state: $title";
+}
+
+sub state_groups_inspect {
+    [
+        [ _('New'), [ 'confirmed', 'investigating' ] ],
+        [ _('Scheduled'), [ 'action scheduled' ] ],
+        [ _('Fixed'), [ 'fixed - council' ] ],
+        [ _('Closed'), [ 'not responsible', 'duplicate', 'unable to fix' ] ],
+    ]
+}
+
+sub open311_config {
+    my ($self, $row, $h, $params) = @_;
+
+    my $extra = $row->get_extra_fields;
+    push @$extra, { name => 'external_id', value => $row->id };
+
+    if ($h->{closest_address}) {
+        push @$extra, { name => 'closest_address', value => "$h->{closest_address}" }
+    }
+    if ( $row->used_map || ( !$row->used_map && !$row->postcode ) ) {
+        push @$extra, { name => 'northing', value => $h->{northing} };
+        push @$extra, { name => 'easting', value => $h->{easting} };
+    }
+    $row->set_extra_fields( @$extra );
+
+    $params->{extended_description} = 'oxfordshire';
+}
+
+sub open311_pre_send {
+    my ($self, $row, $open311) = @_;
+    $open311->endpoints( { requests => 'open311_service_request.cgi' } );
 }
 
 sub on_map_default_status { return 'open'; }
@@ -106,6 +165,76 @@ sub on_map_default_status { return 'open'; }
 sub contact_email {
     my $self = shift;
     return join( '@', 'highway.enquiries', 'oxfordshire.gov.uk' );
+}
+
+sub admin_user_domain { 'oxfordshire.gov.uk' }
+
+sub traffic_management_options {
+    return [
+        "Signs and Cones",
+        "Stop and Go Boards",
+        "High Speed Roads",
+    ];
+}
+
+sub admin_pages {
+    my $self = shift;
+
+    my $user = $self->{c}->user;
+
+    my $pages = $self->next::method();
+
+    # Oxfordshire have a custom admin page for downloading reports in an Exor-
+    # friendly format which anyone with report_instruct permission can use.
+    if ( $user->has_body_permission_to('report_instruct') ) {
+        $pages->{exordefects} = [ ('Download Exor RDI'), 10 ];
+    }
+    if ( $user->has_body_permission_to('defect_type_edit') ) {
+        $pages->{defecttypes} = [ ('Defect Types'), 11 ];
+        $pages->{defecttype_edit} = [ undef, undef ];
+    };
+
+    return $pages;
+}
+
+sub defect_types {
+    {
+        SFP2 => "SFP2: sweep and fill <1m2",
+        POT2 => "POT2",
+    };
+}
+
+sub exor_rdi_link_id { 1989169 }
+sub exor_rdi_link_length { 50 }
+
+sub reputation_increment_states {
+    return {
+        'action scheduled' => 1,
+    };
+}
+
+sub user_extra_fields {
+    return [ 'initials' ];
+}
+
+sub display_days_ago_threshold { 28 }
+
+sub max_detailed_info_length { 164 }
+
+sub defect_type_extra_fields {
+    return [
+        'activity_code',
+        'defect_code',
+    ];
+};
+
+sub available_permissions {
+    my $self = shift;
+
+    my $perms = $self->next::method();
+    $perms->{Bodies}->{defect_type_edit} = "Add/edit defect types";
+
+    return $perms;
 }
 
 1;

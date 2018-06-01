@@ -1,0 +1,19 @@
+[%
+scripts.push(
+    version('/js/lazyload.js'),
+);
+IF bodyclass.match('mappage');
+    scripts.push(
+        version('/vendor/OpenLayers.Projection.OrdnanceSurvey.js'),
+    );
+END;
+IF bodyclass.match('frontpage');
+    scripts.push(
+        version('/cobrands/fixmystreet.com/front.js'),
+    );
+ELSIF NOT bodyclass.match('alertpage');
+    scripts.push(
+        version('/cobrands/fixmystreet.com/js.js'),
+    );
+END;
+%]

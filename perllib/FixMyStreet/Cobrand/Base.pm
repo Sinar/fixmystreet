@@ -38,6 +38,20 @@ sub moniker {
     return $last_part;
 }
 
+=head2 asset_moniker
+
+    $moniker = $cobrand_class->asset_moniker();
+
+Same as moniker, except for the cobrand with the 'fixmystreet' moniker, when it
+returns 'fixmystreet.com', as to avoid confusion that's where its assets are.
+
+=cut
+
+sub asset_moniker {
+    my $self = shift;
+    return $self->moniker eq 'fixmystreet' ? 'fixmystreet.com' : $self->moniker;
+}
+
 =head2 is_default
 
     $bool = $cobrand->is_default();
@@ -49,6 +63,18 @@ Returns true if this is the default cobrand, false otherwise.
 sub is_default {
     my $self = shift;
     return $self->moniker eq 'default';
+}
+
+=head2 call_hook
+
+  $cobrand->call_hook(foo => 1, 2, 3); # calls $cobrand->foo(1, 2, 3) if it exists
+
+=cut
+
+sub call_hook {
+    my ($self, $method_name, @args) = @_;
+    my $method = $self->can($method_name) or return;
+    return $self->$method(@args);
 }
 
 # NB: this Base class is for 'meta' features.  To add base methods for all cobrands,

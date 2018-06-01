@@ -1,19 +1,21 @@
 [%
     PROCESS "report/photo-js.html";
     PROCESS "maps/zurich.html";
+    SET bodyclass = 'mappage';
     INCLUDE 'admin/header.html'
-        title = tprintf(loc('Editing problem %d'), problem.id ),
-        bodyclass = 'mappage';
+        title = tprintf(loc('Editing problem %d'), problem.id );
     PROCESS 'admin/report_blocks.html'
 -%]
 
 [% map_html %]
 </div>
 
+<div id="map_sidebar">
+
 [% pstate = problem.get_extra_metadata('closure_status') || problem.state %]
 
 <form id="report_edit" method="post" action="[% c.uri_for( 'report_edit', problem.id ) %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
-    <input type="hidden" name="token" value="[% token %]" >
+    <input type="hidden" name="token" value="[% csrf_token %]" >
     <input type="hidden" name="submit" value="1" >
 
 <div class="admin-report-edit admin-report-edit--details">
@@ -25,7 +27,7 @@
 
     <dd class="screen-only">&raquo; <a href="http://webgis.intra.stzh.ch/stapo/GoogleStreetView.asp?lat=[% problem.latitude %]&amp;lon=[% problem.longitude %]" target="_blank">[% loc('Street View') %]</a></dd>
 
-  [% IF c.cobrand.problem_is_closed(problem) %]
+  [% IF problem.is_fixed || problem.is_closed || problem.is_hidden %]
     <dt><span class="mock-label">[% loc('Details:') %]</span></dt>
     <dd>[% problem.detail | html %]</dd>
     [% IF problem.extra.original_detail %]
@@ -37,11 +39,11 @@
   [% ELSE %]
 
     <dt><label for='title'>[% loc('Subject:') %]</label></dt>
-    <dd class="screen-only"><input size=60 type='text' id='title' name='title' value='[% problem.title | html %]'></dd>
+    <dd class="screen-only"><input size=60 type='text' class="form-control" id='title' name='title' value='[% problem.title | html %]'></dd>
     <dd class="print-only">[% problem.title | html %]</dd>
 
     <dt><label for='detail'>[% loc('Details:') %]</label></dt>
-    <dd class="screen-only"><textarea name='detail' id='detail' cols=60 rows=4>[% problem.detail | html %]</textarea></dd>
+    <dd class="screen-only"><textarea name='detail' class="form-control" id='detail' cols=60 rows=4>[% problem.detail | html %]</textarea></dd>
     <dd class="print-only">[% problem.detail | html %]</dd>
 
     [% IF problem.extra.original_detail %]
@@ -88,24 +90,24 @@
         <strong>[% IF problem.name %][% problem.name | html %][% ELSE %][% loc('(No name)') %][% END %]</strong>
         <input type='hidden' name='name' id='name' value='[% problem.name | html %]'>
         <br>
-        [% problem.user.email | html %]
+        <a href="mailto:[% problem.user.email | html %]">[% problem.user.email | html %]</a>
         [% IF NOT problem.extra.email_confirmed %]<span class="error">[% loc('Unconfirmed') %]</span>[% END %]
-        <input type='hidden' id='email' name='email' value='[% problem.user.email | html %]'>
+        <input type='hidden' id='username' name='username' value='[% problem.user.username | html %]'>
         <br>
         [% IF problem.user.phone %][% problem.user.phone | html %][% ELSE %]<em>[% loc('(No phone number)') %]</em>[% END %]
     </dd>
 
     <dt>[% loc('Category:') %] <!-- Kategorie --></dt>
-    <dd>[% problem.category | html %]</dd>
+    <dd>[% problem.category_display | html %]</dd>
 
     <dt class="print-only">[% loc('State:') %] <!-- Status --></dt>
-    <dd class="print-only">[% states_trans.${problem.state} %]</dd>
+    <dd class="print-only">[% prettify_state(problem.state) %]</dd>
 
     <dt>[% loc('Time spent (in minutes):') %]</dt>
     <dd>[% problem.get_time_spent %]</dd>
 
   [% IF problem.photo %]
-    <dd>
+    <dd data-confirm-msg="[% loc('Rotating this photo will discard unsaved changes to the report.') | html %]">
       [% FOR photo IN problem.photos %]
         <div class="update-img">
             <a href="[% c.cobrand.base_url %][% photo.url_temp_full %]" rel="fancy">
@@ -115,10 +117,10 @@
         </div>
         <input type="submit" name="rotate_photo_[% loop.index %]" value="[% loc('Rotate Left') %]" class="screen-only">
         <input type="submit" name="rotate_photo_[% loop.index %]" value="[% loc('Rotate Right') %]" class="screen-only">
+        <br>
+        <input type="checkbox" id="publish_photo_[% loop.index %]" name="publish_photo_[% loop.index %]" value="1"[% ' checked' IF problem.extra.publish_photo.${loop.index} %]  class="screen-only">
+        <label class="inline screen-only" for="publish_photo_[% loop.index %]">[% loc("Publish photo") %]</label></li>
       [% END %]
-    <br>
-    <input type="checkbox" id="publish_photo" name="publish_photo" value="1"[% ' checked' IF problem.extra.publish_photo %]  class="screen-only">
-    <label class="inline screen-only" for="publish_photo">[% loc("Publish photo") %]</label></li>
   [% END %]
 
 </dl>
@@ -129,36 +131,31 @@
 
 [% status_message %]
 
-<script type="text/javascript">
-    $(function(){
-        $('#map_box .noscript').clone().removeClass('noscript').addClass('map_clone print-only').prependTo('.admin-report-edit--interact');
-    });
-</script>
-
 <dl [% IF status_message %]class="with-message"[% END %]>
 
     <dt class="screen-only">
         <label for="new_internal_note">[% loc('New internal note:') %]</label>
     </dt>
     <dd class="screen-only">
-        <textarea name='new_internal_note' id='new_internal_note' cols=60 rows=4>[% new_internal_note | html %]</textarea>
+        <textarea class="form-control" name='new_internal_note' id='new_internal_note' cols=60 rows=4>[% new_internal_note | html %]</textarea>
     </dd>
 
     <dt class="screen-only">
         <label for="time_spent">[% loc('Time spent (in minutes):') %]</label>
     </dt>
     <dd class="screen-only">
-      <input type="text" name="time_spent" id="form_time_spent" style="width: 4em" value="0">
+      <input type="text" class="form-control" name="time_spent" id="form_time_spent" style="width: 4em" value="0">
     </dd>
 
     <dt class="screen-only">
         <span class="mock-label">[% loc('State:') %]</span>
     </dt>
     <dd class="screen-only">
-        <select name="state"  id="state">
+        <select class="form-control" name="state"  id="state" data-pstate="[% pstate %]">
             <option value="">--</option>
           [% FOREACH s IN states %]
-            <option [% 'selected ' IF s.state == pstate %] value="[% s.state %]">[% s.trans %]</option>
+            <option [% 'selected ' IF s.state == pstate %] value="[% s.state %]">
+            [% IF s.trans; s.trans; ELSE; prettify_state(s.state); END %]</option>
           [% END %]
         </select>
     </dd>
@@ -171,10 +168,11 @@
     <li class="assignation">
         <div id="assignation__category">
             <label for="category">[% loc('Assign to different category:') %]</label>
-            <select name="category" id="category">
+            <select class="form-control" name="category" id="category">
                 <option value="">--</option>
-              [% FOREACH cat IN categories %]
-                <option value="[% cat %]">[% cat %]</option>
+              [% FOREACH cat IN category_options %]
+                <option value="[% cat.category %]">[% cat.category_display ~%]
+                    [% ' (' _ cat.abbreviation _ ')' IF cat.abbreviation %]</option>
               [% END %]
             </select>
         </div>
@@ -188,7 +186,7 @@
   [% IF admin_type != 'super' AND list %]
     <li class="assignation" id="assignation__subdivision">
         <label for="body_subdivision">[% loc('Assign to subdivision:') %]</label>
-        <select name="body_subdivision" id="body_subdivision" class="assignation__select">
+        <select name="body_subdivision" id="body_subdivision" class="form-control assignation__select">
             <option value="">--</option>
             [% list %]
         </select>
@@ -199,21 +197,21 @@
 </ul>
 
 
-[% IF problem.state == 'planned' %]
+[% IF problem.state == 'feedback pending' %]
     [%# 3rd party messages sent for Extern/Wunsch states %]
     [% SWITCH pstate %]
-        [% CASE ['closed','investigating'] %]
+        [% CASE ['external','wish'] %]
         <ul class="no-bullets screen-only">
         <li class="assignation" id="assignation__external">
         <span class="error hidden">[% loc('Please select a body.') %]</span>
         <label for="body_external">
-              [% IF pstate == 'closed' %]
+              [% IF pstate == 'external' %]
                 [% loc('Assign to external body:') %]
               [% ELSE %]
                 [% loc('Assign to competent body:') %]
               [% END %]
             </label>
-            <select name="body_external" id="body_external">
+            <select class="form-control" name="body_external" id="body_external">
                 <option value="">--</option>
               [% FOR body IN bodies %]
                 [% NEXT IF body.parent OR body.bodies OR body.deleted %]
@@ -222,14 +220,14 @@
             </select>
         </li>
         <li>
-          [% IF pstate == 'closed' %]
+          [% IF pstate == 'external' %]
             <input type="checkbox" name="third_personal" id="third_personal" value="1"[% ' checked' IF problem.extra.third_personal %]>
             <label for="third_personal" class="inline">[% loc('Include reporter personal details') %]</label>
           [% END %]
         </li>
         <li>
             [% INCLUDE 'admin/response_templates_select.html' for='external_body' %]
-            <textarea name='external_message' id='external_body' cols=60 rows=5>[% problem.get_extra_metadata('external_message') | html %]</textarea>
+            <textarea class="form-control" name='external_message' id='external_body' cols=60 rows=5>[% problem.get_extra_metadata('external_message') | html %]</textarea>
         </li>
         </ul>
     [% END %]
@@ -238,15 +236,14 @@
       # (e.g. various pstates) %]
     <ul class="no-bullets screen-only">
         <li id="status_update_container"><label for="status_update">
-        [% SWITCH pstate %]
-            [% CASE ['hidden', 'investigating', 'partial'] %][%# Hidden/Wish/Not contactable %]
-                [% loc('Reply to user:') %]
-            [% CASE DEFAULT %]
-                [% loc('Public response:') %]
-        [% END %]
+          [% IF c.cobrand.zurich_user_response_states.$pstate %]
+            [% loc('Reply to user:') %]
+          [% ELSE %]
+            [% loc('Public response:') %]
+          [% END %]
         </label>
         [% INCLUDE 'admin/response_templates_select.html' for='status_update' %]
-        <textarea name='status_update' id='status_update' cols=60 rows=5>
+        <textarea class="form-control" name='status_update' id='status_update' cols=60 rows=5>
         [%- problem.extra.public_response || default_public_response | html -%]
         </textarea>
         </li>
@@ -256,16 +253,16 @@
 <p align="right" class="screen-only">
   [% IF show_publish_response %]
     [%# While we call this 'publish_response', the response will not actually
-      # be "published" for these cases: Wish / Hidden / Not contactable (for these,
+      # be "published" for these cases: Hidden / Not contactable (for these,
       # only a private email will be sent to the user.  However, in all cases,
       # this is the end of processing, so we mark this with the same text used
       # for 'No further updates %]
-    <input type="submit" name="publish_response" value="[% loc('No further updates') %]">
+    <input type="submit" class="btn" name="publish_response" value="[% loc('No further updates') %]">
   [% END %]
 
     [%# This button simply saves changes, but does NOT close the report (though
       # it may trigger other workflow %]
-    <input type="submit" name="Submit changes" value="[% loc('Submit changes') %]" >
+    <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" >
 </p>
 
 [% IF c.cobrand.problem_has_public_response(problem) || c.cobrand.problem_has_user_response(problem) %]
@@ -276,9 +273,9 @@
 [% END %]
 
 [% SWITCH problem.state %]
-    [% CASE ['closed','investigating'] %]
+    [% CASE ['external','wish'] %]
     <h2>
-          [% IF problem.state == 'closed' %]
+          [% IF problem.state == 'external' %]
             [% loc('Message to external body:') %]
           [% ELSE %]
             [% loc('Message to competent body:') %]
@@ -296,107 +293,7 @@
 
 </form>
 
-<script type="text/javascript">
-$(function(){
-    var form_fields_changed = false;
-
-    $('#form_time_spent').spinner({
-        spin: function (e, ui) {
-            if (ui.value < 0) { return false }
-            form_fields_changed = true;
-        }
-    });
-
-    setTimeout(function(){
-        $('.message-updated').fadeOut(250, function(){
-            $(this).remove();
-        });
-    }, 5000);
-
-    // When the user changes a select box, this bit of code
-    // makes the labels for the other two select boxes grey.
-    $('.assignation__select, .assignation select').change(function(){
-        if (this.value == "") {
-            $('.assignation').css('color', '#000');
-        } else {
-            var a = $(this).closest('li').css('color', '#000');
-            $('.assignation select').not(this).val("");
-            $('.assignation').not(a).css('color', '#999');
-        }
-    });
-
-    $('#state').change(function(){
-        // Show or hide the automatic reply field
-        var state = $(this).val();
-
-        // show or disable assignation, templates, public_response, publish if
-        // same or different state to the one we started on
-        if ((state === '[% pstate %]')) {
-            $('input[name=publish_response]').show();
-            $('.response_templates_select').show();
-            $('#status_update_container').show();
-
-            if (state === 'confirmed') {
-                $('#assignation__category').show();
-                $('#assignation__subdivision').show();
-            }
-            if ((state === 'closed') || (state === 'investigating')) {
-                $('#assignation__external').show();
-            } else {
-                $('#assignation__external').hide();
-            }
-        }
-        else {
-            $('input[name=publish_response]').hide();
-            $('.response_templates_select').hide();
-            $('#status_update_container').hide();
-
-            $('#assignation__category').hide();
-            $('#assignation__subdivision').hide();
-            $('#assignation__category select').val('');
-            $('#assignation__subdivision select').val('');
-
-            $('#assignation__external select').val('');
-            $('#assignation__external').hide();
-            $('#external_body').hide();
-            $('#third_personal, label[for=third_personal]').hide();
-        }
-
-    }).change();
-
-    $("form#report_edit input[type=submit]").click(function() {
-        $("form#report_edit").data("clicked_button", $(this).attr("name"));
-    });
-
-    $("form#report_edit").submit(function() {
-        // Make sure the external body field has a value if it's visible
-        // and the form is submitted as a 'save' action (i.e. not a rotate
-        // photo).
-        var clicked = $(this).data("clicked_button");
-        if (clicked == "publish_response" || clicked == "Submit changes") {
-            var visible = $("select#body_external:visible").length > 0;
-            var val = parseInt($("select#body_external").val());
-            if (visible && isNaN(val)) {
-                $("#assignation__external .error").removeClass("hidden");
-                $("select#body_external").focus().get(0).scrollIntoView();
-                return false;
-            }
-        }
-        // If the user has clicked to rotate a photo and has edited other
-        // fields, ask for confirmation before submitting the form
-        if (/rotate_photo/.test(clicked) && form_fields_changed) {
-            var message = "[% loc('Rotating this photo will discard unsaved changes to the report.') %]";
-            if (!confirm(message)) {
-                return false;
-            }
-        }
-    });
-
-    $("form#report_edit").find("input, select, textarea").change(function() {
-        form_fields_changed = true;
-    });
-});
-</script>
+</div>
 
 <div id="print_report_map" class="print-only">
 [% INCLUDE 'maps/noscript_map.html' map=print_report_map nsm_prefix="large_" %]

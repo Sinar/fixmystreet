@@ -1,3 +1,6 @@
+[% extra_js = [
+    version('/cobrands/fixmystreet.com/posters.js')
+] %]
 [% extra_css = BLOCK %]
     <link rel="stylesheet" href="[% version('/cobrands/fixmystreet.com/posters.css') %]">
 [% END %]
@@ -10,27 +13,6 @@
 [%
     badge = '<a href="https://www.fixmystreet.com/"> <img src="https://www.fixmystreet.com/i/fms-badge.jpeg" alt="FixMyStreet - report, view or discuss local problems" border="0"></a>'
 %]
-
-<script>
-
-$("[data-goodielink]").on(click, function(e){
-    var url = $(this).attr('href')
-    var name = $(this).attr('data-goodielink')
-    var callback = function(){
-        window.location.href = url
-    }
-    if(e.metaKey || e.ctrlKey){
-        callback = function(){}
-    } else {
-        e.preventDefault()
-    }
-    ga('send', 'event', 'goodie', 'download', name, {
-        'hitCallback': callback
-    })
-    setTimeout(callback, 2000);
-});
-
-</script>
 
 <div class="sticky-sidebar">
     <aside>
@@ -103,7 +85,7 @@ $("[data-goodielink]").on(click, function(e){
 <p class="badge-preview">[% badge %]</p>
 
 <p>Copy and paste the text below to add this badge to your site:</p>
-<textarea class="badge-code" onclick="this.select()">[% badge | html %]</textarea>
+<textarea class="badge-code js-click-select">[% badge | html %]</textarea>
 <p><small>(thanks to Lincolnshire Council for the image)</small></p>
 
 <h2 id="print">Printed Materials</h2>

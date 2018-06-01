@@ -1,7 +1,6 @@
 @import "../sass/h5bp";
 @import "./_colours";
 @import "../sass/mixins";
-@import "compass";
 
 @import "../sass/base";
 
@@ -19,37 +18,13 @@
     color: white;
 }
 
-#mega-menu-navbar {
-    margin-bottom: 0;
-    margin-top: 5px;
-}
-
-#site-search input[type=text] {
-    display: inline-block;
-}
-
-
-.navbar-fixed-top {
-    position: static;
-}
-
 body {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 14px;
     line-height: 20px;
-}
 
-#site-header {
-    height: auto;
-    background: white;
-
-    nav ul li, ul.nav li {
-        list-style: none;
-        margin-bottom: 0;
-    }
-
-    .container {
-        min-height: 0;
+    @media (max-width: 767px) {
+        min-width: 0; // why does Warwickshire even set a min-width on the body!?
     }
 }
 
@@ -57,75 +32,100 @@ body.mappage > div.container {
     padding-top: 0;
 }
 
-.footer-container {
-    font-size: 16px;
+body > .navbar {
+    font-size: 15px; // match body {font-size: 15px } from the live site
+
+    .nav li {
+        list-style: none; // override our default list styles from _base.scss
+        margin-bottom: 0; // override our default list styles from _base.scss
+    }
 }
 
-@media (max-width: 767px) {
-    body {
-        padding-left: 0;
-        padding-right: 0;
+body.style-1 > footer {
+    @media (max-width: 767px) {
+        margin: 0 -20px; // fix a bug in Warwickshire's CSS that leaves a gap either side of footer
+    }
+}
+
+body > div.container {
+    @media (max-width: 380px) {
+        margin: 0 -20px; // fix a bug in Warwickshire's CSS that leaves a gap either side of .container elements
+    }
+}
+
+// Quick way to fix search not fitting on a single line with nav bar!
+#site-search {
+    display: none;
+}
+
+// The custom FMS nav links just below the masthead
+#main-nav {
+    background-color: $green;
+    color: #fff;
+    padding: 10px 0;
+    margin: 0 -20px; // overlap 20px padding either side of body
+    text-align: center;
+
+    li {
+        display: inline-block;
+        list-style: none;
+        margin: 0;
+        padding: 0;
     }
 
-    .navbar-fixed-top {
-        margin-left: 0;
-        margin-right: 0;
+    a,
+    span {
+        display: inline-block;
+        padding: 5px 10px;
     }
 
-    .style-1-gradient {
-        margin-left: 0 !important;
-        margin-right: 0 !important;
+    span {
+        color: mix(#fff, $green, 70%);
     }
 
-    body.frontpage #wrapper {
-        padding: 5px 0;
-    }
+    a {
+        color: #fff;
 
-    body.mappage #wrapper {
-        padding-top: 0;
-    }
-
-    #front-howto, #front-recently {
-        padding-left: 15px;
-
-        section.full-width {
-            margin: 0 0 0 -15px;
+        &:hover,
+        &:focus {
+            color: #fff;
+            text-decoration: none;
         }
     }
-
-    #top-header .container {
-        padding: 0 1em;
-    }
-
-    #mega-menu-navbar .navbar-inner {
-        padding: 0;
-
-        #mega-menu li a {
-            padding: 4px 8px;
-        }
-    }
-
-    .navbar .nav {
-        margin: 0;
-    }
-
 }
 
-#mega-menu-navbar .navbar-inner {
-    display: block;
-}
+// Bootstrap messes up our inputs!
+select,
+textarea,
+input[type="text"],
+input[type="password"],
+input[type="datetime"],
+input[type="datetime-local"],
+input[type="date"],
+input[type="month"],
+input[type="time"],
+input[type="week"],
+input[type="number"],
+input[type="email"],
+input[type="url"],
+input[type="search"],
+input[type="tel"],
+input[type="color"],
+.uneditable-input {
+    height: auto;
 
-@media (max-width: 978px) {
-    .navbar-container {
-        padding: 0;
-        margin: 0;
+    &.form-control {
+        border: 1px solid #aaa;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
     }
 }
 
-// Lifted from bootstrap-responsive.css, no idea why this
-// media query has a different pixel size to the one above...
-@media (max-width: 979px) {
-    .navbar-fixed-top .navbar-inner {
-        padding: 0 5px;
-    }
+// Bootstrap adds underlines to all our sidebar links!
+.item-list a {
+    text-decoration: none !important;
+}
+
+// Bootstrap messes up our map tiles if we don't disable the max-width.
+#map_box img {
+    max-width: none !important;
 }

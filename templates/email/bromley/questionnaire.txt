@@ -1,22 +1,22 @@
-Subject: Questionnaire about '<?=$values['title']?>'
+Subject: Questionnaire about your report: '[% report.title %]'
 
-Hi <?=$values['name']?>,
+Hello [% report.name %],
 
-<?=$values['created']?> ago, you reported a problem. To keep the
-site up to date and relevant, please fill in a short questionnaire
+[% created %] ago, you reported a problem, the details of
+which are at the end of this email. To keep the site
+up to date and relevant, please fill in a short questionnaire
 updating the status of your problem:
 
-    <?=$values['url']?>
+    [% url %]
 
 This email has been sent automatically from an unmonitored
 mailbox, please do not reply.
 
-[% INCLUDE 'signature.txt' %]
+[% signature %]
 
+Your report was as follows:
 
-Your problem was as follows:
+[% report.title %]
 
-<?=$values['title']?>
-
-<?=$values['detail']?>
+[% report.detail %]
 

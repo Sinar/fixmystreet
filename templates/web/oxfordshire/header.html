@@ -1,9 +1,10 @@
 <!doctype html>
-<!--[if lt IE 7]><html class="no-js ie6 iel8" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 7]>   <html class="no-js ie7 iel8" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 8]>   <html class="no-js ie8 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 8]>   <html class="no-js ie8" lang="[% lang_code %]"><![endif]-->
 <!--[if IE 9]>   <html class="no-js ie9" lang="[% lang_code %]"><![endif]-->
-<!--[if gt IE 9]><!--><html class="no-js" lang="[% lang_code %]"><!--<![endif]-->
+<!--[if gt IE 9]><!--><html class="no-js" lang="[% lang_code %]"
+[% IF appcache ~%]
+ manifest="/offline/appcache.manifest"
+[%~ END %]><!--<![endif]-->
     <head>
         <meta name="viewport" content="initial-scale=1.0">
 
@@ -11,67 +12,31 @@
         <meta name="HandHeldFriendly" content="true">
         <meta name="mobileoptimized" content="0">
 
-[% SET start = c.config.ADMIN_BASE_URL IF admin %]
-
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/base.css') %]">
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]" media="(min-width:48em)">
-        [% extra_css %]
-        <!--[if (lt IE 9) & (!IEMobile)]>
-            <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]">
-        <![endif]-->
-
-        <script src="[% start %][% version('/js/modernizr.custom.js') %]" charset="utf-8"></script>
-        <script src="[% start %][% version('/cobrands/oxfordshire/position_map.js') %]" charset="utf-8"></script>
-        [% INCLUDE 'common_header_tags.html', js_override = '/cobrands/fixmystreet/fixmystreet.js' %]
-        [% extra_js %]
+        [% INCLUDE 'header/css.html' %]
+        [% INCLUDE 'common_header_tags.html' %]
 
         [% INCLUDE 'tracking_code.html' %]
-        [% PROCESS 'header_extra.html' %]
-
     </head>
     <body class="[% bodyclass | html IF bodyclass %]">
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NT76GJ5"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
 <div id="oxford-wrapper">
-    <div id="oxford-header" class="desk-only oxford-left">
-        <a href="http://www.oxfordshire.gov.uk/" title="Home" class="logo">Oxfordshire County Council<span></span></a>
+    <div id="oxford-header" class="desk-only">
+        <a href="https://www.oxfordshire.gov.uk/" title="Home" class="logo">Oxfordshire County Council</a>
         <span id="oxford-links">
-            <a href="http://www.oxfordshire.gov.uk/" title="">Oxfordshire County Council home</a>
+            <a href="https://www.oxfordshire.gov.uk/" title="">Oxfordshire County Council home</a>
         </span>
         <div style="clear:both"></div>
         <span class="header"><a href="/">Report a road or street problem</a></span>
 
-      [% IF c.user_exists %]
-        <div class="oxford-user">
-            <p>
-                [% tprintf(loc('Hi %s'), c.user.name || c.user.email) %]
-                <a href="/auth/sign_out">[% loc('Sign out') %]</a>
-            </p>
-        </div>
-      [% END %]
-
         <div id="navigation">
             <div class="menubar">
                 <div class="menu-inner">
-                    <ul class="menu">
-                        <li>
-                            <[% IF c.req.uri.path == '/' %]span[% ELSE %]a href="/"[% END %]>[% "Report" %]</[% c.req.uri.path == '/' ? 'span' : 'a' %]>
-                        </li>
-                        <li>
-                            <[% IF c.req.uri.path == '/my' OR ( c.req.uri.path == '/auth' AND c.req.params.r == 'my' ) %]span[% ELSE %]a href="/my"[% END
-                             %]>[% loc("Your reports") %]</[% ( c.req.uri.path == '/my' OR ( c.req.uri.path == '/auth' AND c.req.params.r == 'my' ) ) ? 'span' : 'a' %]>
-                        </li>
-                        <li>
-                            <[% IF c.req.uri.path == '/reports/Oxfordshire' %]span[% ELSE %]a href="/reports/Oxfordshire"[% END
-                                 %]>[% loc("All reports") %]</[% c.req.uri.path == '/reports' ? 'span' : 'a' %]>
-                        </li>
-                        <li>
-                            <[% IF c.req.uri.path == '/alert' %]span[% ELSE %]a href="/alert[% pc ? '/list?pc=' : '' %][% pc | uri %]"[% END
-                                 %]>[% loc("Local alerts") %]</[% c.req.uri.path == '/alert' ? 'span' : 'a' %]>
-                        </li>
-                        <li>
-                            <[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
-                                 %]>[% loc("Help") %]</[% c.req.uri.path == '/faq' ? 'span' : 'a' %]>
-                        </li>
-                    </ul>
+                    [% INCLUDE "main_nav.html" body_name=c.cobrand.council_area hide_privacy_link=1 omit_wrapper=1 ul_class="menu" %]
                 </div>
             </div>
         </div>
@@ -88,14 +53,15 @@
                 </div>
             </header>
 
-          [% IF c.user_exists %]
-            <div id="user-meta">
-                <p>
-                    [% tprintf(loc('Hi %s'), c.user.name || c.user.email) %]
-                    <a href="/auth/sign_out">[% loc('sign out') %]</a>
-                </p>
-            </div>
-          [% END %]
+[% IF c.req.uri.path == '/' %]
+<p class="oxfordshire-preamble">
+The weather over the winter period this year has caused widespread damage to
+Oxfordshire’s roads. This has significantly increased the number of issues being
+reported, and we are of course dealing with the most dangerous issues first.
+Please do carry on alerting us to new ones so that we can continue to prioritise
+this work efficiently and repair the roads.
+</p>
+[% END %]
 
             [% pre_container_extra %]
 

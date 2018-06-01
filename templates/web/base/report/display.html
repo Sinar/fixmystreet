@@ -1,5 +1,5 @@
-[% 
-    SET bodyclass = 'mappage';
+[%
+    DEFAULT bodyclass = 'mappage';
     PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html";
 
@@ -12,6 +12,14 @@
 
 [% map_html %]
 </div>
+
+<div id="map_sidebar">
+
+[% IF two_column_sidebar %]
+  <div class="two_column_sidebar">
+[% END %]
+
+  <div id="side-report">
 
 [% IF login_success %]
     <p class='form-success'>[% loc('You have successfully signed in; please check and confirm your details are accurate:') %]</p>
@@ -31,14 +39,41 @@
 [% END %]
 
 [% INCLUDE 'report/banner.html' %]
+[% IF c.user_exists %]
+    [% DEFAULT permissions = c.user.permissions(c, problem.bodies_str) %]
+[%- END %]
 [% INCLUDE 'report/_main.html' %]
+
+[% IF problem.duplicate_of %]
+    [% INCLUDE 'report/duplicate-no-updates.html' hide_header = 1 %]
+[% END %]
+
 [% TRY %][% INCLUDE 'report/_message_manager.html' %][% CATCH file %][% END %]
 [% INCLUDE 'report/display_tools.html' %]
 [% TRY %][% INCLUDE 'report/sharing.html' %][% CATCH file %][% END %]
 [% INCLUDE 'report/updates.html' %]
 
-[% IF NOT shown_form %]
+[% IF two_column_sidebar AND NOT problem.extra.closed_updates %]
+<button class="btn btn--provide-update js-provide-update hidden-nojs">[% loc('Provide an update') %]</button>
+<div class="hidden-js">
+[% END %]
+[% IF problem.duplicate_of %]
+    [% INCLUDE 'report/duplicate-no-updates.html' %]
+[% ELSIF NOT shown_form %]
     [% INCLUDE 'report/update-form.html' %]
 [% END %]
+[% IF two_column_sidebar AND NOT problem.extra.closed_updates %]
+</div>
+[% END %]
+
+  </div>
+
+  [% second_column %]
+
+[% IF two_column_sidebar %]
+  </div>
+[% END %]
+
+</div>
 
 [% INCLUDE 'footer.html' %]

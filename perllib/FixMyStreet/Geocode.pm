@@ -9,10 +9,9 @@ package FixMyStreet::Geocode;
 use strict;
 use Digest::MD5 qw(md5_hex);
 use Encode;
-use File::Slurp;
-use File::Path ();
 use JSON::MaybeXS;
 use LWP::Simple qw($ua);
+use Path::Tiny;
 use URI::Escape;
 use FixMyStreet::Geocode::Bing;
 use FixMyStreet::Geocode::Google;
@@ -69,22 +68,28 @@ sub escape {
 
 sub cache {
     my ($type, $url, $args, $re) = @_;
-    my $cache_dir = FixMyStreet->config('GEO_CACHE') . $type . '/';
-    my $cache_file = $cache_dir . md5_hex($url);
+
+    my $cache_dir = path(FixMyStreet->config('GEO_CACHE'), $type)->absolute(FixMyStreet->path_to());
+    my $cache_file = $cache_dir->child(md5_hex($url));
     my $js;
-    if (-s $cache_file && -M $cache_file <= 7) {
-        $js = File::Slurp::read_file($cache_file);
+    if (-s $cache_file && -M $cache_file <= 7 && !FixMyStreet->config('STAGING_SITE')) {
+        # uncoverable statement
+        $js = $cache_file->slurp_utf8;
     } else {
         $url .= '&' . $args if $args;
         $ua->timeout(15);
         $js = LWP::Simple::get($url);
-        $js = encode_utf8($js) if utf8::is_utf8($js);
-        File::Path::mkpath($cache_dir);
-        if ($js && (!$re || $js !~ $re)) {
-            File::Slurp::write_file($cache_file, $js);
+        # The returned data is not correctly decoded if the content type is
+        # e.g. application/json. Which all of our geocoders return.
+        # uncoverable branch false
+        $js = decode_utf8($js) if !utf8::is_utf8($js);
+        if ($js && (!$re || $js !~ $re) && !FixMyStreet->config('STAGING_SITE')) {
+            $cache_dir->mkpath; # uncoverable statement
+            # uncoverable statement
+            $cache_file->spew_utf8($js);
         }
     }
-    $js = JSON->new->utf8->allow_nonref->decode($js) if $js;
+    $js = JSON->new->allow_nonref->decode($js) if $js;
     return $js;
 }
 

@@ -1,8 +1,5 @@
-use strict;
-use warnings;
-use Test::More;
+use FixMyStreet::Test;
 use Test::Exception;
-use utf8;
 
 use FixMyStreet::DB;
 use DateTime;
@@ -13,17 +10,13 @@ my $dt = DateTime->now;
 
 my $UPLOAD_DIR = tempdir( CLEANUP => 1 );
 
-my $db = FixMyStreet::DB->storage->schema;
+my $db = FixMyStreet::DB->schema;
 
-my $user = $db->resultset('User')->find_or_create({
-        name => 'Bob', email => 'bob@example.com',
-});
+my $user = $db->resultset('User')->find_or_create({ name => 'Bob', email => 'bob@example.com' });
 
 FixMyStreet::override_config {
     UPLOAD_DIR => $UPLOAD_DIR,
 }, sub {
-
-$db->txn_begin;
 
 my $image_path = path('t/app/controller/sample.jpg');
 
@@ -58,7 +51,7 @@ subtest 'Photoset with photo inline in DB' => sub {
     my $report = make_report( $image_path->slurp );
     my $photoset = $report->get_photoset();
     is $photoset->num_images, 1, 'Found just 1 image';
-    is $photoset->data, '1cdd4329ceee2234bd4e89cb33b42061a0724687';
+    is $photoset->data, '74e3362283b6ef0c48686fb0e161da4043bbcc97.jpeg';
 };
 
 $image_path->copy( path( $UPLOAD_DIR, '0123456789012345678901234567890123456789.jpeg' ) );
@@ -73,8 +66,6 @@ subtest 'Photoset with 3 referenced photo' => sub {
     my $photoset = $report->get_photoset();
     is $photoset->num_images, 3, 'Found 3 images';
 };
-
-$db->txn_rollback;
 
 };
 

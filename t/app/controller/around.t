@@ -1,9 +1,5 @@
-use strict;
-use warnings;
-use Test::More;
-use LWP::Protocol::PSGI;
+use Test::MockModule;
 
-use t::Mock::MapIt;
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
@@ -17,7 +13,7 @@ subtest "check that if no query we get sent back to the homepage" => sub {
 subtest "redirect x,y requests to lat/lon (301 - permanent)" => sub {
 
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok('/around?x=3281&y=1113');
     };
@@ -73,8 +69,8 @@ foreach my $test (
 foreach my $test (
     {
         pc        => 'SW1A 1AA',
-        latitude  => '51.5',
-        longitude => '-2.1',
+        latitude  => '51.501009',
+        longitude => '-0.141588',
     },
     {
         pc        => 'TQ 388 773',
@@ -84,8 +80,6 @@ foreach my $test (
   )
 {
     subtest "check lat/lng for '$test->{pc}'" => sub {
-        LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.uk');
-
         $mech->get_ok('/');
         FixMyStreet::override_config {
             ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
@@ -100,21 +94,28 @@ foreach my $test (
     };
 }
 
-subtest 'check non public reports are not displayed on around page' => sub {
-    my $params = {
-        postcode  => 'EH99 1SP',
-        latitude  => 55.9519637512,
-        longitude => -3.17492254484,
-    };
-    my @edinburgh_problems =
-      $mech->create_problems_for_body( 5, 2651, 'Around page', $params );
+my @edinburgh_problems = $mech->create_problems_for_body( 5, 2651, 'Around page', {
+    postcode  => 'EH1 1BB',
+    latitude  => 55.9519637512,
+    longitude => -3.17492254484,
+});
 
+subtest 'check lookup by reference' => sub {
+    $mech->get_ok('/');
+    $mech->submit_form_ok( { with_fields => { pc => 'ref:12345' } }, 'bad ref');
+    $mech->content_contains('Searching found no reports');
+    my $id = $edinburgh_problems[0]->id;
+    $mech->submit_form_ok( { with_fields => { pc => "ref:$id" } }, 'good ref');
+    is $mech->uri->path, "/report/$id", "redirected to report page";
+};
+
+subtest 'check non public reports are not displayed on around page' => sub {
     $mech->get_ok('/');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
-        $mech->submit_form_ok( { with_fields => { pc => 'EH99 1SP' } },
+        $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB' } },
             "good location" );
     };
     $mech->content_contains( 'Around page Test 3 for 2651',
@@ -124,50 +125,88 @@ subtest 'check non public reports are not displayed on around page' => sub {
     ok $private->update( { non_public => 1 } ), 'problem marked non public';
 
     $mech->get_ok('/');
-    $mech->submit_form_ok( { with_fields => { pc => 'EH99 1SP' } },
-        "good location" );
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB' } },
+            "good location" );
+    };
     $mech->content_lacks( 'Around page Test 3 for 2651',
         'problem marked non public is not visible' );
 };
 
 
-subtest 'check category and status filtering works on /ajax' => sub {
+subtest 'check category, status and extra filtering works on /around' => sub {
+    my $body = $mech->create_body_ok(2237, "Oxfordshire");
+
     my $categories = [ 'Pothole', 'Vegetation', 'Flytipping' ];
     my $params = {
-        postcode  => 'OX1 1ND',
-        latitude  => 51.7435918829363,
-        longitude => -1.23201966270446,
+        postcode  => 'OX20 1SZ',
+        latitude  => 51.754926,
+        longitude => -1.256179,
     };
     my $bbox = ($params->{longitude} - 0.01) . ',' .  ($params->{latitude} - 0.01)
                 . ',' . ($params->{longitude} + 0.01) . ',' .  ($params->{latitude} + 0.01);
 
     # Create one open and one fixed report in each category
     foreach my $category ( @$categories ) {
+        $mech->create_contact_ok( category => $category, body_id => $body->id, email => "$category\@example.org" );
         foreach my $state ( 'confirmed', 'fixed' ) {
             my %report_params = (
                 %$params,
                 category => $category,
                 state => $state,
+                external_body => "$category-$state",
             );
-            $mech->create_problems_for_body( 1, 2237, 'Around page', \%report_params );
+            $mech->create_problems_for_body( 1, $body->id, 'Around page', \%report_params );
         }
     }
 
-    my $json = $mech->get_ok_json( '/ajax?bbox=' . $bbox );
+    my $json = $mech->get_ok_json( '/around?ajax=1&bbox=' . $bbox );
     my $pins = $json->{pins};
     is scalar @$pins, 6, 'correct number of reports when no filters';
 
-    $json = $mech->get_ok_json( '/ajax?filter_category=Pothole&bbox=' . $bbox );
+    # Regression test for filter_category in /around URL
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->get_ok( '/around?filter_category=Pothole&bbox=' . $bbox );
+        $mech->content_contains('<option value="Pothole" selected>');
+    };
+
+    $json = $mech->get_ok_json( '/around?ajax=1&filter_category=Pothole&bbox=' . $bbox );
     $pins = $json->{pins};
     is scalar @$pins, 2, 'correct number of Pothole reports';
 
-    $json = $mech->get_ok_json( '/ajax?status=open&bbox=' . $bbox );
+    $json = $mech->get_ok_json( '/around?ajax=1&status=open&bbox=' . $bbox );
     $pins = $json->{pins};
     is scalar @$pins, 3, 'correct number of open reports';
 
-    $json = $mech->get_ok_json( '/ajax?status=fixed&filter_category=Vegetation&bbox=' . $bbox );
+    $json = $mech->get_ok_json( '/around?ajax=1&status=fixed&filter_category=Vegetation&bbox=' . $bbox );
     $pins = $json->{pins};
     is scalar @$pins, 1, 'correct number of fixed Vegetation reports';
+
+    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Default');
+    $cobrand->mock('display_location_extra_params', sub { { external_body => "Pothole-fixed" } });
+
+    $json = $mech->get_ok_json( '/around?ajax=1&bbox=' . $bbox );
+    $pins = $json->{pins};
+    is scalar @$pins, 1, 'correct number of external_body reports';
+};
+
+subtest 'check skip_around skips around page' => sub {
+    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Default');
+    $cobrand->mock('skip_around_page', sub { 1 });
+    $cobrand->mock('country', sub { 1 });
+
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->get('/around?latitude=51.754926&longitude=-1.256179');
+        is $mech->res->code, 302, "around page is a redirect";
+        is $mech->uri->path, '/report/new', "and redirects to /report/new";
+    };
 };
 
 done_testing();

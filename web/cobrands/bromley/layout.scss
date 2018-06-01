@@ -1,58 +1,45 @@
 @import "_colours";
 @import "../sass/layout";
-@import "../sass/report_list_pins";
 
 // Alter the logo and the header on every page *but* the map page. On the map
 // page it stays small like in base.css
-body.fullwidthpage,
-body.twothirdswidthpage {
-  #site-header {
-    // Increase the height of the site-header to suit the taller logo image
-    height: auto;
-  }
-  // Override the logo
+body.fullwidthpage, body.twothirdswidthpage, body.authpage {
   #site-logo {
     width: 159px;
     height: 114px;
     background: url(/cobrands/bromley/bromley-logo.png) 0 0 no-repeat;
+    float: left;
   }
 }
 
-// On the map page, we want the header to be much smaller, otherwise it pushes
-// the sidebar down too much
 body.mappage {
-  #site-header {
-    height: 5em;
+  .bromley-header {
+    margin-bottom: 0;
+    padding-top: 0.5em;
   }
 }
 
-// We have to specify this again for IE, since FMS overrides it
-.iel8 {
-  body.fullwidthpage,
-  body.twothirdswidthpage {
-    #site-header {
-    // Increase the height of the site-header to suit the taller logo image
-      height: auto;
-    }
-    #site-logo {
-      width: 159px;
-      height: 114px;
-    }
-  }
-}
-.ie6 body.frontpage #site-logo {
-  background:url(/cobrands/bromley/bromley-logo.png) 0 0 no-repeat;
-}
-
-// Override the container width to match Bromley' site, which is wider
-.container {
-  width: 100%;
-  max-width: 1200px;
+#main-nav {
+  display: block; // remove flex so nav touches top of parent
+  min-height: 0; // no vertical align, so no need for a height
+  margin-top: 0; // don't bother overlapping the border
 }
 
 // Override the FMS main menu to give it a background colour
 .nav-menu--main {
   background-color: $bromley_blue;
+
+  // Bromley doesn't have a special styling for the report button in the nav
+  a.report-a-problem-btn {
+    color: $nav_fg;
+    background: none;
+    padding: 0.75em;
+    margin: 0;
+    @include border-radius(0);
+    &:hover {
+      background: $nav_fg_hover;
+    }
+  }
 }
 .nav-menu--main span {
   color: $nav_fg;
@@ -64,40 +51,14 @@ body.alertindex form.full-width {
   margin-left: 0;
 }
 
-// Override the little banner you get when you're logged in on the map page
-// because FMS makes it a different colour and moves it over to the left.
-body.mappage #user-meta p {
-  background-color: $bromley_blue;
-  border-bottom: 1px solid #444;
-}
-
-// And also override the banner on other pages so that it lines up properly
-#user-meta, body.mappage #user-meta {
-  max-width: 1200px;
-}
-#user-meta p,
-body.frontpage #user-meta p {
-  top: 0;
-  right: auto;
-  background-color: $bromley_blue;
-  color: #fff;
-  box-shadow: none;
-}
-
-// Because we've moved the user-meta, we also have to move the #front-main div
-// down a bit so that it shows the #user-meta
-#front-main {
-  margin-top:3em
-}
-
 // The page h1 needs to be white on desktop, because it's in a blue box
 h1.main {
   color: #fff;
 }
 
 // We have slightly different content in our lists of issues to what
-// reports_list.scss expects, so we need to add back some padding it removes.
-// This stops the pin icon being underneath the text.
+// reports_list.scss expects, so we need to tweak the padding back to normal.
+// This stops the spacing being too large.
 .item-list__item--with-pin a {
   padding: 0;
   padding-left: 3em;
@@ -128,29 +89,17 @@ body.fullwidthpage .container .content footer .tablewrapper {
 // Bromley desktop styles
 //////////////////////////////////////////////////////////////////////////////
 
-// Bromley's logo is bigger on big screens so that it appears to have some
-// left padding
-#site-logo,
-body.frontpage #site-logo {
-  float: left;
-  width: 239px;
-  clear: left;
-  margin-bottom: 20px;
-  // Bromley uses an image element inside a link, so it can be centered using
-  // text-align. We use a background image, so this approximates that.
-  background-position: 50% 0%;
-}
-
 // Bromley's .top-links section floats to the right on bigger screens
 .top-links {
     float: right;
     width: auto;
+    margin-top: 3em;
 }
 
 // Bromley's search form floats to the right too
 .main-search {
   width: 35%;
-  margin: 10px 0 0 0;
+  margin: 0;
   float: right;
   min-width: 287px;
   clear: right;
@@ -186,21 +135,16 @@ body.frontpage #site-logo {
     .additional-links {
       float: left;
       width: 24%;
-      margin-left: 2%;
-      margin-right: 2%;
       -webkit-box-sizing: border-box;
       -moz-box-sizing: border-box;
       box-sizing: border-box;
-      &:first-child,
-      &:last-child {
-        margin-left: 0%;
-        margin-right: 0%;
-      }
       li {
         padding: 0 1em;
       }
     }
     .footer-list2 {
+      margin-left: 2%;
+      margin-right: 2%;
       width: 48%;
       ul {
         overflow: auto;
@@ -217,32 +161,3 @@ body.frontpage #site-logo {
     }
   }
 }
-
-// Fix the footer in Old IE because it doesn't like last-child selectors
-.iel8 {
-  .site-footer {
-    .column {
-      // Old IE won't float the social media links unless we force the width to be
-      // smaller and take a more traditional display/float tack.
-      .social ul li {
-        display: block;
-        width: 36px;
-        float: left;
-      }
-      .additional-links {
-        margin-left: 0%;
-        margin-right: 0%;
-      }
-      .footer-list2 {
-        margin-left: 2%;
-        margin-right: 2%;
-      }
-      .footer-list2 ul li,
-      .footer-list1 ul li {
-        // Old IE needs to know to float these for some reason
-        float: left;
-      }
-    }
-  }
-}
-

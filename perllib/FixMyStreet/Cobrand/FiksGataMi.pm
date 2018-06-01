@@ -29,11 +29,9 @@ sub disambiguate_location {
 }
 
 sub area_types {
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->staging_flag('skip_checks');
     [ 'NKO', 'NFY', 'NRA' ];
-}
-
-sub admin_base_url {
-    return 'http://www.fiksgatami.no/admin';
 }
 
 sub geocode_postcode {
@@ -63,8 +61,9 @@ sub geocoded_string_check {
 }
 
 sub find_closest {
-    my ( $self, $latitude, $longitude ) = @_;
-    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $latitude, $longitude );
+    my ( $self, $problem ) = @_;
+    $problem = $problem->{problem} if ref $problem eq 'HASH';
+    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $problem->latitude, $problem->longitude );
 }
 
 # Used by send-reports, calling find_closest, calling OSM geocoding

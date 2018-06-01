@@ -7,11 +7,16 @@
 package FixMyStreet::Map::Google;
 
 use strict;
-use mySociety::Gaze;
+use FixMyStreet::Gaze;
 use Utils;
 
 use constant ZOOM_LEVELS    => 6;
 use constant MIN_ZOOM_LEVEL => 13;
+
+sub map_javascript { [
+    "http://maps.googleapis.com/maps/api/js?sensor=false",
+    '/js/map-google.js',
+] }
 
 # display_map C PARAMS
 # PARAMS include:
@@ -30,7 +35,7 @@ sub display_map {
 
     # Adjust zoom level dependent upon population density
     my $dist = $c->stash->{distance}
-        || mySociety::Gaze::get_radius_containing_population( $params{latitude}, $params{longitude}, 200_000 );
+        || FixMyStreet::Gaze::get_radius_containing_population( $params{latitude}, $params{longitude} );
     my $default_zoom = $c->cobrand->default_map_zoom() ? $c->cobrand->default_map_zoom() : $numZoomLevels - 4;
     $default_zoom = $numZoomLevels - 3 if $dist < 10;
 

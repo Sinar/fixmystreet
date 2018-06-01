@@ -16,6 +16,18 @@ FixMyStreet::App::Controller::Root - Root Controller for FixMyStreet::App
 
 =head1 METHODS
 
+=head2 begin
+
+Any pre-flight checking for all requests
+
+=cut
+sub begin : Private {
+    my ( $self, $c ) = @_;
+
+    $c->forward( 'check_login_required' );
+}
+
+
 =head2 auto
 
 Set up general things for this instance
@@ -58,6 +70,12 @@ sub index : Path : Args(0) {
         return;
     }
 
+    if ($c->stash->{homepage_template}) {
+        $c->stash->{template} = $c->stash->{homepage_template};
+        $c->detach;
+    }
+
+    $c->forward('/auth/get_csrf_token');
 }
 
 =head2 default
@@ -82,6 +100,13 @@ Display a 404 (not found) or 410 (gone) page. Pass in an optional error message 
 
 sub page_error_404_not_found : Private {
     my ( $self, $c, $error_msg ) = @_;
+
+    # Try getting static content that might be given under an admin proxy.
+    # First the special generated JavaScript file
+    $c->go('/js/translation_strings', [ $1 ], []) if $c->req->path =~ m{^admin/js/translation_strings\.(.*?)\.js$};
+    # Then a generic static file
+    $c->serve_static_file("web/$1") && return if $c->req->path =~ m{^admin/(.*)};
+
     $c->stash->{template}  = 'errors/page_error_404_not_found.html';
     $c->stash->{error_msg} = $error_msg;
     $c->response->status(404);
@@ -96,9 +121,46 @@ sub page_error_410_gone : Private {
 
 sub page_error_403_access_denied : Private {
     my ( $self, $c, $error_msg ) = @_;
-    $c->stash->{template}  = 'index.html';
-    $c->stash->{error} = $error_msg;
-    $c->response->status(403);
+    $c->detach('page_error', [ $error_msg || _("Sorry, you don't have permission to do that."), 403 ]);
+}
+
+sub page_error_400_bad_request : Private {
+    my ( $self, $c, $error_msg ) = @_;
+    $c->forward('/auth/get_csrf_token');
+    $c->detach('page_error', [ $error_msg, 400 ]);
+}
+
+sub page_error_500_internal_error : Private {
+    my ( $self, $c, $error_msg ) = @_;
+    $c->detach('page_error', [ $error_msg, 500 ]);
+}
+
+sub page_error : Private {
+    my ($self, $c, $error_msg, $code) = @_;
+    $c->stash->{template}  = 'errors/generic.html';
+    $c->stash->{message} = $error_msg || _('Unknown error');
+    $c->response->status($code);
+}
+
+sub check_login_required : Private {
+    my ($self, $c) = @_;
+
+    return if $c->user_exists || !FixMyStreet->config('LOGIN_REQUIRED');
+
+    # Whitelisted URL patterns are allowed without login
+    my $whitelist = qr{
+          ^auth(/|$)
+        | ^js/translation_strings\.(.*?)\.js
+        | ^[PACQM]/  # various tokens that log the user in
+    }x;
+    return if $c->request->path =~ $whitelist;
+
+    # Blacklisted URLs immediately 404
+    # This is primarily to work around a Safari bug where the appcache
+    # URL is requested in an infinite loop if it returns a 302 redirect.
+    $c->detach('/page_error_404_not_found', []) if $c->request->path =~ /^offline/;
+
+    $c->detach( '/auth/redirect' );
 }
 
 =head2 end

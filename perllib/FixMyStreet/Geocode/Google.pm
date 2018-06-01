@@ -8,6 +8,7 @@ package FixMyStreet::Geocode::Google;
 
 use strict;
 use Utils;
+use URI::Escape;
 
 # string STRING CONTEXT
 # Looks up on Google Maps API, and caches, a user-inputted location.
@@ -18,12 +19,16 @@ sub string {
     my ( $s, $c ) = @_;
 
     my $params = $c->cobrand->disambiguate_location($s);
+    # Allow cobrand to fixup the user input
+    $s = $params->{string} if $params->{string};
+
+    my $components = "";
 
     # For some reason adding gl=uk is no longer sufficient to make google
-    # think we are in the UK for some locations so we explictly add UK to
-    # the address.
-    if ($c->cobrand->country eq 'GB' && $s !~ /, *UK/ && $s !~ /united *kingdom$/) {
-        $s .= ', UK';
+    # think we are in the UK for some locations so we explicitly tell Google
+    # the country.
+    if ($c->cobrand->country eq 'GB') {
+        $components = "country:GB";
     }
 
     $s = FixMyStreet::Geocode::escape($s);
@@ -36,8 +41,16 @@ sub string {
         $url .=  '&region=' . $params->{google_country};
     } elsif ($params->{country}) {
         $url .=  '&region=' . $params->{country};
+<<<<<<< HEAD
+=======
+    }
+    if ($params->{components}) {
+        $components .= ($components ? '|' : '') . URI::Escape::uri_escape_utf8($params->{components});
+>>>>>>> master
     }
     $url .=  '&language=' . $params->{lang} if $params->{lang};
+
+    $url .= '&components=' . $components if $components;
 
     my $args = 'key=' . FixMyStreet->config('GOOGLE_MAPS_API_KEY');
     my $js = FixMyStreet::Geocode::cache('google', $url, $args, qr/"status"\s*:\s*"(OVER_QUERY_LIMIT|REQUEST_DENIED|INVALID_REQUEST|UNKNOWN_ERROR)"/);

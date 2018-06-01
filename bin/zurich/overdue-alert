@@ -32,13 +32,13 @@ exit if FixMyStreet::Cobrand::Zurich::is_public_holiday($now) or FixMyStreet::Co
 my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker('zurich')->new();
 my %bodies = map { $_->id => $_ } FixMyStreet::DB->resultset("Body")->all;
 
-loop_through( 'alert-moderation-overdue.txt', 0, 1, [ 'unconfirmed' ] );
+loop_through( 'alert-moderation-overdue.txt', 0, 1, [ 'submitted' ] );
 loop_through( 'alert-overdue.txt', 1, 6, 'in progress' );
-loop_through( 'alert-overdue.txt', 0, 6, ['confirmed', 'planned'] );
+loop_through( 'alert-overdue.txt', 0, 6, ['confirmed', 'feedback pending'] );
 
 sub loop_through {
     my ( $template, $include_parent, $days, $states ) = @_;
-    my $dtf = FixMyStreet::DB->storage->datetime_parser;
+    my $dtf = FixMyStreet::DB->schema->storage->datetime_parser;
     my $date_threshold = $dtf->format_datetime(FixMyStreet::Cobrand::Zurich::sub_days( $now, $days ));
 
     my $reports = FixMyStreet::DB->resultset("Problem")->search( {
@@ -49,11 +49,9 @@ sub loop_through {
 
     my %to_send = ();
     while (my $row = $reports->next) {
-        $to_send{$row->bodies_str} .= '* ' . $row->id . ": '" . $row->title . "'\n\n";
+        $to_send{$row->bodies_str} ||= [];
+        push @{$to_send{$row->bodies_str}}, $row;
     }
-
-    my $template_path = FixMyStreet->path_to( "templates", "email", "zurich", $template )->stringify;
-    $template = Utils::read_file( $template_path );
 
     foreach my $body_id (keys %to_send) {
         send_alert( $template, $body_id, $to_send{$body_id}, $include_parent );
@@ -69,6 +67,7 @@ sub send_alert {
     my $h = {
         data => $data,
         admin_url => $cobrand->admin_base_url,
+        cobrand => $cobrand,
     };
 
     my $to = [ [ $body_email, $body->name ] ];
@@ -79,15 +78,16 @@ sub send_alert {
     }
 
     FixMyStreet::Email::send_cron(
-        FixMyStreet::DB->storage->schema,
+        FixMyStreet::DB->schema,
+        $template,
+        $h,
         {
-            _template_ => $template,
-            _parameters_ => $h,
             To => $to,
             From => [ FixMyStreet->config('CONTACT_EMAIL'), FixMyStreet->config('CONTACT_NAME') ],
         },
         FixMyStreet->config('CONTACT_EMAIL'),
-        $nomail
+        $nomail,
+        $cobrand, 'de-ch',
     );
 }
 

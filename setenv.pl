@@ -6,9 +6,20 @@ use warnings;
 my $root;
 
 BEGIN {
-    use File::Basename qw(dirname);
-    use File::Spec;
-    $root = dirname(File::Spec->rel2abs(__FILE__));
+    use Cwd qw(abs_path);
+    use File::Basename qw(dirname basename);
+    $root = dirname(abs_path(__FILE__));
+}
+
+# Check there is not a later timestamped deploy, if running in such a system
+
+if ($root =~ /fixmystreet-\d\d\d\d-\d\d-\d\dT\d\d-\d\d-\d\d$/) {
+    my @deploys = sort map { basename $_ } glob("$root/../fixmystreet-*");
+    if (basename($root) ne $deploys[-1] && !$ENV{OLD_DEPLOY_ACKNOWLEDGED}) {
+        require Term::ANSIColor;
+        print Term::ANSIColor::colored("NOT THE LATEST DEPLOY; ABORTING\n", 'red');
+        exit 1;
+    }
 }
 
 # Set the environment for the FixMyStreet project
@@ -25,12 +36,9 @@ for ( "$root/commonlib/perllib", "$root/perllib" ) {
     $ENV{PERL5LIB} = "$_:$ENV{PERL5LIB}";
 }
 
-# need to make sure we fetch this after our libs are in INC as some 
-# vendor provided versions are old an incompatible with Moose
-use List::MoreUtils 'uniq';
-
 # also set the path to our scripts etc
-$ENV{PATH} = join ':', uniq "$root/bin", split( m/:/, $ENV{PATH} );
+my %seen;
+$ENV{PATH} = join ':', grep { not $seen{$_}++ } "$root/bin", split( m/:/, $ENV{PATH} );
 
 # we might want to require this file to configure something like a CGI script
 if ( $0 eq __FILE__ ) {
@@ -71,7 +79,7 @@ else {
 
     my @modules =
       sort
-      grep { m/File::/ }
+      grep { m/Cwd|File::(?!Glob)/ }
       map { s{\.pm$}{}; s{/}{::}g; $_ }
       grep { m{\.pm$} }
       keys %INC;

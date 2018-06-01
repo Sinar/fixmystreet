@@ -8,7 +8,6 @@ use JSON::MaybeXS;
 use File::Path;
 use File::Slurp;
 use FixMyStreet::App::Model::PhotoSet;
-use if !$ENV{TRAVIS}, 'Image::Magick';
 
 =head1 NAME
 
@@ -29,12 +28,12 @@ Display a photo
 
 =cut
 
-sub during :LocalRegex('^([0-9a-f]{40})\.(temp|fulltemp)\.jpeg$') {
+sub during :LocalRegex('^(temp|fulltemp)\.([0-9a-f]{40}\.(?:jpeg|png|gif|tiff))$') {
     my ( $self, $c ) = @_;
-    my ( $hash, $size ) = @{ $c->req->captures };
+    my ( $size, $filename ) = @{ $c->req->captures };
 
     my $photoset = FixMyStreet::App::Model::PhotoSet->new({
-        data_items => [ $hash ]
+        data_items => [ $filename ]
     });
 
     $size = $size eq 'temp' ? 'default' : 'full';
@@ -43,7 +42,7 @@ sub during :LocalRegex('^([0-9a-f]{40})\.(temp|fulltemp)\.jpeg$') {
     $c->forward( 'output', [ $photo ] );
 }
 
-sub index :LocalRegex('^(c/)?(\d+)(?:\.(\d+))?(?:\.(full|tn|fp))?\.jpeg$') {
+sub index :LocalRegex('^(c/)?([1-9]\d*)(?:\.(\d+))?(?:\.(full|tn|fp))?\.(?:jpeg|png|gif|tiff)$') {
     my ( $self, $c ) = @_;
     my ( $is_update, $id, $photo_number, $size ) = @{ $c->req->captures };
 
@@ -64,7 +63,7 @@ sub index :LocalRegex('^(c/)?(\d+)(?:\.(\d+))?(?:\.(full|tn|fp))?\.jpeg$') {
 
     $c->detach( 'no_photo' ) unless $item;
 
-    $c->detach( 'no_photo' ) unless $c->cobrand->allow_photo_display($item); # Should only be for reports, not updates
+    $c->detach( 'no_photo' ) unless $c->cobrand->allow_photo_display($item, $photo_number); # Should only be for reports, not updates
 
     my $photo;
     $photo = $item->get_photoset
@@ -79,10 +78,10 @@ sub output : Private {
 
     # Save to file
     File::Path::make_path( FixMyStreet->path_to( 'web', 'photo', 'c' )->stringify );
-    File::Slurp::write_file( FixMyStreet->path_to( 'web', $c->req->path )->stringify, \$photo );
+    File::Slurp::write_file( FixMyStreet->path_to( 'web', $c->req->path )->stringify, \$photo->{data} );
 
-    $c->res->content_type( 'image/jpeg' );
-    $c->res->body( $photo );
+    $c->res->content_type( $photo->{content_type} );
+    $c->res->body( $photo->{data} );
 }
 
 sub no_photo : Private {
@@ -140,7 +139,7 @@ sub process_photo_upload_or_cache : Private {
             /^photo/ ? # photo, photo1, photo2 etc.
                 ($c->req->upload($_)) : ()
         } sort $c->req->upload),
-        split /,/, ($c->get_param('upload_fileid') || '')
+        grep { $_ } split /,/, ($c->get_param('upload_fileid') || '')
     );
 
     my $photoset = FixMyStreet::App::Model::PhotoSet->new({

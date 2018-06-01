@@ -1,14 +1,17 @@
 <div class="shadow-wrap">
     <ul id="key-tools">
-        [% IF c.user_exists AND c.cobrand.users_can_hide AND c.user.belongs_to_body( c.cobrand.council_id ) %]
+        [% IF c.user_exists AND c.cobrand.users_can_hide AND c.user.belongs_to_body( problem.bodies_str ) %]
         <li><form method="post" action="/report/delete/[% problem.id %]" id="remove-from-site-form">
-            <input type="submit" id="key-tool-report-abuse" class="abuse" value="Remove from site">
+            <input type="hidden" name="token" value="[% csrf_token %]">
+            <button type="submit" id="key-tool-report-abuse" class="abuse" data-confirm="[% loc('Are you sure?') %]" name="remove_from_site">[% loc('Remove from site') %]</button>
         </form></li>
         [% ELSIF c.cobrand.moniker != 'zurich' %]
-        <li><a rel="nofollow" id="key-tool-report-abuse" class="abuse" href="[% c.uri_for( '/contact', { id => problem.id } ) %]">[% loc('Report abuse' ) %]</a></li>
+        <li><a rel="nofollow" id="key-tool-report-abuse" class="abuse" href="[% c.uri_for( '/contact', { id => problem.id } ) %]">[%
+            c.cobrand.moniker == 'fixmystreet' ? 'Unsuitable?' : loc('Report abuse')
+        %]</a></li>
         [% END %]
-        [% IF c.cobrand.moniker != 'zurich' %]
-        <li><a rel="nofollow" id="key-tool-report-updates" class="feed" href="[% c.uri_for( '/alert/subscribe', { id => problem.id } ) %]">[% loc('Get updates' ) %]</a></li>
+        [% IF NOT problem.extra.closed_updates AND c.cobrand.moniker != 'zurich' %]
+        <li><a rel="nofollow" id="key-tool-report-updates" class="feed js-feed" href="[% c.uri_for( '/alert/subscribe', { id => problem.id } ) %]">[% loc('Get updates' ) %]</a></li>
         [% END %]
         [% IF c.cobrand.moniker == 'fixmystreet' %]
         <li><a rel="nofollow" id="key-tool-report-share" class="share" href="#report-share">[% loc('Share') %]</a></li>
@@ -22,24 +25,32 @@
 
 [% IF c.cobrand.moniker == 'fixmystreet' %]
     <div id="report-share" class="hidden-js" align="center">
-        <a href="https://twitter.com/share" class="twitter-share-button" data-text="I just reported &lsquo;[% problem.title_safe | html %]&rsquo;" data-via="fixmystreet" data-related="mysociety" data-count="none" data-dnt="true">Tweet</a>
-<script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="//platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");</script>
-        <iframe src="//www.facebook.com/plugins/like.php?href=[% c.req.uri | uri %]&amp;send=false&amp;layout=button_count&amp;width=90&amp;show_faces=false&amp;action=like&amp;colorscheme=light&amp;font&amp;height=21" scrolling="no" frameborder="0" style="border:none; overflow:hidden; width:90px; height:21px;" allowTransparency="true"></iframe>
+        <a class="btn btn--social btn--twitter" href="https://twitter.com/intent/tweet?text=I%20just%20viewed%20this%20report:%20&lsquo;[% problem.title_safe | uri %]&rsquo;&amp;url=[% c.cobrand.base_url | uri %][% c.req.uri.path | uri %]&amp;via=fixmystreet&amp;related=mySociety">
+            <img alt="" src="/i/twitter-icon-32.png" width="17" height="32">
+            Tweet
+        </a>
+        <a class="btn btn--social btn--facebook" href="https://www.facebook.com/sharer/sharer.php?u=[% c.cobrand.base_url %][% c.req.uri.path %]">
+            <img alt="" src="/i/facebook-icon-32.png" width="17" height="32">
+            Share
+        </a>
     </div>
 [% END %]
 
 <div id="report-updates-data" class="hidden-js">
     <form action="[% c.uri_for( '/alert/subscribe' ) %]" method="post">
-        <a href="[% c.uri_for( '/rss', problem.id ) %]">
+        <p><a href="[% c.uri_for( '/rss', problem.id ) %]">
             <img src="/i/feed.png" width="16" height="16" title="[% loc('RSS feed') %]" alt="[% loc('RSS feed of updates to this problem' ) %]" border="0">
         </a>
-        <p>[% loc('Receive email when updates are left on this problem.' ) %]</p>
+        [% loc('Receive email when updates are left on this problem.' ) %]</p>
         <fieldset>
         <label class="hidden n" for="alert_rznvy">[% loc('Your email') %]</label>
         <div class="form-txt-submit-box">
-            <input type="email" name="rznvy" id="alert_rznvy" value="[% email | html %]" size="30" placeholder="[% loc('Your email') %]">
+          [% IF NOT c.user_exists %]
+            <input type="email" class="form-control" name="rznvy" id="alert_rznvy" value="[% email | html %]" size="30" placeholder="[% loc('Your email') %]">
+          [% END %]
             <input class="green-btn" type="submit" value="[% loc('Subscribe') %]">
         </div>
+        <input type="hidden" name="token" value="[% csrf_token %]">
         <input type="hidden" name="id" value="[% problem.id %]">
         <input type="hidden" name="type" value="updates">
         </fieldset>

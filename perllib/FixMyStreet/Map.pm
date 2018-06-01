@@ -16,7 +16,7 @@ use Module::Pluggable
 # Get the list of maps we want and load map classes at compile time
 my @ALL_MAP_CLASSES = allowed_maps();
 
-use mySociety::Gaze;
+use FixMyStreet::Gaze;
 use mySociety::Locale;
 use Utils;
 
@@ -47,7 +47,8 @@ sub reload_allowed_maps {
 
 =head2 map_class
 
-Set and return the appropriate class given a query parameter string.
+Sets the appropriate class given a query parameter string.
+Returns the old map class, if any.
 
 =cut
 
@@ -57,96 +58,57 @@ sub set_map_class {
     $str = __PACKAGE__.'::'.$str if $str;
     my %avail = map { $_ => 1 } @ALL_MAP_CLASSES;
     $str = $ALL_MAP_CLASSES[0] unless $str && $avail{$str};
+    my $old_map_class = $map_class;
     $map_class = $str;
+    return $old_map_class;
 }
 
 sub display_map {
     return $map_class->display_map(@_);
 }
 
+sub map_javascript {
+    $map_class->map_javascript;
+}
+
 sub map_features {
-    my ( $c, $lat, $lon, $interval, $category, $states ) = @_;
+    my ( $c, %p ) = @_;
 
-   # TODO - be smarter about calculating the surrounding square
-   # use deltas that are roughly 500m in the UK - so we get a 1 sq km search box
-    my $lat_delta = 0.00438;
-    my $lon_delta = 0.00736;
-    return _map_features(
-        $c, $lat, $lon,
-        $lon - $lon_delta, $lat - $lat_delta,
-        $lon + $lon_delta, $lat + $lat_delta,
-        $interval, $category, $states
-    );
-}
+    if ($p{bbox}) {
+        @p{"min_lon", "min_lat", "max_lon", "max_lat"} = split /,/, $p{bbox};
+    }
 
-sub map_features_bounds {
-    my ( $c, $min_lon, $min_lat, $max_lon, $max_lat, $interval, $category, $states ) = @_;
+    if (defined $p{latitude} && defined $p{longitude}) {
+        # TODO - be smarter about calculating the surrounding square
+        # use deltas that are roughly 500m in the UK - so we get a 1 sq km search box
+        my $lat_delta = 0.00438;
+        my $lon_delta = 0.00736;
+        $p{min_lon} = Utils::truncate_coordinate($p{longitude} - $lon_delta);
+        $p{min_lat} = Utils::truncate_coordinate($p{latitude} - $lat_delta);
+        $p{max_lon} = Utils::truncate_coordinate($p{longitude} + $lon_delta);
+        $p{max_lat} = Utils::truncate_coordinate($p{latitude} + $lat_delta);
+    } else {
+        $p{longitude} = Utils::truncate_coordinate(($p{max_lon} + $p{min_lon} ) / 2);
+        $p{latitude} = Utils::truncate_coordinate(($p{max_lat} + $p{min_lat} ) / 2);
+    }
 
-    my $lat = ( $max_lat + $min_lat ) / 2;
-    my $lon = ( $max_lon + $min_lon ) / 2;
-    return _map_features(
-        $c, $lat, $lon,
-        $min_lon, $min_lat,
-        $max_lon, $max_lat,
-        $interval, $category,
-        $states
-    );
-}
+    $p{page} = $c->get_param('p') || 1;
+    my $on_map = $c->cobrand->problems_on_map->around_map( $c, %p );
+    my $pager = $c->stash->{pager} = $on_map->pager;
+    $on_map = [ $on_map->all ];
 
-sub _map_features {
-    my ( $c, $lat, $lon, $min_lon, $min_lat, $max_lon, $max_lat, $interval, $category, $states ) = @_;
+    my $dist = FixMyStreet::Gaze::get_radius_containing_population( $p{latitude}, $p{longitude} );
 
-    # list of problems around map can be limited, but should show all pins
-    my $around_limit = $c->cobrand->on_map_list_limit || undef;
+    my $nearby;
+    if (@$on_map < $pager->entries_per_page && $pager->current_page == 1) {
+        my $limit = 20;
+        my @ids = map { $_->id } @$on_map;
+        $nearby = $c->model('DB::Nearby')->nearby(
+            $c, $dist, \@ids, $limit, @p{"latitude", "longitude", "categories", "states", "extra"}
+        );
+    }
 
-    my @around_args = ( $min_lat, $max_lat, $min_lon, $max_lon, $interval );
-    my $around_map      = $c->cobrand->problems->around_map( @around_args, undef, $category, $states );
-    my $around_map_list = $around_limit
-        ? $c->cobrand->problems->around_map( @around_args, $around_limit, $category, $states )
-        : $around_map;
-
-    my $dist;
-    mySociety::Locale::in_gb_locale {
-        $dist =
-          mySociety::Gaze::get_radius_containing_population( $lat, $lon,
-            200000 );
-    };
-    $dist = int( $dist * 10 + 0.5 ) / 10;
-
-    my $limit  = 20;
-    my @ids    = map { $_->id } @$around_map_list;
-    my $nearby = $c->model('DB::Nearby')->nearby(
-        $c, $dist, \@ids, $limit, $lat, $lon, $interval, $category, $states
-    );
-
-    return ( $around_map, $around_map_list, $nearby, $dist );
-}
-
-sub map_pins {
-    my ($c, $interval) = @_;
-
-    my $bbox = $c->get_param('bbox');
-    my ( $min_lon, $min_lat, $max_lon, $max_lat ) = split /,/, $bbox;
-    my $category = $c->get_param('filter_category');
-
-    $c->forward( '/reports/stash_report_filter_status' );
-    my $states = $c->stash->{filter_problem_states};
-
-    my ( $around_map, $around_map_list, $nearby, $dist ) =
-      FixMyStreet::Map::map_features_bounds( $c, $min_lon, $min_lat, $max_lon, $max_lat, $interval, $category, $states );
-
-    # create a list of all the pins
-    my @pins = map {
-        # Here we might have a DB::Problem or a DB::Nearby, we always want the problem.
-        my $p = (ref $_ eq 'FixMyStreet::App::Model::DB::Nearby') ? $_->problem : $_;
-        my $colour = $c->cobrand->pin_colour( $p, 'around' );
-        [ $p->latitude, $p->longitude,
-          $colour,
-          $p->id, $p->title_safe
-        ]
-    } @$around_map, @$nearby;
-
-    return (\@pins, $around_map_list, $nearby, $dist);
+    return ( $on_map, $nearby, $dist );
 }
 
 sub click_to_wgs84 {

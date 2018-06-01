@@ -22,7 +22,6 @@ BEGIN {
 use FixMyStreet;
 use FixMyStreet::DB;
 use FixMyStreet::Email;
-use mySociety::Email;
 use mySociety::EmailUtil;
 use mySociety::HandleMail;
 use mySociety::SystemMisc qw(print_log);
@@ -113,7 +112,7 @@ sub is_out_of_office {
     my (%attributes) = @_;
     return 1 if $attributes{problem} && $attributes{problem} == mySociety::HandleMail::ERR_OUT_OF_OFFICE;
     my $subject = $data{message}->head()->get("Subject");
-    return 1 if $subject =~ /Auto(matic|mated)?[ -]?(reply|response|responder)|Thank you for (your email|contacting)|Thank_you_for_your_email|Out of Office|This office is closed until|^Re: (Problem Report|New updates)|^Auto: |^E-Mail Response$|^Message Received:|have received your email|Acknowledgement of your email/i;
+    return 1 if $subject =~ /Auto(matic|mated)?[ -_]?(reply|response|responder)|Thank[ _]you[ _]for[ _](your[ _]email|contacting)|Out of (the )?Office|away from the office|This office is closed until|^Re: (Problem Report|New updates)|^Auto: |^E-Mail Response$|^Message Received:|have received your email|Acknowledgement of your email|away from my desk/i;
     return 0;
 }
 
@@ -168,27 +167,24 @@ sub handle_non_bounce_to_null_address {
     $fp->close;
 
     # We generate this as a bounce.
-    my $mail = mySociety::Email::construct_email({
+    my $mail = FixMyStreet::Email::construct_email({
         From => [ FixMyStreet->config('CONTACT_EMAIL'), 'FixMyStreet' ],
         To => $data{return_path},
-        _template_ => $template,
-        _parameters_ => { },
-        _line_indent => '',
+        _body_ => $template,
     });
-    send_mail($mail, '<>', $data{return_path});
+    send_mail($mail->as_string, $data{return_path});
 }
 
 sub forward_on_to {
     my $recipient = shift;
     my $text = join("\n", @lines) . "\n";
-    my $sender = $data{return_path} || '<>';
-    send_mail($text, $sender, $recipient);
+    send_mail($text, $recipient);
 }
 
 sub send_mail {
-    my ($text, $sender, $recipient) = @_;
+    my ($text, $recipient) = @_;
     if (mySociety::EmailUtil::EMAIL_SUCCESS
-            != mySociety::EmailUtil::send_email($text, $sender, $recipient)) {
+            != mySociety::EmailUtil::send_email($text, '<>', $recipient)) {
         exit(75);
     }
 }

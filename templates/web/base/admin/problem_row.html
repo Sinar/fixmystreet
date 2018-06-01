@@ -20,7 +20,7 @@
             <br>[% loc('Anonymous') %]: [% IF problem.anonymous %][% loc('Yes') %][% ELSE %][% loc('No') %][% END %]
         </td>
         <td>
-            [% PROCESS value_or_nbsp value=problem.category %]
+            [% PROCESS value_or_nbsp value=problem.category_display %]
             <br>[%- IF edit_body_contacts -%]
               [% FOR body IN problem.bodies.values %]
                 <a href="[% c.uri_for('body', body.id ) %]">[% PROCESS value_or_nbsp value=body.name %]</a>
@@ -30,14 +30,18 @@
             [%- END -%]
             <br>[% problem.cobrand %]<br>[% problem.cobrand_data | html %]
         </td>
-        <td>[% state_pretty.${problem.state} %]<br><small>
+        <td>[% prettify_state(problem.state, 1) %]<br><small>
             [% loc('Created') %]:&nbsp;[% PROCESS format_time time=problem.created %]
             <br>[% loc('When sent') %]:&nbsp;[% PROCESS format_time time=problem.whensent %]
             [%- IF problem.is_visible %]<br>[% loc('Confirmed:' ) %]&nbsp;[% PROCESS format_time time=problem.confirmed %][% END -%]
-            [%- IF problem.is_fixed %]<br>[% loc('Fixed:') %] [% PROCESS format_time time=problem.lastupdate %][% END -%]
-            [%- IF problem.is_closed %]<br>[% loc('Closed:') %] [% PROCESS format_time time=problem.lastupdate %][% END -%]
+            [%- IF problem.is_fixed %]<br>[% prettify_state('fixed') %]: [% PROCESS format_time time=problem.lastupdate %][% END -%]
+            [%- IF problem.is_closed %]<br>[% prettify_state('closed') %]: [% PROCESS format_time time=problem.lastupdate %][% END -%]
             [%- IF problem.is_open %]<br>[% loc('Last&nbsp;update:') %] [% PROCESS format_time time=problem.lastupdate %][% END -%]
         </small></td>
-        <td><a href="[% c.uri_for( 'report_edit', problem.id ) %]">[% loc('Edit') %]</a></td>
+        <td>
+            [% IF c.user.has_permission_to('report_edit', problem.bodies_str_ids) %]
+                <a href="[% c.uri_for( 'report_edit', problem.id ) %]">[% loc('Edit') %]</a>
+            [% END %]
+        </td>
     </tr>
 [%- END -%]

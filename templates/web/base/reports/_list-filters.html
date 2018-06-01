@@ -1,34 +1,79 @@
+[% SET show_all_states = c.cobrand.filter_show_all_states OR (c.user_exists AND (c.user.is_superuser OR c.user.belongs_to_body(body.id))) %]
 [% select_status = BLOCK %]
-    <select name="status" id="statuses">
-        <option value="all"[% ' selected' IF filter_status == 'all' %]>[% loc('all reports') %]</option>
-        <option value="open"[% ' selected' IF filter_status == 'open' %]>[% loc('unfixed reports') %]</option>
-        <option value="closed"[% ' selected' IF filter_status == 'closed' %]>[% loc('closed reports') %]</option>
-        <option value="fixed"[% ' selected' IF filter_status == 'fixed' %]>[% loc('fixed reports') %]</option>
+    <select class="form-control js-multiple" name="status" id="statuses" multiple
+    data-all="[% loc('All') %]"
+    [% IF show_all_states %]
+    [% options = []; FOR group IN filter_states; FOR state IN group.1; NEXT IF state == 'hidden'; options.push(state); END; END %]
+    data-all-options='["[% options.join('", "') %]"]'
+    [%~ ELSE ~%]
+      [%~ IF has_fixed_state ~%]
+        data-all-options='["open","closed","fixed"]'
+      [%~ ELSE ~%]
+        data-all-options='["open","closed"]'
+      [%~ END ~%]
+    [%~ END ~%]
+    [% INCLUDE 'reports/_status_filter_options.html' %]
+    >
+      [% IF c.user_exists AND c.user.has_body_permission_to('planned_reports') AND !shortlist %]
+        <option value="shortlisted"[% ' selected' IF filter_status.shortlisted %]>[% loc('Shortlisted') %]</option>
+        <option value="unshortlisted"[% ' selected' IF filter_status.unshortlisted %]>[% loc('Unshortlisted') %]</option>
+      [% END %]
+      [% IF show_all_states %]
+        [% FOR group IN filter_states %]
+          [% FOR state IN group.1 %]
+            [% NEXT IF state == 'hidden' %]
+            <option value="[% state %]"[% ' selected' IF filter_status.$state %]>[% prettify_state(state, 1) %]</option>
+          [% END %]
+        [% END %]
+      [% ELSE %]
+        <option value="open"[% ' selected' IF filter_status.open %]>[% prettify_state('confirmed') %]</option>
+        <option value="closed"[% ' selected' IF filter_status.closed %]>[% prettify_state('closed') %]</option>
+        [% IF has_fixed_state %]
+            <option value="fixed"[% ' selected' IF filter_status.fixed %]>[% prettify_state('fixed') %]</option>
+        [% END %]
+      [% END %]
     </select>
 [% END %]
 
 [% select_category = BLOCK %]
-    <select name="filter_category" id="filter_categories">
-        <option value="">[% loc('Everything') %]</option>
-        [% FOR category IN filter_categories %]
-            <option value="[% category | html %]"[% ' selected' IF filter_category == category %]>
-                [% category | html %]
+  [% IF filter_categories.size %]
+    <select class="form-control js-multiple" name="filter_category" id="filter_categories" multiple data-all="[% loc('Everything') %]">
+        [% FOR cat IN filter_categories %]
+            <option value="[% cat.category | html %]"[% ' selected' IF filter_category.${cat.category} %]>
+                [% cat.category_display | html %]
+                [%~ IF cat.get_extra_metadata('help_text') %] ([% cat.get_extra_metadata('help_text') %])[% END ~%]
             </option>
         [% END %]
     </select>
+  [% ELSE %]
+    [% loc('Everything') %]
+  [% END %]
 [% END %]
 
-[% IF use_section_wrapper %]
-<section class="full-width">
+[% IF use_form_wrapper %]
     <form method="get" action="">
 [% END %]
 
         <p class="report-list-filters">
-            [% tprintf(loc('<label>Show %s</label> <label>about %s</label>', 'The first %s is a dropdown of all/fixed/etc, the second is a dropdown of categories'), select_status, select_category) %]
-            <input type="submit" value="[% loc('Go') %]">
+            [% tprintf(loc('<label for="statuses">Show</label> %s reports <label for="filter_categories">about</label> %s', "The first %s is a dropdown of all/fixed/etc, the second is a dropdown of categories"), select_status, select_category) %]
+            <input type="submit" name="filter_update" value="[% loc('Go') %]">
         </p>
 
-[% IF use_section_wrapper %]
+        <p class="report-list-filters">
+            <label for="sort">[% loc('Sort by') %]</label>
+            <select class="form-control" name="sort" id="sort">
+              [% IF shortlist %]
+                <option value="shortlist"[% ' selected' IF sort_key == 'shortlist' %]>[% loc('Manual order') %]</option>
+              [% END %]
+                <option value="created-desc"[% ' selected' IF sort_key == 'created-desc' %]>[% loc('Newest') %]</option>
+                <option value="created-asc"[% ' selected' IF sort_key == 'created-asc' %]>[% loc('Oldest') %]</option>
+                <option value="updated-desc"[% ' selected' IF sort_key == 'updated-desc' %]>[% loc('Recently updated') %]</option>
+                <option value="updated-asc"[% ' selected' IF sort_key == 'updated-asc' %]>[% loc('Least recently updated') %]</option>
+                <option value="comments-desc"[% ' selected' IF sort_key == 'comments-desc' %]>[% loc('Most commented') %]</option>
+            </select>
+            <input type="submit" name="filter_update" value="[% loc('Go') %]">
+        </p>
+
+[% IF use_form_wrapper %]
     </form>
-</section>
 [% END %]

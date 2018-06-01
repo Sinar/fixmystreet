@@ -18,7 +18,8 @@ FixMyBarangay.po
 /web/css/core.css
 /web/css/main.css
 /web/cobrands/*/*.css
-/web/cobrands/seesomething
+/web/cobrands/*/*.css.map
+*.auto.*
 
 # Photo upload cache
 /web/photo
@@ -34,9 +35,22 @@ Makefile
 blib/
 inc/
 _Inline/
+*.pyc
 
 # International
 /fixmystreet-international
 *[Mm]ake[Mm]y[Ii]sland*
 ug_fixmycommunity
 UG_FixMyCommunity.pm
+gh_fixmycommunity
+*[Aa]rregla[Mm]i[Bb]arrio*
+*[Ff]ix[Mm]indelo*
+*[Dd]ans[Mm]on[Qq]wat*
+*[Cc]uido[Mm]i[Cc]iudad*
+*[Yy]o[Dd]enuncio*
+
+# Commercial
+/fixmystreet-commercial
+*[Gg]round[Cc]ontrol*
+[Ss]midsy*
+[Kk]iit[Cc]*

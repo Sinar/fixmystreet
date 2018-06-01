@@ -9,23 +9,9 @@
 
 </div>
 
-<h1>[% loc('Questionnaire') %]</h1>
+<div id="map_sidebar">
 
-<h2 class="questionnaire-report-header">[% loc('Your report') %]</h2>
-<div class="questionnaire-report-reminder">
-    [% INCLUDE 'report/photo.html' object=problem %]
-    <h3 class="questionnaire-report-reminder__report-title">
-        <a href="/report/[% problem.id %]">[% problem.title | html %]</a>
-    </h3>
-    <p class="questionnaire-report-reminder__report-meta">[% problem.meta_line(c) | html %]</p>
-  [% IF updates.size %]
-    <p class="questionnaire-report-reminder__last-update-header">
-        <strong>Last update</strong>
-        <a href="/report/[% problem.id %]">Show all updates</a>
-    </p>
-    <p class="questionnaire-report-reminder__last-update">&ldquo;[% add_links( updates.last.text ) %]&rdquo;</p>
-  [% END %]
-</div>
+<h1>[% loc('Questionnaire') %]</h1>
 
 <form method="post" action="/questionnaire/submit" id="questionnaire"
 [%- IF c.cobrand.allow_photo_upload -%]
@@ -41,38 +27,56 @@
 </ul>
 [% END %]
 
-<p>
-[% loc('An update marked this problem as fixed.') IF problem.is_fixed %]
+<p>1.
+[% loc('An update marked this problem as fixed.') IF was_fixed %]
 [% loc('Has this problem been fixed?') %]
 </p>
 
-<p class="radio-segmented-control">
+<p class="segmented-control segmented-control--radio">
     <input type="radio" name="been_fixed" id="been_fixed_yes" value="Yes"[% ' checked' IF been_fixed == 'Yes' %]>
-    <label class="inline" for="been_fixed_yes">[% loc('Yes') %]</label>
+    <label class="btn" for="been_fixed_yes">[% loc('Yes') %]</label>
     <input type="radio" name="been_fixed" id="been_fixed_no" value="No"[% ' checked' IF been_fixed == 'No' %]>
-    <label class="inline" for="been_fixed_no">[% loc('No') %]</label>
+    <label class="btn" for="been_fixed_no">[% loc('No') %]</label>
     <input type="radio" name="been_fixed" id="been_fixed_unknown" value="Unknown"[% ' checked' IF been_fixed == 'Unknown' %]>
-    <label class="inline" for="been_fixed_unknown">[% loc('Don&rsquo;t know') %]</label>
+    <label class="btn" for="been_fixed_unknown">[% loc('Don&rsquo;t know') %]</label>
 </p>
 
+<h2 class="questionnaire-report-header">[% loc('Your report') %]</h2>
+<div class="questionnaire-report-reminder">
+    [% INCLUDE 'report/photo.html' object=problem %]
+    <h3 class="questionnaire-report-reminder__report-title">
+        <a href="/report/[% problem.id %]">[% problem.title | html %]</a>
+    </h3>
+    <p class="questionnaire-report-reminder__report-meta">[% problem.meta_line(c) | html %]</p>
+  [% IF updates.size %]
+    <p class="questionnaire-report-reminder__last-update-header">
+        <strong>[% loc('Last update') %]</strong>
+        <a href="/report/[% problem.id %]">[% loc('Show all updates') %]</a>
+    </p>
+    <p class="questionnaire-report-reminder__last-update">&ldquo;[% updates.last.text | add_links %]&rdquo;</p>
+  [% END %]
+</div>
+
 [% UNLESS answered_ever_reported %]
-<p>[% loc('Have you ever reported a problem to a council before, or is this your first time?') %]</p>
-<p class="radio-segmented-control">
+<p>2. [% loc('Have you ever reported a problem to a council before, or is this your first time?') %]</p>
+<p class="segmented-control segmented-control--radio">
     <input type="radio" name="reported" id="reported_yes" value="Yes"[% ' checked' IF reported == 'Yes' %]>
-    <label class="inline" for="reported_yes">[% loc('Reported before') %]</label>
+    <label class="btn" for="reported_yes">[% loc('Reported before') %]</label>
     <input type="radio" name="reported" id="reported_no" value="No"[% ' checked' IF reported == 'No' %]>
-    <label class="inline" for="reported_no">[% loc('First time') %]</label>
+    <label class="btn" for="reported_no">[% loc('First time') %]</label>
 </p>
 [% END %]
 
-<p>[% loc('If you wish to leave a public update on the problem, please enter it here
+<p>3. [% loc('If you wish to leave a public update on the problem, please enter it here
 (please note it will not be sent to the council).') %]</p>
 
-<p><textarea name="update" rows="7" cols="30" placeholder="[% loc('What was your experience of getting the problem fixed?') %]">[% update | html %]</textarea></p>
+<p><textarea class="form-control" name="update" rows="7" cols="30" placeholder="[% loc('What was your experience of getting the problem fixed?') %]">[% update | html %]</textarea></p>
 
 [% IF c.cobrand.allow_photo_upload %]
     <input type="hidden" name="upload_fileid" value="[% upload_fileid %]">
-    <label for="form_photo">[% loc('Photo') %]</label>
+    <label for="form_photo">
+        <span data-singular="[% loc('Photo') %]" data-plural="[% loc('Photos') %]">[% loc('Photo') %]</span>
+    </label>
 
       [% IF field_errors.photo %]
         <p class='form-error'>[% field_errors.photo %]</p>
@@ -82,29 +86,31 @@
       [% IF upload_fileid %]
         <p>[% loc('You have already attached photos to this update.  Note that you can attach a maximum of 3 to this update (if you try to upload more, the oldest will be removed).') %]</p>
         [% FOREACH id IN upload_fileid.split(',') %]
-        <img align="right" src="/photo/[% id %].temp.jpeg" alt="">
+        <img align="right" src="/photo/temp.[% id %]" alt="">
         [% END %]
     [% END %]
         <input type="file" name="photo1" id="form_photo">
+        <label for="form_photo2">[% loc('Photo') %]</label>
         <input type="file" name="photo2" id="form_photo2">
+        <label for="form_photo3">[% loc('Photo') %]</label>
         <input type="file" name="photo3" id="form_photo3">
     </div>
 [% END %]
 
-[% IF c.cobrand.moniker != 'emptyhomes' %]
 <div class="js-another-questionnaire">
-    <p>[% loc('Would you like to receive another questionnaire in 4 weeks, reminding you to check the status?') %]</p>
-    <p class="radio-segmented-control">
+    <p>4. [% loc('Would you like to receive another questionnaire in 4 weeks, reminding you to check the status?') %]</p>
+    <p class="segmented-control segmented-control--radio">
         <input type="radio" name="another" id="another_yes" value="Yes"[% ' checked' IF another == 'Yes' %]>
-        <label class="inline" for="another_yes">[% loc('Yes') %]</label>
+        <label class="btn" for="another_yes">[% loc('Yes') %]</label>
         <input type="radio" name="another" id="another_no" value="No"[% ' checked' IF another == 'No' %]>
-        <label class="inline" for="another_no">[% loc('No') %]</label>
+        <label class="btn" for="another_no">[% loc('No') %]</label>
     </p>
 </div>
-[% END %]
 
-<p><input type="submit" name="submit" value="[% loc('Submit questionnaire') %]"></p>
+<p><input type="submit" class="btn" name="submit" value="[% loc('Submit questionnaire') %]"></p>
 
 </form>
+
+</div>
 
 [% INCLUDE 'footer.html' %]

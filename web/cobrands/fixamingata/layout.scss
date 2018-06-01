@@ -1,5 +1,3 @@
-$image-sprite: '/cobrands/fixamingata/images/sprite.png';
-
 @font-face {
   font-family: 'MuseoSans';
   src: url('../fixmystreet.com/fonts/MuseoSans_300-webfont.eot');
@@ -61,16 +59,39 @@ noindex:-o-prefocus, #site-header {
   font-family: sans-serif;
 }
 
-h3, h4 {
+h3, h4,
+.item-list__heading {
     font-weight: bold;
 }
 
 @import "_colours";
 @import "../sass/layout";
 
-.nav-wrapper {
-    .nav-wrapper-2 {
-        border-top: 0;
+body.mappage {
+    background-image: none;
+}
+
+#site-header {
+    background: $map_nav_bg;
+    padding: 1em 0;
+}
+
+body.frontpage {
+    #site-logo {
+        width: 300px;
+        height: 55px;
+        background: transparent url('images/homepage-logo.png') 0 50% no-repeat;
+    }
+
+    #main-nav {
+        height: 55px + 16px + 16px;
+        margin-left: 300px;
+    }
+}
+
+body.mappage {
+    #site-logo {
+        margin-top: -5px;
     }
 }
 
@@ -83,13 +104,6 @@ h3, h4 {
         width: auto;
     }
 }
-.ie6, .ie7 {
-    .tablewrapper {
-        div {
-            width: auto;
-        }
-    }
-}
 
 #footer-help {
     ul {
@@ -98,15 +112,6 @@ h3, h4 {
             border-right: 1.25em solid transparent;
             &:last-child {
                 border-left: none;
-            }
-        }
-    }
-}
-.ie6, .ie7 {
-    #footer-help {
-        ul {
-            li {
-                width: 33%;
             }
         }
     }

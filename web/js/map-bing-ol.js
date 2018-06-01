@@ -1,19 +1,13 @@
-function _set_map_config() {
+fixmystreet.maps.config = function() {
     var permalink_id;
     if ($('#map_permalink').length) {
         permalink_id = 'map_permalink';
     }
 
-    var nav_opts = { zoomWheelEnabled: false };
-    if (fixmystreet.page == 'around' && $('html').hasClass('mobile')) {
-        nav_opts = {};
-    }
-    fixmystreet.nav_control = new OpenLayers.Control.Navigation(nav_opts);
-
     fixmystreet.controls = [
         new OpenLayers.Control.Attribution(),
         new OpenLayers.Control.ArgParser(),
-        fixmystreet.nav_control,
+        new OpenLayers.Control.Navigation(),
         new OpenLayers.Control.PermalinkFMS(permalink_id),
         new OpenLayers.Control.PanZoomFMS({id: 'fms_pan_zoom' })
     ];
@@ -21,12 +15,8 @@ function _set_map_config() {
     if ( fixmystreet.page == 'report' ) {
         fixmystreet.controls.push( new OpenLayers.Control.PermalinkFMS('key-tool-problems-nearby', '/around') );
     }
-}
-
-function set_map_config(perm) {
-    _set_map_config();
     fixmystreet.map_type = OpenLayers.Layer.Bing;
-}
+};
 
 OpenLayers.Layer.Bing = OpenLayers.Class(OpenLayers.Layer.XYZ, {
     attributionTemplate: '${logo}${copyrights}',
@@ -105,10 +95,10 @@ OpenLayers.Layer.Bing = OpenLayers.Class(OpenLayers.Layer.XYZ, {
 
     get_urls: function(bounds, z) {
         return [
-            "//ecn.t0.tiles.virtualearth.net/tiles/r${id}.png?g=3467",
-            "//ecn.t1.tiles.virtualearth.net/tiles/r${id}.png?g=3467",
-            "//ecn.t2.tiles.virtualearth.net/tiles/r${id}.png?g=3467",
-            "//ecn.t3.tiles.virtualearth.net/tiles/r${id}.png?g=3467"
+            "//ecn.t0.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
+            "//ecn.t1.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
+            "//ecn.t2.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
+            "//ecn.t3.tiles.virtualearth.net/tiles/r${id}.png?g=5941"
         ];
     },
 

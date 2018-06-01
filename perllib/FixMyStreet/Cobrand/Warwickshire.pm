@@ -4,7 +4,7 @@ use base 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2243; }
+sub council_area_id { return 2243; }
 sub council_area { return 'Warwickshire'; }
 sub council_name { return 'Warwickshire County Council'; }
 sub council_url { return 'warwickshire'; }
@@ -31,5 +31,7 @@ sub contact_email {
     return join( '@', 'fmstest', 'warwickshire.gov.uk' );
 }
 sub contact_name { 'Warwickshire County Council (do not reply)'; }
+
+sub send_questionnaires { 0 }
 
 1;

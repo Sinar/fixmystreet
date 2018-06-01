@@ -15,15 +15,41 @@ sub set_restriction {
     $site_key = $key;
 }
 
-sub to_body {
-    my ($rs, $bodies, $join) = @_;
-    return $rs unless $bodies;
+sub body_query {
+    my ($rs, $bodies) = @_;
     unless (ref $bodies eq 'ARRAY') {
         $bodies = [ map { ref $_ ? $_->id : $_ } $bodies ];
     }
+    \[ "regexp_split_to_array(bodies_str, ',') && ?", [ {} => $bodies ] ]
+}
+
+# Edits PARAMS in place to either hide non_public reports, or show them
+# if user is superuser (all) or inspector (correct body)
+sub non_public_if_possible {
+    my ($rs, $params, $c) = @_;
+    if ($c->user_exists) {
+        if ($c->user->is_superuser) {
+            # See all reports, no restriction
+        } elsif ($c->user->has_body_permission_to('report_inspect')) {
+            $params->{'-or'} = [
+                non_public => 0,
+                $rs->body_query($c->user->from_body->id),
+            ];
+        } else {
+            $params->{non_public} = 0;
+        }
+    } else {
+        $params->{non_public} = 0;
+    }
+}
+
+sub to_body {
+    my ($rs, $bodies, $join) = @_;
+    return $rs unless $bodies;
     $join = { join => 'problem' } if $join;
     $rs = $rs->search(
-        \[ "regexp_split_to_array(bodies_str, ',') && ?", [ {} => $bodies ] ],
+        # This isn't using $rs->body_query because $rs might be Problem, Comment, or Nearby
+        FixMyStreet::DB::ResultSet::Problem->body_query($bodies),
         $join
     );
     return $rs;
@@ -92,8 +118,8 @@ sub _recent {
     my $key = $photos ? 'recent_photos' : 'recent';
     $key .= ":$site_key:$num";
 
-    # unconfirmed might be returned for e.g. Zurich, but would mean in moderation, so no photo
-    my @states = grep { $_ ne 'unconfirmed' } FixMyStreet::DB::Result::Problem->visible_states();
+    # submitted might be returned for e.g. Zurich, but would mean in moderation, so no photo
+    my @states = grep { $_ ne 'submitted' } FixMyStreet::DB::Result::Problem->visible_states();
     my $query = {
         non_public => 0,
         state      => \@states,
@@ -106,32 +132,23 @@ sub _recent {
     };
 
     my $probs;
-    my $new = 0;
-    if (defined $lat) {
-        my $dist2 = $dist; # Create a copy of the variable to stop it being stringified into a locale in the next line!
-        $key .= ":$lat:$lon:$dist2";
-        $probs = Memcached::get($key);
-        unless ($probs) {
-            $attrs->{bind} = [ $lat, $lon, $dist ];
-            $attrs->{join} = 'nearby';
-            $probs = [ mySociety::Locale::in_gb_locale {
-                $rs->search( $query, $attrs )->all;
-            } ];
-            $new = 1;
-        }
+    if (defined $lat) { # No caching
+        $attrs->{bind} = [ $lat, $lon, $dist ];
+        $attrs->{join} = 'nearby';
+        $probs = [ mySociety::Locale::in_gb_locale {
+            $rs->search( $query, $attrs )->all;
+        } ];
     } else {
         $probs = Memcached::get($key);
-        unless ($probs) {
+        if ($probs) {
+            # Need to reattach schema so that confirmed column gets reinflated.
+            $probs->[0]->result_source->schema( $rs->result_source->schema ) if $probs->[0];
+            # Catch any cached ones since hidden
+            $probs = [ grep { ! $_->is_hidden } @$probs ];
+        } else {
             $probs = [ $rs->search( $query, $attrs )->all ];
-            $new = 1;
+            Memcached::set($key, $probs, 3600);
         }
-    }
-
-    if ( $new ) {
-        Memcached::set($key, $probs, 3600);
-    } else {
-        # Need to reattach schema so that confirmed column gets reinflated.
-        $probs->[0]->result_source->schema( $rs->result_source->schema ) if $probs->[0];
     }
 
     return $probs;
@@ -140,28 +157,32 @@ sub _recent {
 # Problems around a location
 
 sub around_map {
-    my ( $rs, $min_lat, $max_lat, $min_lon, $max_lon, $interval, $limit, $category, $states ) = @_;
+    my ( $rs, $c, %p) = @_;
     my $attr = {
-        order_by => { -desc => 'created' },
+        order_by => $p{order},
     };
-    $attr->{rows} = $limit if $limit;
+    $attr->{rows} = $c->cobrand->reports_per_page;
 
-    unless ( $states ) {
-        $states = FixMyStreet::DB::Result::Problem->visible_states();
+    unless ( $p{states} ) {
+        $p{states} = FixMyStreet::DB::Result::Problem->visible_states();
     }
 
     my $q = {
-            non_public => 0,
-            state => [ keys %$states ],
-            latitude => { '>=', $min_lat, '<', $max_lat },
-            longitude => { '>=', $min_lon, '<', $max_lon },
+            state => [ keys %{$p{states}} ],
+            latitude => { '>=', $p{min_lat}, '<', $p{max_lat} },
+            longitude => { '>=', $p{min_lon}, '<', $p{max_lon} },
     };
-    $q->{'current_timestamp - lastupdate'} = { '<', \"'$interval'::interval" }
-        if $interval;
-    $q->{category} = $category if $category;
+    $q->{category} = $p{categories} if $p{categories} && @{$p{categories}};
 
-    my @problems = mySociety::Locale::in_gb_locale { $rs->search( $q, $attr )->all };
-    return \@problems;
+    $rs->non_public_if_possible($q, $c);
+
+    # Add in any optional extra query parameters
+    $q = { %$q, %{$p{extra}} } if $p{extra};
+
+    my $problems = mySociety::Locale::in_gb_locale {
+        $rs->search( $q, $attr )->include_comment_counts->page($p{page});
+    };
+    return $problems;
 }
 
 # Admin functions
@@ -232,10 +253,16 @@ sub categories_summary {
     return \%categories;
 }
 
-sub send_reports {
-    my ( $rs, $site_override ) = @_;
-    require FixMyStreet::Script::Reports;
-    FixMyStreet::Script::Reports::send($site_override);
+sub include_comment_counts {
+    my $rs = shift;
+    my $order_by = $rs->{attrs}{order_by};
+    return $rs unless ref $order_by eq 'HASH' && $order_by->{-desc} eq 'comment_count';
+    $rs->search({}, {
+        '+select' => [ {
+            "" => \'(select count(*) from comment where problem_id=me.id and state=\'confirmed\')',
+            -as => 'comment_count'
+        } ]
+    });
 }
 
 1;

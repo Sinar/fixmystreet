@@ -1,7 +1,6 @@
 @import "../sass/h5bp";
 @import "./_colours";
 @import "../sass/mixins";
-@import "compass";
 
 @import "../sass/base";
 
@@ -51,17 +50,14 @@
     }
 }
 
-#site-header {
-    background: $mobile_header_blue;
-    border-top: 4px solid $mobile_menu_tab_bg_col;
-    height: 48px;
+#site-logo-text {
+    display: none;
 }
 #site-logo {
     background: url(logo_portal.jpg) 0px -24px no-repeat;
     width: 200px;
     height: 48px;
-    left:0;
-    top:4px;
+    margin-left: -1em;
 }
 #front-howto #front_stats,
 #front-main #postcodeForm {
@@ -128,7 +124,7 @@ h4.static-with-rule {
 
 .admin-nav {
     background: #f4f4f4;
-    @include background(linear-gradient(#fbfbfb, #efefef));
+    @include linear-gradient(#fbfbfb, #efefef);
     border-bottom: 2px solid $table_border_color;
     ul {
         overflow:auto;
@@ -227,6 +223,10 @@ h4.static-with-rule {
   input[type="checkbox"] + label.inline {
     margin-right: 0.2em;
   }
+
+}
+table#admin_bodies tr.is-deleted {
+  background-color: transparent;
 }
 
 .admin-label--inline {

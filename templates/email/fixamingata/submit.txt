@@ -1,40 +1,44 @@
-Subject: Ny rapport: <?=$values['title']?>
+Subject: Ny rapport: [% report.title %]
 
-Till <?=$values['bodies_name']?>,
+Till [% bodies_name %],
 
 Det här meddelandet rör en rapport om ett problem i gatumiljön som en
 medborgare lämnat via tjänsten FixaMinGata.
 
-<?=$values['missing']?><?=$values['multiple']?>Följande rapport
+[% missing %][% multiple %]Följande rapport
 tror medborgaren behöver er uppmärksamhet.
 
-<?=$values['fuzzy']?> eller uppdatera problemet, klicka på följande länk:
+[% fuzzy %] eller uppdatera problemet, klicka på följande länk:
 
-    <?=$values['url']?>
-
-<?=$values['has_photo']?>
+    [% url %]
 
 ** Uppgiftslämnare
 
-Namn: <?=$values['name']?>
+Namn: [% report.name %]
 
-Epost: <?=$values['email']?>
+Epost: [% report.user.email OR '-' %]
 
-<?=$values['phone_line']?>
+Telefonnummer: [% report.user.phone OR '-' %]
 
 ** Information om ärendet
 
-<?=$values['category_line']?>Ärende: <?=$values['title']?>
+ID: [% report.id %]
 
-<?=$values['detail']?>
+Kategori: [% report.category %]
+
+Ärende: [% report.title %]
+
+[% report.detail %]
 
 ** Geografisk position
 
-<?=$values['easting_northing']?>Latitude: <?=$values['latitude']?>
+Latitude: [% report.latitude %]
 
-Longitude: <?=$values['longitude']?>
+Longitude: [% report.longitude %]
 
-<?=$values['closest_address']?>----------
+** Övrigt
+
+[% has_photo %][% closest_address %]----------
 
 Svar på det här brevet kommer att skickas till den person som lämnade
 rapporten.
@@ -51,11 +55,11 @@ mot system som Open311.
 Om ni vill läsa mer om FixaMinGata och vad det innebär för er som kommun
 kan ni hitta ytterligare information på vår informationssida för kommuner:
 
-  <http://fixamingata.se/kommun>
+  <https://fixamingata.se/kommun>
 
 Kontakta Föreningen Sambruk via:
 
-  <http://fixamingata.se/contact>
+  <https://fixamingata.se/contact>
 
-<?=$values['signature']?>
+[% signature %]
 

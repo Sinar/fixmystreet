@@ -1,6 +1,3 @@
-use strict;
-use warnings;
-use Test::More;
 use DateTime;
 
 use FixMyStreet::TestMech;
@@ -8,19 +5,7 @@ use FixMyStreet::App::Controller::Questionnaire;
 
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
-# Make sure there's no outstanding questionnaire emails to be sent
-FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
-    site => 'fixmystreet'
-} );
-$mech->clear_emails_ok;
-
-# create a test user and report
-$mech->delete_user('test@example.com');
-
-my $user =
-  FixMyStreet::App->model('DB::User')
-  ->find_or_create( { email => 'test@example.com', name => 'Test User' } );
-ok $user, "created test user";
+my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
 my $dt = DateTime->now()->subtract( weeks => 5 );
 my $report_time = $dt->ymd . ' ' . $dt->hms;
@@ -61,12 +46,14 @@ FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
 } );
 my $email = $mech->get_email;
 ok $email, "got an email";
-like $email->body, qr/fill in our short questionnaire/i, "got questionnaire email";
+my $plain = $mech->get_text_body_from_email($email, 1);
+like $plain->body, qr/fill in our short questionnaire/i, "got questionnaire email";
 
-like $email->body, qr/Testing =96 Detail/, 'email contains encoded character';
-is $email->header('Content-Type'), 'text/plain; charset="windows-1252"', 'in the right character set';
+like $plain->body_str, qr/Testing \x{2013} Detail/, 'email contains encoded character';
+is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'in the right character set';
 
-my ($token) = $email->body =~ m{http://.*?/Q/(\S+)};
+my $url = $mech->get_link_from_email($email, 0, 1);
+my ($token) = $url =~ m{/Q/(\S+)};
 ok $token, "extracted questionnaire token '$token'";
 $mech->clear_emails_ok;
 
@@ -88,16 +75,19 @@ foreach my $test (
         desc => 'User goes to questionnaire URL with a bad token',
         token_extra => 'BAD',
         content => "Sorry, that wasn&rsquo;t a valid link",
+        code => 400,
     },
     {
         desc => 'User goes to questionnaire URL for a now-hidden problem',
         state => 'hidden',
         content => "we couldn't locate your problem",
+        code => 400,
     },
     {
         desc => 'User goes to questionnaire URL for an already answered questionnaire',
         answered => \'current_timestamp',
         content => 'already answered this questionnaire',
+        code => 400,
     },
 ) {
     subtest $test->{desc} => sub {
@@ -107,7 +97,8 @@ foreach my $test (
         $questionnaire->update;
         (my $token = $token->token);
         $token .= $test->{token_extra} if $test->{token_extra};
-        $mech->get_ok("/Q/$token");
+        $mech->get("/Q/$token");
+        is $mech->res->code, $test->{code}, "Right status received";
         $mech->content_contains( $test->{content} );
         # Reset, no matter what test did
         $report->state( 'confirmed' );
@@ -116,6 +107,23 @@ foreach my $test (
         $questionnaire->update;
     };
 }
+
+subtest "If been_fixed is provided in the URL" => sub {
+    $mech->get_ok("/Q/" . $token->token . "?been_fixed=Yes");
+    $mech->content_contains('id="been_fixed_yes" value="Yes" checked');
+    $report->discard_changes;
+    is $report->state, 'fixed - user';
+    $questionnaire->discard_changes;
+    is $questionnaire->old_state, 'confirmed';
+    is $questionnaire->new_state, 'fixed - user';
+    $mech->submit_form_ok({ with_fields => { been_fixed => 'Unknown', reported => 'Yes', another => 'No' } });
+    $report->discard_changes;
+    is $report->state, 'confirmed';
+    $questionnaire->discard_changes;
+    is $questionnaire->old_state, 'confirmed';
+    is $questionnaire->new_state, 'unknown';
+    $questionnaire->update({ whenanswered => undef, ever_reported => undef, old_state => undef, new_state => undef });
+};
 
 $mech->get_ok("/Q/" . $token->token);
 $mech->title_like( qr/Questionnaire/ );
@@ -394,30 +402,23 @@ for my $test (
 }
 
 FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'emptyhomes', 'fixmystreet' ],
+    ALLOWED_COBRANDS => [ 'fixmystreet' ],
 }, sub {
-    # EHA extra checking
-    ok $mech->host("reportemptyhomes.com"), 'change host to reportemptyhomes';
-
-    # Reset, and all the questionaire sending function - FIXME should it detect site itself somehow?
+    $report->discard_changes;
     $report->send_questionnaire( 1 );
     $report->update;
     $questionnaire->delete;
 
-    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
-        site => 'emptyhomes'
-    } );
-    $email = $mech->get_email;
-    ok $email, "got an email";
+    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires();
+
+    my $email = $mech->get_email;
+    my $body = $mech->get_text_body_from_email($email);
     $mech->clear_emails_ok;
-
-    (my $body = $email->body) =~ s/\s+/ /g;
-    like $body, qr/fill in this short questionnaire/i, "got questionnaire email";
-    ($token) = $email->body =~ m{http://.*?/Q/(\S+)};
+    $body =~ s/\s+/ /g;
+    like $body, qr/fill in our short questionnaire/i, "got questionnaire email";
+    my $url = $mech->get_link_from_email($email, 0, 1);
+    ($token) = $url =~ m{/Q/(\S+)};
     ok $token, "extracted questionnaire token '$token'";
-
-    $mech->get_ok("/Q/" . $token);
-    $mech->content_lacks( 'Would you like to receive another questionnaire' );
 
     # Test already answered the ever reported question, so not shown again
     $dt = $dt->add( weeks => 4 );
@@ -429,16 +430,10 @@ FixMyStreet::override_config {
         }
     );
     ok $questionnaire2, 'added another questionnaire';
-    ok $mech->host("www.fixmystreet.com"), 'change host to fixmystreet';
     $mech->get_ok("/Q/" . $token);
     $mech->title_like( qr/Questionnaire/ );
     $mech->content_contains( 'Has this problem been fixed?' );
     $mech->content_lacks( 'ever reported' );
-
-    # EHA extra checking
-    ok $mech->host("reportemptyhomes.com"), 'change host to reportemptyhomes';
-    $mech->get_ok("/Q/" . $token);
-    $mech->content_lacks( 'Would you like to receive another questionnaire' );
 
     $token = FixMyStreet::App->model("DB::Token")->find( { scope => 'questionnaire', token => $token } );
     ok $token, 'found token for questionnaire';
@@ -452,19 +447,20 @@ FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'fiksgatami' ],
 }, sub {
     # I18N Unicode extra testing using FiksGataMi
+    $report->discard_changes;
     $report->send_questionnaire( 1 );
     $report->cobrand( 'fiksgatami' );
     $report->update;
     $questionnaire->delete;
-    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( { site => 'fixmystreet' } ); # It's either fixmystreet or emptyhomes
+    FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires();
     $email = $mech->get_email;
     ok $email, "got an email";
     $mech->clear_emails_ok;
 
-    like $email->body, qr/Testing =96 Detail/, 'email contains encoded character from user';
-    like $email->body, qr/sak p=E5 FiksGataMi/, 'email contains encoded character from template';
-    is $email->header('Content-Type'), 'text/plain; charset="windows-1252"', 'email is in right encoding';
+    my $plain = $mech->get_text_body_from_email($email, 1);
+    like $plain->body_str, qr/Testing \x{2013} Detail/, 'email contains encoded character from user';
+    like $plain->body_str, qr/sak p\xe5 FiksGataMi/, 'email contains encoded character from template';
+    is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'email is in right encoding';
 };
 
-$mech->delete_user('test@example.com');
 done_testing();

@@ -16,5 +16,4 @@ Du har angivit följande information om problemet:
 
 [% report.detail %]
 
-
 [% INCLUDE 'signature.txt' %]

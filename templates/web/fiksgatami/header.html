@@ -1,7 +1,5 @@
 <!doctype html>
-<!--[if lt IE 7]><html class="no-js ie6 iel8" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 7]>   <html class="no-js ie7 iel8" lang="[% lang_code %]"><![endif]-->
-<!--[if IE 8]>   <html class="no-js ie8 iel8" lang="[% lang_code %]"><![endif]-->
+<!--[if IE 8]>   <html class="no-js ie8" lang="[% lang_code %]"><![endif]-->
 <!--[if IE 9]>   <html class="no-js ie9" lang="[% lang_code %]"><![endif]-->
 <!--[if gt IE 9]><!--><html class="no-js" lang="[% lang_code %]"><!--<![endif]-->
     <head>
@@ -12,20 +10,8 @@
         <meta name="mobileoptimized" content="0">
 
         [% INCLUDE 'header_opengraph.html' %]
-
-[% SET start = c.config.ADMIN_BASE_URL IF admin %]
-
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/base.css') %]">
-        <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]" media="(min-width:48em)">
-        [% extra_css %]
-        <!--[if (lt IE 9) & (!IEMobile)]>
-            <link rel="stylesheet" href="[% start %][% version('/cobrands/' _ c.cobrand.moniker _ '/layout.css') %]">
-        <![endif]-->
-
-        <script src="[% start %][% version('/js/modernizr.custom.js') %]" charset="utf-8"></script>
-        <script src="[% start %][% version('/cobrands/fixmystreet/position_map.js') %]" charset="utf-8"></script>
-        [% INCLUDE 'common_header_tags.html', js_override = '/cobrands/fixmystreet/fixmystreet.js' %]
-        [% extra_js %]
+        [% INCLUDE 'header/css.html' %]
+        [% INCLUDE 'common_header_tags.html' %]
 
         [% TRY %][% PROCESS 'header_extra.html' %][% CATCH file %][% END %]
 
@@ -41,15 +27,6 @@
                     <a href="#main-nav" id="nav-link">Main Navigation</a>
                 </div>
             </header>
-
-          [% IF c.user_exists %]
-            <div id="user-meta">
-                <p>
-                    [% tprintf(loc('Hi %s'), c.user.name || c.user.email) %]
-                    <a href="/auth/sign_out">[% loc('sign out') %]</a>
-                </p>
-            </div>
-          [% END %]
 
             [% pre_container_extra %]
 

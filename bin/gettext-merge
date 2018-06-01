@@ -6,7 +6,7 @@
 # Copyright (c) 2011 UK Citizens Online Democracy. All rights reserved.
 # Email: matthew@mysociety.org; WWW: http://www.mysociety.org/
 
-cd "$(dirname $(readlink -f $BASH_SOURCE))/.."
+cd "$(cd "$(dirname "$BASH_SOURCE")" && pwd -P)"/..
 
 for X in locale/*.UTF-8
 do
@@ -14,11 +14,6 @@ do
     then
         cd $X/LC_MESSAGES
         echo $X
-        if [ -e EmptyHomes.po ]
-        then
-            msgmerge --no-wrap -o New.po EmptyHomes.po ../../FixMyStreet-EmptyHomes.po
-            mv New.po EmptyHomes.po
-        fi
         if [ -e FixMyStreet.po ]
         then
             msgmerge --no-wrap -o New.po FixMyStreet.po ../../FixMyStreet.po

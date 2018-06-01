@@ -7,7 +7,7 @@
         = pc
         ? c.uri_for( "/rss/pc", pc )
         : c.uri_for( "/rss/l/$latitude,$longitude" );
-            
+
     email_url = c.uri_for(
         '/alert/list',
         {
@@ -27,10 +27,12 @@
         }
     );
 
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html" around_page = 1;
+    sidebar_html = PROCESS 'report/new/sidebar.html' js = 1 report.used_map = 1;
 
     SET bodyclass = 'mappage';
-    SET rss = [ tprintf(loc('Recent local problems, %s', "%s is the site name"), site_name), rss_url ] IF c.cobrand.moniker != 'emptyhomes';
+    SET rss = [ tprintf(loc('Recent local problems, %s', "%s is the site name"), site_name), rss_url ];
     INCLUDE 'header.html',
         title  => loc('Viewing a location')
         robots => 'noindex,nofollow';
@@ -40,6 +42,7 @@
 
 [% IF allow_creation %]
 <form action="[% c.uri_for('/report/new') %]" method="post" name="mapForm" id="mapForm" enctype="multipart/form-data" class="validate" novalidate>
+    <input type="hidden" name="token" value="[% csrf_token %]">
     [% IF c.req.params.map_override %]
         <input type="hidden" name="map_override" value="[% c.req.params.map_override | html %]">
     [% END %]
@@ -51,55 +54,53 @@
 
     [% map_html %]
 
-      [% IF c.cobrand.moniker != 'emptyhomes' %]
-        <p id='sub_map_links'>
+    [% IF c.req.params.no_pins %]
+        <a class="big-hide-pins-link" rel='nofollow' href="[% c.uri_with( { no_pins => 0 } ) %]">[% loc('Show pins') %]</a>
+    [% ELSE %]
+        <a class="big-hide-pins-link" rel='nofollow' href="[% c.uri_with( { no_pins => 1 } ) %]">[% loc('Hide pins') %]</a>
+    [% END %]
+
+        <p class="sub-map-links" id='sub_map_links'>
             [% map_sub_links %]
             [% IF c.req.params.no_pins %]
-                <a id='hide_pins_link' rel='nofollow' href='[% c.uri_with( { no_pins => 0 } ) %]'>[% loc('Show pins') %]</a>
+                <a id='hide_pins_link' rel='nofollow' href="[% c.uri_with( { no_pins => 0 } ) %]">[% loc('Show pins') %]</a>
             [% ELSE %]
-                <a id='hide_pins_link' rel='nofollow' href='[% c.uri_with( { no_pins => 1 } ) %]'>[% loc('Hide pins') %]</a>
-            [% END %]
-            [% IF c.cobrand.country == 'GB' || c.cobrand.country == 'NO' %]
-                <span class="hidden">|</span>
-                [% IF c.req.params.all_pins %]
-                    <a id='all_pins_link' rel='nofollow' href='[% c.uri_with( { no_pins => undef, all_pins => undef } ) %]'>[% loc('Hide old') %]</a>
-                [% ELSE %]
-                    <a id='all_pins_link' rel='nofollow' href='[% c.uri_with( { no_pins => undef, all_pins => 1 } ) %]'>[% loc('Show old') %]</a>
-                [% END %]
+                <a id='hide_pins_link' rel='nofollow' href="[% c.uri_with( { no_pins => 1 } ) %]">[% loc('Hide pins') %]</a>
             [% END %]
         </p>
-      [% END %]
 
+        <div class="mobile-map-banner">
+            <a href="/">[% loc('Home') %]</a>
+            <span>[% loc('Place pin on map') %]</span>
+        </div>
     </div>
 
 
+    <div id="map_sidebar">
 
-
-    <div id="side">
-
-        [% IF allow_creation %]
+        <div id="side">
+          [% IF allow_creation %]
             [% INCLUDE 'around/_report_banner.html' %]
             [% TRY %][% INCLUDE 'around/extra_text.html' %][% CATCH file %][% END %]
-        [% END %]
+          [% END %]
 
-      [% IF c.cobrand.moniker != 'emptyhomes' %]
-        [% INCLUDE 'around/_updates.html' %]
+          [% INCLUDE 'around/_updates.html' %]
+          <section class="full-width">
+              [% INCLUDE "around/tabbed_lists.html" %]
+          </section>
+        </div>
 
-        <section class="full-width">
-            [% INCLUDE "around/tabbed_lists.html" %]
-        </section>
+      [% IF allow_creation %]
+        <div style="display:none" id="side-form">
+        [% INCLUDE "report/new/fill_in_details_form.html"
+            js = 1,
+            report.used_map = 1
+            report.name = c.user.name
+        %]
+        </div>
       [% END %]
-    </div>
 
-    [% IF allow_creation %]
-    <div style="display:none" id="side-form">
-    [% INCLUDE "report/new/fill_in_details_form.html"
-        js = 1,
-        report.used_map = 1
-        report.name = c.user.name
-    %]
     </div>
-    [% END %]
 
 [% IF allow_creation %]
 </form>

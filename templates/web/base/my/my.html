@@ -1,5 +1,6 @@
 [%
     SET bodyclass = 'mappage';
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html" IF problems.size;
     INCLUDE 'header.html', title = loc('Your Reports')
 %]
@@ -7,64 +8,117 @@
 [% IF problems.size %]
     [% map_html %]
     </div>
-    <div id="side">
+    <div id="map_sidebar">
+        <div id="side">
 [% ELSE %]
-    <div id="skipped-map">
+    <div id="map_sidebar">
+        <div id="skipped-map">
 [% END %]
 
-<h1>[% loc('Your Reports') %]</h1>
+<h1>[% loc('Your account') %]</h1>
 
-<p><a href="/auth/change_password">[% loc('Change password') %]</a></p>
+[% IF flash_message %]
+<p class="form-success">[% flash_message %]</p>
+[% END %]
+
+<style>
+/* TODO XXX */
+li .my-account-buttons {
+    float: right;
+    margin: 0;
+}
+li .my-account-buttons a {
+    padding: 0 0.5em;
+}
+</style>
+<ul>
+<li>[% loc('Name:') %] [% c.user.name %]
+<li>[% loc('Email:') %] [% c.user.email OR '-' %]
+    <p class="my-account-buttons">
+      [% IF NOT c.user.email %]
+        <a href="/auth/change_email">[% loc('Add') %]</a>
+      [% ELSIF c.user.email_verified %]
+        <a href="/auth/change_email">[% loc('Change') %]</a>
+      [% ELSE %]
+        <a href="/auth/verify/email">[% loc('Verify') %]</a>
+        <a href="/auth/change_email">[% loc('Change') %]</a>
+      [% END %]
+    </p>
+<li>[% loc('Phone:') %] [% c.user.phone_display OR '-' %]
+    <p class="my-account-buttons">
+      [% IF NOT c.user.phone %]
+        <a href="/auth/change_phone">[% loc('Add') %]</a>
+      [% ELSIF c.user.phone_verified %]
+        <a href="/auth/change_phone">[% loc('Change') %]</a>
+      [% ELSE %]
+       [% IF c.config.SMS_AUTHENTICATION %]
+        <a href="/auth/verify/phone">[% loc('Verify') %]</a>
+       [% END %]
+        <a href="/auth/change_phone">[% loc('Change') %]</a>
+      [% END %]
+    </p>
+</ul>
+
+<p class="my-account-buttons">
+  <a href="/auth/change_password">[% loc('Change password') %]</a>
+  [% IF c.user AND (c.user.from_body OR c.user.is_superuser) %]
+  <a href="/auth/generate_token">[% loc('Security') %]</a>
+  [% END %]
+  <a href="/auth/sign_out">[% loc('Sign out') %]</a>
+</p>
+
+<h2>[% loc('Your reports') %]</h2>
 
 [% IF ! has_content %]
 [% tprintf( loc('You haven&rsquo;t created any reports yet.  <a href="%s">Report a problem now.</a>'),
     c.uri_for('/') ) %]
 [% END %]
 
-[% IF c.cobrand.moniker == 'fixmybarangay' %]
-    [% INCLUDE '_barangay_buttons.html' %]
-[% ELSIF c.cobrand.moniker == 'hart' %]
+[% IF c.cobrand.moniker == 'hart' %]
     [% INCLUDE '_hart_hants_note.html' %]
 [% END %]
 
-[% INCLUDE "reports/_list-filters.html", use_section_wrapper = 1 %]
-
-[% INCLUDE 'pagination.html',
-    pager = problems_pager,
-    param = 'p'
-%]
-
-[% INCLUDE 'my/_problem-list.html' %]
+<section class="full-width">
+[% INCLUDE "reports/_list-filters.html", use_form_wrapper = 1 %]
+<div class="js-pagination">
+[% INCLUDE 'pagination.html', pager = problems_pager, param = 'p' %]
+</div>
+<div id="js-reports-list">
+    [% INCLUDE 'my/_problem-list.html' %]
+</div>
+</section>
 
 [% FOREACH u IN updates %]
     [% IF loop.first %]
         <h2>[% loc('Your updates') %]</h2>
+        <section class="full-width">
         [% INCLUDE 'pagination.html',
             pager = updates_pager,
             param = 'u'
         %]
-        <ul class="item-list item-list--updates full-width">
+        <ul class="item-list item-list--updates">
     [% END %]
 
     <li class="item-list__item item-list__item--updates">
         <div class="item-list__update-wrap">
             [% INCLUDE 'report/photo.html' object=u %]
             <div class="item-list__update-text">
-                [% add_links( u.text ) | html_para %]
+                [% u.text | add_links | html_para %]
 
                 <p class="meta-2">
                     [% tprintf( loc("Added %s"), prettify_dt( u.confirmed, 'date' ) ) %]
                     &ndash;
-                    <a href="[% c.uri_for( '/report', u.problem_id ) %]#update_[% u.id %]">
+                    <a href="[% u.url %]">
                         [% u.problem.title | html %]
                     </a>
                 </p>
             </div>
         </div>
     </li>
-    [% "</ul>" IF loop.last %]
+    [% "</ul></section>" IF loop.last %]
 [% END %]
 
-</div>
+        </div>
+    </div>
 
 [% INCLUDE 'footer.html' %]

@@ -1,5 +1,9 @@
 [% INCLUDE 'admin/header.html' title=loc('Bodies') -%]
 
+[% IF body_errors.size %]
+    <p class="error">[% loc('Please correct the errors below') %]</p>
+[% END %]
+
 [% IF bodies.size == 0 %]
   <p class="fms-admin-info">
     [% loc('Currently no bodies have been created.') %]
@@ -10,13 +14,13 @@
   </p>
 [% ELSE %]
 
-  [% IF c.config.STAGING_SITE and !c.config.SEND_REPORTS_ON_STAGING %]
+  [% IF c.config.STAGING_SITE and !c.config.STAGING_FLAGS.send_reports %]
   <p class="fms-admin-warning">
-    [% tprintf(loc("As this is a staging site and %s is false, reports made on this site will be sent to the problem reporter, not the contact given for the report’s category."), "<a class='admin-offsite-link' href='http://fixmystreet.org/customising/config/#send_reports_on_staging'><code>SEND_REPORTS_ON_STAGING</code></a>") %]
+    [% tprintf(loc("As this is a staging site and %s is false, reports made on this site will be sent to the problem reporter, not the contact given for the report’s category."), "<a class='admin-offsite-link' href='https://fixmystreet.org/customising/config/#send_reports_on_staging'><code>STAGING_FLAGS send_reports</code></a>") %]
   </p>
   [% END %]
 
-  <table cellspacing="0" cellpadding="2" border="1">
+  <table cellspacing="0" cellpadding="2" border="1" id="admin_bodies">
       <tr>
           <th>[% loc('Name') %]</th>
         [% IF c.cobrand.moniker == 'zurich' %]
@@ -69,7 +73,7 @@
   </table>
 [% END %]
 
-[% IF c.cobrand.moniker != 'zurich' OR admin_type == 'super' %]
+[% IF (c.cobrand.moniker == 'zurich' AND admin_type == 'super') OR c.user.is_superuser %]
     <div class="admin-box">
       <h2>[% loc('Add body') %]</h2>
       [% INCLUDE 'admin/body-form.html', body='' %]

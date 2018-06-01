@@ -3,14 +3,16 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 
 use strict;
 use warnings;
+use DateTime::Format::W3CDTF;
 
-sub council_id { return 2482; }
+sub council_area_id { return 2482; }
 sub council_area { return 'Bromley'; }
 sub council_name { return 'Bromley Council'; }
 sub council_url { return 'bromley'; }
 
 sub base_url {
-    return FixMyStreet->config('BASE_URL') if FixMyStreet->config('STAGING_SITE');
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
     return 'https://fix.bromley.gov.uk';
 }
 
@@ -57,10 +59,6 @@ sub map_type {
     'Bromley';
 }
 
-sub on_map_default_max_pin_age {
-    return '1 month';
-}
-
 # Bromley pins always yellow
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
@@ -81,9 +79,9 @@ sub ask_ever_reported {
     return 0;
 }
 
-sub process_extras {
+sub process_open311_extras {
     my $self = shift;
-    $self->SUPER::process_extras( @_, [ 'first_name', 'last_name' ] );
+    $self->SUPER::process_open311_extras( @_, [ 'first_name', 'last_name' ] );
 }
 
 sub contact_email {
@@ -108,6 +106,38 @@ sub tweak_all_reports_map {
 
 sub title_list {
     return ["MR", "MISS", "MRS", "MS", "DR"];
+}
+
+sub open311_config {
+    my ($self, $row, $h, $params) = @_;
+
+    my $extra = $row->get_extra_fields;
+    push @$extra,
+        { name => 'report_url',
+          value => $h->{url} },
+        { name => 'report_title',
+          value => $row->title },
+        { name => 'public_anonymity_required',
+          value => $row->anonymous ? 'TRUE' : 'FALSE' },
+        { name => 'email_alerts_requested',
+          value => 'FALSE' }, # always false as can never request them
+        { name => 'requested_datetime',
+          value => DateTime::Format::W3CDTF->format_datetime($row->confirmed->set_nanosecond(0)) },
+        { name => 'email',
+          value => $row->user->email };
+
+    # make sure we have last_name attribute present in row's extra, so
+    # it is passed correctly to Bromley as attribute[]
+    if ( $row->cobrand ne 'bromley' ) {
+        my ( $firstname, $lastname ) = ( $row->name =~ /(\w+)\.?\s+(.+)/ );
+        push @$extra, { name => 'last_name', value => $lastname };
+    }
+
+    $row->set_extra_fields(@$extra);
+
+    $params->{always_send_latlong} = 0;
+    $params->{send_notpinpointed} = 1;
+    $params->{extended_description} = 0;
 }
 
 1;

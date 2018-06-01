@@ -1,31 +1,35 @@
-Subject: Problemrapport: <?=$values['title']?>
+Subject: Problemrapport: [% report.title %]
 
-Til <?=$values['bodies_name']?>,
+Til [% bodies_name %],
 
-<?=$values['missing']?><?=$values['multiple']?>En bruker av
+[% missing %][% multiple %]En bruker av
 FiksGataMi har sendt inn følgende rapport om et lokalt
 problem som vi tror trenger deres oppmerksomhet.
 
-<?=$values['fuzzy']?>, eller for å bidra med en oppdatering om problemet,
+[% fuzzy %], eller for å bidra med en oppdatering om problemet,
 vennligst besøk følgende lenke:
 
-    <?=$values['url']?>
+    [% url %]
 
-<?=$values['has_photo']?>----------
+[% has_photo %]----------
 
-Navn: <?=$values['name']?>
+Navn: [% report.name %]
 
-E-post: <?=$values['email']?>
+E-post: [% report.user.email OR '-' %]
 
-<?=$values['phone_line']?><?=$values['category_line']?>Tema: <?=$values['title']?>
+Telefon: [% report.user.phone OR '-' %]
 
-Detajer: <?=$values['detail']?>
+Kategori: [% report.category %]
 
-<?=$values['easting_northing']?>Breddegrad: <?=$values['latitude']?>
+Tema: [% report.title %]
 
-Lengegrad: <?=$values['longitude']?>
+Detajer: [% report.detail %]
 
-<?=$values['closest_address']?>----------
+Breddegrad: [% report.latitude %]
+
+Lengegrad: [% report.longitude %]
+
+[% closest_address %]----------
 
 Svar på denne e-posten går til brukeren som sendte inn problemet.
 
@@ -34,7 +38,7 @@ FiksGataMi-gruppen
 
 [ Denne meldingen ble sendt inn via FiksGataMi, et prosjekt hos foreningen NUUG.
 Hvis det er en mer passende e-postadresse for meldinger om
-<?=$values['category_footer']?>, vær så snill å gi oss beskjed ved å besøke
+[% category_footer %], vær så snill å gi oss beskjed ved å besøke
 <http://www.fiksgatami.no/contact>.
 Dette vil bidra til å forbedre tjenesten for lokalbefolkningen. Vi
 tar også gjerne imot andre tilbakemeldinger. ]

@@ -3,10 +3,10 @@ use base 'FixMyStreet::Cobrand::Default';
 
 use strict;
 use warnings;
+use utf8;
 
 use Carp;
 use mySociety::MaPit;
-use FixMyStreet::Geocode::FixaMinGata;
 use DateTime;
 
 sub country {
@@ -23,38 +23,79 @@ sub enter_postcode_text {
 
 # Is also adding language parameter
 sub disambiguate_location {
-    return {
+    my $self = shift;
+    my $string = shift;
+
+    my $out = {
+        %{ $self->SUPER::disambiguate_location() },
         lang => 'sv',
-        country => 'se', # Is this the right format? /Rikard
+        country => 'se',
     };
+
+    $string = lc($string);
+
+    if ($string eq 'lysekil') {
+        # Lysekil
+        $out->{bounds} = [ '58.4772', '11.3983', '58.1989', '11.5755' ];
+    } elsif ($string eq 'tjörn') {
+        # Tjörn
+        $out->{bounds} = [ '58.0746', '11.4429', '57.9280', '11.7815' ];
+    } elsif ($string eq 'varmdö') {
+        # Varmdö
+        $out->{bounds} = [ '59.4437', '18.3513', '59.1907', '18.7688' ];
+    } elsif ($string eq 'öckerö') {
+        # Öckerö
+        $out->{bounds} = [ '57.7985', '11.5792', '57.6265', '11.7108' ];
+    }
+
+    return $out;
+}
+
+sub geocoder_munge_results {
+    my ($self, $result) = @_;
+
+    if ($result->{osm_id} == 1076755) { # Hammarö, Hammarö, Värmlands län, Svealand, Sweden
+        $result->{lat} = 59.3090;
+        $result->{lon} = 13.5297;
+    }
+
+    if ($result->{osm_id} == 398625) { # Haninge, Landskapet Södermanland, Stockholms län, Svealand, Sweden
+        $result->{lat} = 59.1069;
+        $result->{lon} = 18.2085;
+    }
+
+    if ($result->{osm_id} == 5831132) { # Nordmaling District, Nordmaling, Ångermanland, Västerbottens län, Norrland, 91433, Sweden
+        $result->{lat} = 63.5690;
+        $result->{lon} = 19.5028;
+    }
+
+    if ($result->{osm_id} == 935430) { # Sotenäs, Västra Götalands län, Götaland, Sweden
+        $result->{lat} = 58.4219;
+        $result->{lon} = 11.3345;
+    }
+
+    if ($result->{osm_id} == 935640) { # Tanum, Västra Götalands län, Götaland, Sweden
+        $result->{lat} = 58.7226;
+        $result->{lon} = 11.3242;
+    }
+
+    if ($result->{osm_id} == 289344) { # Älvkarleby, Landskapet Uppland, Uppsala län, Svealand, Sweden
+        $result->{lat} = 60.5849;
+        $result->{lon} = 17.4545;
+    }
 }
 
 sub area_types {
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->staging_flag('skip_checks');
     [ 'KOM' ];
-}
-
-sub admin_base_url {
-    return 'http://www.fixamingata.se/admin/';
-}
-
-# If lat/lon are present in the URL, OpenLayers will use that to centre the map.
-# Need to specify a zoom to stop it defaulting to null/0.
-sub uri {
-    my ( $self, $uri ) = @_;
-
-    $uri->query_param( zoom => 3 )
-      if $uri->query_param('lat') && !$uri->query_param('zoom');
-
-    return $uri;
 }
 
 sub geocode_postcode {
     my ( $self, $s ) = @_;
-    #    Most people write Swedish postcodes like this:
-    #+   XXX XX, so let's remove the space
-    #    Is this the right place to do this? //Rikard
-    #	 This is the right place! // Jonas
-    $s =~ s/\ //g; # Rikard, remove space in postcode
+    # Most people write Swedish postcodes like this:
+    # XXX XX, so let's remove the space
+    $s =~ s/\ //g;
     if ($s =~ /^\d{5}$/) {
         my $location = mySociety::MaPit::call('postcode', $s);
         if ($location->{error}) {
@@ -80,8 +121,9 @@ sub geocoded_string_check {
 }
 
 sub find_closest {
-    my ( $self, $latitude, $longitude ) = @_;
-    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $latitude, $longitude );
+    my ( $self, $problem ) = @_;
+    $problem = $problem->{problem} if ref $problem eq 'HASH';
+    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $problem->latitude, $problem->longitude );
 }
 
 # Used by send-reports, calling find_closest, calling OSM geocoding
@@ -121,13 +163,22 @@ sub filter_all_council_ids_list {
     return  @all_councils_ids; # Är detta rätt? //Rikard
 }
 
-# The pin is green is it's fixed, yellow if it's closed (but not fixed), and
-# red otherwise.
+# The pin is green is it's fixed or closed, yellow if it's in progress (not in a
+# confirmed state), and red otherwise.
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
+    return 'green' if $p->is_closed;
     return 'green' if $p->is_fixed;
-    return 'yellow' if $p->is_closed;
+    return 'yellow' if $p->is_in_progress;
     return 'red';
+}
+
+sub state_groups_inspect {
+    [
+        [ _('Open'), [ 'confirmed', 'action scheduled', 'in progress', 'investigating' ] ],
+        [ _('Fixed'), [ 'fixed - council' ] ],
+        [ _('Closed'), [ 'duplicate', 'not responsible', 'unable to fix' ] ],
+    ]
 }
 
 1;

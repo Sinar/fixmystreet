@@ -1,17 +1,13 @@
-use strict;
-use warnings;
-
-use Test::More;
+use Test::MockModule;
 
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
 my $test_email    = 'test@example.com';
-my $test_password = 'foobar';
-$mech->delete_user($test_email);
+my $test_email3   = 'newuser@example.org';
+my $test_password = 'foobar123';
 
 END {
-    $mech->delete_user($test_email);
     done_testing();
 }
 
@@ -31,14 +27,21 @@ for my $test (
   )
 {
     my ( $email, $error_message ) = @$test;
+
+    my $resolver = Test::MockModule->new('Net::DNS::Resolver');
+    $resolver->mock('send', sub {
+        my ($self, $domain, $type) = @_;
+        return Net::DNS::Packet->new;
+    });
+
     pass "--- testing bad email '$email' gives error '$error_message'";
     $mech->get_ok('/auth');
     is_deeply $mech->page_errors, [], 'no errors initially';
     $mech->submit_form_ok(
         {
             form_name => 'general_auth',
-            fields    => { email => $email, },
-            button    => 'email_sign_in',
+            fields => { username => $email, },
+            button => 'sign_in_by_code',
         },
         "try to create an account with email '$email'"
     );
@@ -46,14 +49,18 @@ for my $test (
     is_deeply $mech->page_errors, [ $error_message ], 'errors match';
 }
 
+# Email address parsing should pass from here
+my $resolver = Test::MockModule->new('Email::Valid');
+$resolver->mock('address', sub { $_[1] });
+
 # create a new account
 $mech->clear_emails_ok;
 $mech->get_ok('/auth');
 $mech->submit_form_ok(
     {
         form_name => 'general_auth',
-        fields    => { email => $test_email, },
-        button    => 'email_sign_in',
+        fields => { username => $test_email, password_register => $test_password },
+        button => 'sign_in_by_code',
     },
     "create an account for '$test_email'"
 );
@@ -63,7 +70,6 @@ $mech->not_logged_in_ok;
 
 # check that we got one email
 {
-    $mech->email_count_is(1);
     my $email = $mech->get_email;
     $mech->clear_emails_ok;
     is $email->header('Subject'), "Your FixMyStreet account details",
@@ -71,8 +77,7 @@ $mech->not_logged_in_ok;
     is $email->header('To'), $test_email, "to is correct";
 
     # extract the link
-    my ($link) = $email->body =~ m{(http://\S+)};
-    ok $link, "Found a link in email '$link'";
+    my $link = $mech->get_link_from_email($email);
 
     # check that the user does not exist
     sub get_user {
@@ -95,86 +100,6 @@ $mech->not_logged_in_ok;
     $mech->log_out_ok;
 }
 
-# get a sign in email and change password
-{
-    $mech->clear_emails_ok;
-    $mech->get_ok('/auth');
-    $mech->submit_form_ok(
-        {
-            form_name => 'general_auth',
-            fields    => {
-                email => "$test_email",
-                r     => 'faq', # Just as a test
-            },
-            button    => 'email_sign_in',
-        },
-        "email_sign_in with '$test_email'"
-    );
-
-    # rest is as before so no need to test
-
-    # follow link and change password - check not prompted for old password
-    $mech->not_logged_in_ok;
-
-    $mech->email_count_is(1);
-    my $email = $mech->get_email;
-    $mech->clear_emails_ok;
-    my ($link) = $email->body =~ m{(http://\S+)};
-    $mech->get_ok($link);
-    is $mech->uri->path, '/faq', "redirected to the Help page";
-
-    $mech->get_ok('/auth/change_password');
-
-    ok my $form = $mech->form_name('change_password'),
-      "found change password form";
-    is_deeply [ sort grep { $_ } map { $_->name } $form->inputs ],    #
-      [ 'confirm', 'new_password' ],
-      "check we got expected fields (ie not old_password)";
-
-    # check the various ways the form can be wrong
-    for my $test (
-        { new => '',       conf => '',           err => 'enter a password', },
-        { new => 'secret', conf => '',           err => 'do not match', },
-        { new => '',       conf => 'secret',     err => 'do not match', },
-        { new => 'secret', conf => 'not_secret', err => 'do not match', },
-      )
-    {
-        $mech->get_ok('/auth/change_password');
-        $mech->content_lacks( $test->{err}, "did not find expected error" );
-        $mech->submit_form_ok(
-            {
-                form_name => 'change_password',
-                fields =>
-                  { new_password => $test->{new}, confirm => $test->{conf}, },
-            },
-            "change_password with '$test->{new}' and '$test->{conf}'"
-        );
-        $mech->content_contains( $test->{err}, "found expected error" );
-    }
-
-    my $user =
-      FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
-    ok $user, "got a user";
-    ok !$user->password, "user has no password";
-
-    $mech->get_ok('/auth/change_password');
-    $mech->submit_form_ok(
-        {
-            form_name => 'change_password',
-            fields =>
-              { new_password => $test_password, confirm => $test_password, },
-        },
-        "change_password with '$test_password' and '$test_password'"
-    );
-    is $mech->uri->path, '/auth/change_password',
-      "still on change password page";
-    $mech->content_contains( 'password has been changed',
-        "found password changed" );
-
-    $user->discard_changes();
-    ok $user->password, "user now has a password";
-}
-
 foreach my $remember_me ( '1', '0' ) {
     subtest "sign in using valid details (remember_me => '$remember_me')" => sub {
         $mech->get_ok('/auth');
@@ -182,13 +107,13 @@ foreach my $remember_me ( '1', '0' ) {
             {
                 form_name => 'general_auth',
                 fields    => {
-                    email       => $test_email,
+                    username => $test_email,
                     password_sign_in => $test_password,
                     remember_me => ( $remember_me ? 1 : undef ),
                 },
-                button => 'sign_in',
+                button => 'sign_in_by_password',
             },
-            "sign in with '$test_email' & '$test_password"
+            "sign in with '$test_email' & '$test_password'"
         );
         is $mech->uri->path, '/my', "redirected to correct page";
 
@@ -208,15 +133,15 @@ $mech->submit_form_ok(
     {
         form_name => 'general_auth',
         fields    => {
-            email    => $test_email,
+            username => $test_email,
             password_sign_in => 'not the password',
         },
-        button => 'sign_in',
+        button => 'sign_in_by_password',
     },
     "sign in with '$test_email' & 'not the password'"
 );
 is $mech->uri->path, '/auth', "redirected to correct page";
-$mech->content_contains( 'problem with your email/password combination', 'found error message' );
+$mech->content_contains( 'problem with your login information', 'found error message' );
 
 subtest "sign in but have email form autofilled" => sub {
     $mech->get_ok('/auth');
@@ -224,17 +149,176 @@ subtest "sign in but have email form autofilled" => sub {
         {
             form_name => 'general_auth',
             fields    => {
-                email    => $test_email,
+                username => $test_email,
                 password_sign_in => $test_password,
                 name => 'Auto-completed from elsewhere',
             },
-            button => 'sign_in',
+            button => 'sign_in_by_password',
         },
         "sign in with '$test_email' and auto-completed name"
     );
     is $mech->uri->path, '/my', "redirected to correct page";
 };
 
+$mech->log_out_ok;
 
-# more test:
-# TODO: test that email are always lowercased
+subtest "sign in with uppercase email" => sub {
+    $mech->get_ok('/auth');
+    my $uc_test_email = uc $test_email;
+    $mech->submit_form_ok(
+        {
+            form_name => 'general_auth',
+            fields    => {
+                username => $uc_test_email,
+                password_sign_in => $test_password,
+            },
+            button => 'sign_in_by_password',
+        },
+        "sign in with '$uc_test_email' and auto-completed name"
+    );
+    is $mech->uri->path, '/my', "redirected to correct page";
+
+    $mech->content_contains($test_email);
+    $mech->content_lacks($uc_test_email);
+
+    my $count = FixMyStreet::App->model('DB::User')->search( { email => $uc_test_email } )->count;
+    is $count, 0, "uppercase user wasn't created";
+};
+
+
+FixMyStreet::override_config {
+    SIGNUPS_DISABLED => 1,
+}, sub {
+    subtest 'signing in with an unknown email address disallowed' => sub {
+        $mech->log_out_ok;
+        # create a new account
+        $mech->clear_emails_ok;
+        $mech->get_ok('/auth');
+        $mech->submit_form_ok(
+            {
+                form_name => 'general_auth',
+                fields => { username => $test_email3, },
+                button => 'sign_in_by_code',
+            },
+            "create a new account"
+        );
+
+        ok $mech->email_count_is(0);
+
+        my $count = FixMyStreet::App->model('DB::User')->search( { email => $test_email3 } )->count;
+        is $count, 0, "no user exists";
+    };
+
+    subtest 'signing in as known email address with new password is allowed' => sub {
+        my $new_password = "myshinynewpassword";
+
+        $mech->clear_emails_ok;
+        $mech->get_ok('/auth');
+        $mech->submit_form_ok(
+            {
+                form_name => 'general_auth',
+                fields    => {
+                    username => "$test_email",
+                    password_register => $new_password,
+                    r                 => 'faq', # Just as a test
+                },
+                button => 'sign_in_by_code',
+            },
+            "sign_in_by_code with '$test_email'"
+        );
+
+        $mech->not_logged_in_ok;
+
+        ok $mech->email_count_is(1);
+        my $link = $mech->get_link_from_email;
+        $mech->get_ok($link);
+        is $mech->uri->path, '/faq', "redirected to the Help page";
+
+        $mech->log_out_ok;
+
+        $mech->get_ok('/auth');
+        $mech->submit_form_ok(
+            {
+                form_name => 'general_auth',
+                fields    => {
+                    username => $test_email,
+                    password_sign_in => $new_password,
+                },
+                button => 'sign_in_by_password',
+            },
+            "sign in with '$test_email' and new password"
+        );
+        is $mech->uri->path, '/my', "redirected to correct page";
+    };
+};
+
+subtest "check logging in with token" => sub {
+    $mech->log_out_ok;
+    $mech->not_logged_in_ok;
+
+    my $user =  FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
+    # token needs to be 18 characters
+    $user->set_extra_metadata('access_token', '1234567890abcdefgh');
+    $user->update();
+
+    $mech->add_header('Authorization', 'Bearer 1234567890abcdefgh');
+    $mech->logged_in_ok;
+
+    $mech->delete_header('Authorization');
+    $mech->not_logged_in_ok;
+
+    $mech->get_ok('/auth/check_auth?access_token=1234567890abcdefgh');
+
+    $mech->add_header('Authorization', 'Bearer 1234567890abcdefgh');
+    $user->set_extra_metadata('access_token', 'XXXXXXXXXXXXXXXXXX');
+    $user->update();
+    $mech->not_logged_in_ok;
+
+    $mech->delete_header('Authorization');
+};
+
+subtest 'check password length/common' => sub {
+    $mech->get_ok('/auth');
+    $mech->submit_form_ok({
+        form_name => 'general_auth',
+        fields => { username => $test_email, password_register => 'short' },
+        button => 'sign_in_by_code',
+    });
+    $mech->content_contains("Please make sure your password is at least");
+    $mech->submit_form_ok({
+        form_name => 'general_auth',
+        fields => { username => $test_email, password_register => 'common' },
+        button => 'sign_in_by_code',
+    });
+    $mech->content_contains("Please choose a less commonly-used password");
+};
+
+subtest 'check common password AJAX call' => sub {
+    $mech->post_ok('/auth/common_password', { password_register => 'password' });
+    $mech->content_contains("Please choose a less commonly-used password");
+    $mech->post_ok('/auth/common_password', { password_register => 'squirblewirble' });
+    $mech->content_contains("true");
+};
+
+subtest "Test two-factor authentication login" => sub {
+    use Auth::GoogleAuth;
+    my $auth = Auth::GoogleAuth->new;
+    my $code = $auth->code;
+    my $wrong_code = $auth->code(undef, time() - 120);
+
+    my $user = FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
+    $user->is_superuser(1);
+    $user->password('password');
+    $user->set_extra_metadata('2fa_secret', $auth->secret32);
+    $user->update;
+
+    $mech->get_ok('/auth');
+    $mech->submit_form_ok(
+        { with_fields => { username => $test_email, password_sign_in => 'password' } },
+        "sign in using form" );
+    $mech->content_contains('Please generate a two-factor code');
+    $mech->submit_form_ok({ with_fields => { '2fa_code' => $wrong_code } }, "provide wrong 2FA code" );
+    $mech->content_contains('Try again');
+    $mech->submit_form_ok({ with_fields => { '2fa_code' => $code } }, "provide correct 2FA code" );
+    $mech->logged_in_ok;
+};

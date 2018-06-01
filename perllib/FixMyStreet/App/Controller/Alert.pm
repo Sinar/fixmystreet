@@ -5,6 +5,7 @@ use namespace::autoclean;
 BEGIN { extends 'Catalyst::Controller'; }
 
 use mySociety::EmailUtil qw(is_valid_email);
+use FixMyStreet::Gaze;
 
 =head1 NAME
 
@@ -34,6 +35,8 @@ sub index : Path('') : Args(0) {
 
 sub list : Path('list') : Args(0) {
     my ( $self, $c ) = @_;
+
+    $c->forward('/auth/get_csrf_token');
 
     return
       unless $c->forward('setup_request')
@@ -111,27 +114,24 @@ Sign up to email alerts
 sub subscribe_email : Private {
     my ( $self, $c ) = @_;
 
+    $c->forward('/auth/check_csrf_token');
+
     $c->stash->{errors} = [];
     $c->forward('process_user');
 
-    my $type = $c->get_param('type');
-    push @{ $c->stash->{errors} }, _('Please select the type of alert you want')
-      if $type && $type eq 'local' && !$c->get_param('feed');
-    if (@{ $c->stash->{errors} }) {
-        $c->go('updates') if $type && $type eq 'updates';
-        $c->go('list') if $type && $type eq 'local';
-        $c->go('index');
-    }
-
+    my $type = $c->get_param('type') || "";
     if ( $type eq 'updates' ) {
         $c->forward('set_update_alert_options');
-    }
-    elsif ( $type eq 'local' ) {
+    } elsif ( $type eq 'local' ) {
         $c->forward('set_local_alert_options');
-    }
-    else {
+    } else {
         $c->detach( '/page_error_404_not_found', [ 'Invalid type' ] );
     }
+
+    push @{ $c->stash->{errors} }, _('Please select the type of alert you want')
+      if !$c->stash->{alert_options};
+
+    $c->go($type eq 'updates' ? 'updates' : 'list') if @{ $c->stash->{errors} };
 
     $c->forward('create_alert');
     if ( $c->stash->{alert}->confirmed ) {
@@ -144,6 +144,8 @@ sub subscribe_email : Private {
 
 sub updates : Path('updates') : Args(0) {
     my ( $self, $c ) = @_;
+
+    $c->forward('/auth/get_csrf_token');
 
     $c->stash->{email} = $c->get_param('rznvy');
     $c->stash->{problem_id} = $c->get_param('id');
@@ -210,6 +212,7 @@ sub set_update_alert_options : Private {
     my ( $self, $c ) = @_;
 
     my $report_id = $c->get_param('id');
+    return unless $report_id =~ /^[1-9]\d*$/;
 
     my $options = {
         user       => $c->stash->{alert_user},
@@ -250,6 +253,7 @@ sub set_local_alert_options : Private {
         $type = 'local_problems';
         push @params, $2, $1; # Note alert parameters are lon,lat
     }
+    return unless $type;
 
     my $options = {
         user       => $c->stash->{alert_user},
@@ -277,20 +281,25 @@ then display confirmation page.
 sub send_confirmation_email : Private {
     my ( $self, $c ) = @_;
 
+    my $user = $c->stash->{alert}->user;
+
+    # Superusers using 2FA can not log in by code
+    $c->detach( '/page_error_403_access_denied', [] ) if $user->has_2fa;
+
     my $token = $c->model("DB::Token")->create(
         {
             scope => 'alert',
             data  => {
                 id    => $c->stash->{alert}->id,
                 type  => 'subscribe',
-                email => $c->stash->{alert}->user->email
+                email => $user->email
             }
         }
     );
 
     $c->stash->{token_url} = $c->uri_for_email( '/A', $token->token );
 
-    $c->send_email( 'alert-confirm.txt', { to => $c->stash->{alert}->user->email } );
+    $c->send_email( 'alert-confirm.txt', { to => $user->email } );
 
     $c->stash->{email_type} = 'alert';
     $c->stash->{template} = 'email_sent.html';
@@ -360,7 +369,7 @@ sub process_user : Private {
 #        return 1;
 #    }
 #
-#    $alert_user->password( Utils::trim_text( $params{password_register} ) );
+#    $alert_user->password( $params{password_register} );
 }
 
 =head2 setup_coordinate_rss_feeds
@@ -441,11 +450,7 @@ sub determine_location : Private {
         $c->go('index');
     }
 
-    my $dist =
-      mySociety::Gaze::get_radius_containing_population( $c->stash->{latitude},
-        $c->stash->{longitude}, 200000 );
-    $dist                          = int( $dist * 10 + 0.5 );
-    $dist                          = $dist / 10.0;
+    my $dist = FixMyStreet::Gaze::get_radius_containing_population($c->stash->{latitude}, $c->stash->{longitude});
     $c->stash->{population_radius} = $dist;
 
     return 1;

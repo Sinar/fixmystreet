@@ -1,7 +1,5 @@
 package FixMyStreet::Cobrand::UKCouncils;
-use base 'FixMyStreet::Cobrand::UK';
-
-# XXX Things using this cobrand base assume that a body ID === MapIt area ID
+use parent 'FixMyStreet::Cobrand::UK';
 
 use strict;
 use warnings;
@@ -16,10 +14,19 @@ sub is_council {
 sub path_to_web_templates {
     my $self = shift;
     return [
-        FixMyStreet->path_to( 'templates/web', $self->moniker )->stringify,
-        FixMyStreet->path_to( 'templates/web/fixmystreet-uk-councils' )->stringify,
-        FixMyStreet->path_to( 'templates/web/fixmystreet' )->stringify
+        FixMyStreet->path_to( 'templates/web', $self->moniker ),
+        FixMyStreet->path_to( 'templates/web/fixmystreet-uk-councils' ),
     ];
+}
+
+sub path_to_email_templates {
+    my ( $self, $lang_code ) = @_;
+    my $paths = [
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker, $lang_code ),
+        FixMyStreet->path_to( 'templates', 'email', $self->moniker ),
+        FixMyStreet->path_to( 'templates', 'email', 'fixmystreet.com'),
+    ];
+    return $paths;
 }
 
 sub site_key {
@@ -31,14 +38,64 @@ sub restriction {
     return { cobrand => shift->moniker };
 }
 
+# UK cobrands assume that each MapIt area ID maps both ways with one body
+sub body {
+    my $self = shift;
+    my $body = FixMyStreet::DB->resultset('Body')->for_areas($self->council_area_id)->first;
+    return $body;
+}
+
 sub problems_restriction {
     my ($self, $rs) = @_;
-    return $rs->to_body($self->council_id);
+    return $rs if FixMyStreet->staging_flag('skip_checks');
+    return $rs->to_body($self->body);
+}
+
+sub problems_on_map_restriction {
+    my ($self, $rs) = @_;
+    # If we're a two-tier council show all problems on the map and not just
+    # those for this cobrand's council to reduce duplicate reports.
+    return $self->is_two_tier ? $rs : $self->problems_restriction($rs);
 }
 
 sub updates_restriction {
     my ($self, $rs) = @_;
-    return $rs->to_body($self->council_id);
+    return $rs if FixMyStreet->staging_flag('skip_checks');
+    return $rs->to_body($self->body);
+}
+
+sub users_restriction {
+    my ($self, $rs) = @_;
+
+    # Council admins can only see users who are members of the same council,
+    # have an email address in a specified domain, or users who have sent a
+    # report or update to that council.
+
+    my $problem_user_ids = $self->problems->search(
+        undef,
+        {
+            columns => [ 'user_id' ],
+            distinct => 1
+        }
+    )->as_query;
+    my $update_user_ids = $self->updates->search(
+        undef,
+        {
+            columns => [ 'user_id' ],
+            distinct => 1
+        }
+    )->as_query;
+
+    my $or_query = [
+        from_body => $self->body->id,
+        'me.id' => [ { -in => $problem_user_ids }, { -in => $update_user_ids } ],
+    ];
+    if ($self->can('admin_user_domain')) {
+        my $domain = $self->admin_user_domain;
+        push @$or_query, email => { ilike => "%\@$domain" };
+    }
+
+    return $rs->search($or_query);
 }
 
 sub base_url {
@@ -46,9 +103,8 @@ sub base_url {
     my $base_url = FixMyStreet->config('BASE_URL');
     my $u = $self->council_url;
     if ( $base_url !~ /$u/ ) {
-        # council cobrands are not https so transform to http as well
-        $base_url =~ s{(https?)://(?!www\.)}{http://$u.}g;
-        $base_url =~ s{(https?)://www\.}{http://$u.}g;
+        $base_url =~ s{(https?://)(?!www\.)}{$1$u.}g;
+        $base_url =~ s{(https?://)www\.}{$1$u.}g;
     }
     return $base_url;
 }
@@ -61,8 +117,10 @@ sub enter_postcode_text {
 sub area_check {
     my ( $self, $params, $context ) = @_;
 
+    return 1 if FixMyStreet->staging_flag('skip_checks');
+
     my $councils = $params->{all_areas};
-    my $council_match = defined $councils->{$self->council_id};
+    my $council_match = defined $councils->{$self->council_area_id};
     if ($council_match) {
         return 1;
     }
@@ -118,7 +176,14 @@ sub owns_problem {
         @bodies = values %{$report->bodies};
     }
     my %areas = map { %{$_->areas} } @bodies;
-    return $areas{$self->council_id} ? 1 : undef;
+    return $areas{$self->council_area_id} ? 1 : undef;
+}
+
+# If the council is two-tier then show pins for the other council as grey
+sub pin_colour {
+    my ( $self, $p, $context ) = @_;
+    return 'grey' if $self->is_two_tier && !$self->owns_problem( $p );
+    return $self->next::method($p, $context);
 }
 
 # If we ever link to a county problem report, needs to be to main FixMyStreet
@@ -134,5 +199,27 @@ sub base_url_for_report {
         return $self->base_url;
     }
 }
+
+sub admin_allow_user {
+    my ( $self, $user ) = @_;
+    return 1 if $user->is_superuser;
+    return undef unless defined $user->from_body;
+    return $user->from_body->areas->{$self->council_area_id};
+}
+
+sub available_permissions {
+    my $self = shift;
+
+    my $perms = $self->next::method();
+    $perms->{Problems}->{contribute_as_body} = "Create reports/updates as " . $self->council_name;
+    $perms->{Problems}->{view_body_contribute_details} = "See user detail for reports created as " . $self->council_name;
+    $perms->{Users}->{user_assign_areas} = "Assign users to areas in " . $self->council_name;
+
+    return $perms;
+}
+
+sub prefill_report_fields_for_inspector { 1 }
+
+sub social_auth_disabled { 1 }
 
 1;

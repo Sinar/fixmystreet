@@ -95,7 +95,7 @@ sub determine_location_from_pc : Private {
     # $error doubles up to return multiple choices by being an array
     if ( ref($error) eq 'ARRAY' ) {
         foreach (@$error) {
-            my $a = decode_utf8($_->{address});
+            my $a = $_->{address};
             $a =~ s/, United Kingdom//;
             $a =~ s/, UK//;
             $_->{address} = $a;
@@ -108,6 +108,21 @@ sub determine_location_from_pc : Private {
     $c->stash->{location_error_pc_lookup} = 1;
     $c->stash->{location_error} = $error;
     return;
+}
+
+sub determine_location_from_bbox : Private {
+    my ( $self, $c ) = @_;
+
+    my $bbox = $c->get_param('bbox');
+    return unless $bbox;
+
+    my ($min_lon, $min_lat, $max_lon, $max_lat) = split /,/, $bbox;
+    my $longitude = ($max_lon + $min_lon ) / 2;
+    my $latitude = ($max_lat + $min_lat ) / 2;
+    $c->stash->{bbox} = $bbox;
+    $c->stash->{latitude} = $latitude;
+    $c->stash->{longitude} = $longitude;
+    return $c->forward('check_location');
 }
 
 =head2 check_location
@@ -131,22 +146,6 @@ sub check_location : Private {
     }
 
     return 1;
-}
-
-=head2 country_message
-
-Displays the country_message template, used for displaying a message to
-people using the site from outside the host country.
-
-=cut
-
-sub country_message : Path('/country_message') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    # we do not want to cache this as we always want to check if displaying this
-    # is the right thing to do.
-    $c->res->header( 'Cache_Control' => 'max-age=0' );
-    $c->stash->{template} = 'front/international_banner.html';
 }
 
 # Utility function for if someone (rarely) enters a grid reference

@@ -1,56 +1,13 @@
+$mappage-header-height: 49px + 50px; // .navbar + #main-nav
+
 @import "_colours";
 @import "../sass/layout";
 
-
 #site-header {
-    position: relative;
-    border-top-width: 0;
-
+    border-top: none;
     .navbar {
         margin-bottom: 0;
     }
-
-    .container {
-        min-height: 0;
-    }
-}
-
-// Needs to be within body.frontpage to override an existing rule in _layout.scss
-body.frontpage {
-    #site-header {
-        height: auto;
-    }
-}
-
-#fms_pan_zoom {
-    top: 14em !important;
-}
-
-@media (max-width: 61em) and (min-width: 48em) {
-    #site-header {
-        height: auto;
-    }
-}
-
-body.mappage {
-    footer, .footer-container, #footer-container, #footer-logos-bottom {
-        display: none;
-    }
-
-    #wrapper.container:before, #wrapper.container:after {
-        display: none;
-    }
-
-    #wrapper {
-        padding: 0;
-        width: auto;
-        display: block;
-        position: relative;
-    }
-}
-
-.content {
-    margin-bottom: 0;
 }
 
 body.twothirdswidthpage .content .sticky-sidebar {
@@ -61,68 +18,16 @@ body.twothirdswidthpage .content .sticky-sidebar {
     }
 }
 
-#footer-logos-bottom .container {
-    background: $base_bg;
+#main-nav {
+    text-align: inherit;
+    min-height: 0;
+    display: block; // undo flex-container()
+    float: none;
 }
 
-
-// These bits are taken from Warwickshire's CSS to override default FMS styles
-// The 'body.mappage .container' selector has been added to each so it takes precedent over
-// default FMS style.
-
-// http://www.warwickshire.gov.uk/wp-content/themes/gamma/style.css
-.container,
-.navbar-static-top .container,
-.navbar-fixed-top .container,
-.navbar-fixed-bottom .container,
-body.mappage .container {
-  width: 940px;
-}
-
-.navbar .container,
-body.mappage .container {
-  width: auto;
-}
-
-.navbar-static-top .container,
-.navbar-fixed-top .container,
-.navbar-fixed-bottom .container,
-body.mappage .container {
-  width: 940px;
-}
-
-// http://www.warwickshire.gov.uk/wp-content/themes/gamma/bootstrap-responsive.css
-@media (min-width: 1200px) {
-    .container,
-      .navbar-static-top .container,
-      .navbar-fixed-top .container,
-      .navbar-fixed-bottom .container,
-      body.mappage .container {
-        width: 1170px;
+body.mappage {
+    & > .navbar .container,
+    & > #main-nav .container {
+        width: auto !important; // override bootstrap media queries
     }
-}
-
-@media (min-width: 768px) and (max-width: 979px) {
-    .container,
-      .navbar-static-top .container,
-      .navbar-fixed-top .container,
-      .navbar-fixed-bottom .container,
-      body.mappage .container {
-        width: 724px;
-      }
-  }
-
-@media (max-width: 767px) {
-    .container,
-    body.mappage .container {
-        width: auto;
-      }
-}
-
-@media (max-width: 979px) {
-    .navbar .container,
-    body.mappage .container {
-        width: auto;
-        padding: 0;
-      }
 }

@@ -44,6 +44,14 @@ __PACKAGE__->add_columns(
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "external_url",
   { data_type => "text", is_nullable => 1 },
+  "fetch_problems",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "blank_updates_permitted",
+  { data_type => "boolean", default_value => \"false", is_nullable => 1 },
+  "convert_latlong",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "extra",
+  { data_type => "text", is_nullable => 1 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->has_many(
@@ -75,6 +83,12 @@ __PACKAGE__->has_many(
   { "foreign.body_id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+__PACKAGE__->has_many(
+  "defect_types",
+  "FixMyStreet::DB::Result::DefectType",
+  { "foreign.body_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
 __PACKAGE__->belongs_to(
   "parent",
   "FixMyStreet::DB::Result::Body",
@@ -85,6 +99,12 @@ __PACKAGE__->belongs_to(
     on_delete     => "NO ACTION",
     on_update     => "NO ACTION",
   },
+);
+__PACKAGE__->has_many(
+  "response_priorities",
+  "FixMyStreet::DB::Result::ResponsePriority",
+  { "foreign.body_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
 );
 __PACKAGE__->has_many(
   "response_templates",
@@ -106,8 +126,17 @@ __PACKAGE__->has_many(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-02-19 16:13:43
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:d6GuQm8vrNmCc4NWw58srA
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2018-04-05 14:29:33
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:HV8IM2C1ErrpvXoRTZ1B1Q
+
+__PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
+__PACKAGE__->rabx_column('extra');
+
+use Moo;
+use namespace::clean;
+
+with 'FixMyStreet::Roles::Translatable',
+     'FixMyStreet::Roles::Extra';
 
 sub url {
     my ( $self, $c, $args ) = @_;
@@ -115,10 +144,85 @@ sub url {
     return $c->uri_for( '/reports/' . $c->cobrand->short_name( $self ), $args || {} );
 }
 
+__PACKAGE__->might_have(
+  "translations",
+  "FixMyStreet::DB::Result::Translation",
+  sub {
+    my $args = shift;
+    return {
+        "$args->{foreign_alias}.object_id" => { -ident => "$args->{self_alias}.id" },
+        "$args->{foreign_alias}.tbl" => { '=' => \"?" },
+        "$args->{foreign_alias}.col" => { '=' => \"?" },
+        "$args->{foreign_alias}.lang" => { '=' => \"?" },
+    };
+  },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+
+around name => \&translate_around;
+
 sub areas {
     my $self = shift;
     my %ids = map { $_->area_id => 1 } $self->body_areas->all;
     return \%ids;
+}
+
+sub first_area_children {
+    my ( $self ) = @_;
+
+    my $body_area = $self->body_areas->first;
+    return unless $body_area;
+
+    my $cobrand = $self->result_source->schema->cobrand;
+    my $children = mySociety::MaPit::call('area/children', $body_area->area_id,
+        type => $cobrand->area_types_children,
+    );
+
+    return $children;
+}
+
+=head2 get_cobrand_handler
+
+Get a cobrand object for this body, if there is one.
+
+e.g.
+    * if the problem was sent to Bromley it will return ::Bromley
+    * if the problem was sent to Camden it will return nothing
+
+=cut
+
+sub get_cobrand_handler {
+    my $self = shift;
+    return FixMyStreet::Cobrand->body_handler($self->areas);
+}
+
+sub calculate_average {
+    my ($self) = @_;
+
+    my $substmt = "select min(id) from comment where me.problem_id=comment.problem_id and (problem_state in ('fixed', 'fixed - council', 'fixed - user') or mark_fixed)";
+    my $subquery = FixMyStreet::DB->resultset('Comment')->to_body($self)->search({
+        -or => [
+            problem_state => [ FixMyStreet::DB::Result::Problem->fixed_states() ],
+            mark_fixed => 1,
+        ],
+        'me.id' => \"= ($substmt)",
+        'me.state' => 'confirmed',
+    }, {
+        select   => [
+            { extract => "epoch from me.confirmed-problem.confirmed", -as => 'time' },
+        ],
+        as => [ qw/time/ ],
+        rows => 100,
+        order_by => { -desc => 'me.confirmed' },
+        join => 'problem'
+    })->as_subselect_rs;
+
+    my $avg = $subquery->search({
+    }, {
+        select => [ { avg => "time" } ],
+        as => [ qw/avg/ ],
+    })->first->get_column('avg');
+    return $avg;
 }
 
 1;

@@ -10,15 +10,7 @@
         </h3>
       [% END %]
 
-      [% IF c.cobrand.problem_response_days(problem) > 0 %]
-        <p>
-            Problems in the
-            [% problem.category %]
-            category are generally responded to within
-            [% c.cobrand.problem_response_days(problem) %]
-            working days.
-        </p>
-      [% END %]
+      [% INCLUDE '_response_time.html' %]
 
     </div>
 [% END %]

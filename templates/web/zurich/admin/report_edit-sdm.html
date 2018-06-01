@@ -1,17 +1,19 @@
 [%
     PROCESS "report/photo-js.html";
     PROCESS "maps/zurich.html";
+    SET bodyclass = 'mappage';
     PROCESS 'admin/header.html'
-        title = tprintf(loc('Editing problem %d'), problem.id ),
-        bodyclass = 'mappage';
+        title = tprintf(loc('Editing problem %d'), problem.id );
     PROCESS 'admin/report_blocks.html'
 -%]
 
 [% map_html %]
 </div>
 
+<div id="map_sidebar">
+
 <form method="post" action="[% c.uri_for( 'report_edit', problem.id ) %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
-    <input type="hidden" name="token" value="[% token %]" >
+    <input type="hidden" name="token" value="[% csrf_token %]" >
     <input type="hidden" name="submit" value="1" >
 
 <div class="admin-report-edit admin-report-edit--details">
@@ -60,18 +62,18 @@
         <strong>[% IF problem.name %][% problem.name | html %][% ELSE %][% loc('(No name)') %][% END %]</strong>
         <input type='hidden' name='name' id='name' value='[% problem.name | html %]'>
         <br>
-        [% problem.user.email | html %]
+        <a href="mailto:[% problem.user.email | html %]">[% problem.user.email | html %]</a>
         [% IF NOT problem.extra.email_confirmed %]<span class="error">[% loc('Unconfirmed') %]</span>[% END %]
-        <input type='hidden' id='email' name='email' value='[% problem.user.email | html %]'>
+        <input type='hidden' id='username' name='username' value='[% problem.user.username | html %]'>
         <br>
         [% IF problem.user.phone %][% problem.user.phone | html %][% ELSE %]<em>[% loc('(No phone number)') %]</em>[% END %]
     </dd>
 
     <dt>[% loc('Category:') %] <!-- Kategorie --></dt>
-    <dd>[% problem.category | html %]</dd>
+    <dd>[% problem.category_display | html %]</dd>
 
     <dt class="print-only">[% loc('State:') %] <!-- Status --></dt>
-    <dd class="print-only">[% states.${problem.state} %]</dd>
+    <dd class="print-only">[% prettify_state(problem.state) %]</dd>
 
     <dt>[% loc('Time spent (in minutes):') %]</dt>
     <dd>[% problem.get_time_spent %]</dd>
@@ -99,49 +101,36 @@
 
 <div class="admin-report-edit admin-report-edit--interact">
 
-<script type="text/javascript">
-    $(function(){
-        $('#map_box .noscript').clone().removeClass('noscript').addClass('map_clone print-only').prependTo('.admin-report-edit--interact');
-    });
-</script>
-
-<p align="right" class="screen-only"><input type="submit" name="send_back" value="[% loc('Not for my subdivision') %]"></p>
-<p align="right" class="screen-only"><input type="submit" name="not_contactable" value="[% loc('Customer not contactable') %]"></p>
+<p align="right" class="screen-only"><input [% sdm_disabled %] type="submit" class="btn" name="send_back" value="[% loc('Not for my subdivision') %]"></p>
+<p align="right" class="screen-only"><input [% sdm_disabled %] type="submit" class="btn" name="not_contactable" value="[% loc('Customer not contactable') %]"></p>
 
 <ul class="no-bullets screen-only">
     <li>
         <label for="new_internal_note">[% loc('New internal note:') %]</label>
-        <textarea name='new_internal_note' id='new_internal_note' cols=60 rows=4></textarea>
+        <textarea [% sdm_disabled %] class="form-control" name='new_internal_note' id='new_internal_note' cols=60 rows=4></textarea>
     </li>
     <li>
         <label for="status_update">[% loc('New note to DM:') %]</label>
-        <textarea name='status_update' id='status_update' cols=60 rows=4></textarea>
+        <textarea [% sdm_disabled %] class="form-control" name='status_update' id='status_update' cols=60 rows=4></textarea>
     </li>
 </ul>
 
 <p class="screen-only">
     <label for="time_spent">[% loc('Time spent (in minutes):') %]</label>
-    <input type="text" name="time_spent" id="form_time_spent" style="width: 4em" value="0">
-    <script>
-        $(function () {
-            $('#form_time_spent').spinner({
-                spin: function (e, ui) {
-                    if (ui.value < 0) { return false }
-                }
-            });
-        });
-    </script>
+    <input [% sdm_disabled %] type="text" class="form-control" name="time_spent" id="form_time_spent" style="width: 4em" value="0">
 </p>
 
-<p class="cf screen-only">
-    <input style="float:left" type="submit" name="Submit changes" value="[% loc('Submit changes') %]" >
-    <input style="float:right" type="submit" name="no_more_updates" value="[% loc('No further updates') %]">
+<p class="clearfix screen-only">
+    <input [% sdm_disabled %] style="float:left" type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" >
+    <input [% sdm_disabled %] style="float:right" type="submit" class="btn" name="no_more_updates" value="[% loc('No further updates') %]">
 </p>
 
 [% INCLUDE 'admin/list_updates.html' %]
 
 </div>
 </form>
+
+</div>
 
 <div id="print_report_map" class="print-only">
 [% INCLUDE 'maps/noscript_map.html' map=print_report_map nsm_prefix="large_" %]

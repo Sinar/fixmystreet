@@ -53,48 +53,66 @@
   font-style: normal;
 }
 
+$body-font: MuseoSans, Helmet, Freesans, sans-serif;
+
 /* Opera has a bug (from around 10.5 upwards to current 11.6) with showing the
  * table caption *at all* if the header is set to a font-face :( */
 noindex:-o-prefocus, #site-header {
   font-family: sans-serif;
 }
 
-h3, h4 {
+h3, h4,
+.item-list__heading {
     font-weight: bold;
 }
 
 @import "_colours";
 @import "../sass/layout";
 
+body {
+    @media ($high-dpi-screen) {
+        background-image: url(images/tile@2x.jpg);
+        background-size: 500px;
+    }
+}
+body.mappage {
+    background-image: none;
+}
+
 // Tiled background stripe, not plain colour
 #front-main {
     background: $primary url(images/tile-y.jpg);
+
+    @media ($high-dpi-screen) {
+        background-image: url(images/tile-y@2x.jpg);
+        background-size: 500px;
+    }
 }
 
 .nav-menu--main {
     a:hover {
-        @include background(linear-gradient(#000, #444 10%, #444 95%, #111));
+        @include linear-gradient(#000, #444 10%, #444 95%, #111);
+    }
+    a.report-a-problem-btn:hover {
+        background: $primary/1.1;
     }
 }
 
-.nav-wrapper {
-    .nav-wrapper-2 {
-        border-image-source: url(images/tile-y-border.jpg);
-        border-image-slice: 4 0 0;
-        border-image-repeat: repeat;
+#site-header {
+    background: none;
+    border-image-source: url(images/tile-y.jpg);
+    border-image-slice: 4 0 0 0;
+    border-image-repeat: repeat;
+
+    @media ($high-dpi-screen) {
+        border-image-source: url(images/tile-y@2x.jpg);
+        border-image-slice: 8 0 0 0;
     }
 }
 body.mappage {
-    .nav-wrapper {
-        .nav-wrapper-2 {
-            @include background(linear-gradient(#000, #222 10%, #222 90%, #000));
-        }
+    #site-header {
+        @include linear-gradient(#000, #222 10%, #222 90%, #000);
     }
-}
-
-.nav-menu--mysoc {
-    background: #515151;
-    margin-top: -4px;
 }
 
 body.twothirdswidthpage,
@@ -106,17 +124,17 @@ body.fullwidthpage {
         h1 {
             font-size: 3em;
             font-weight: bold;
-            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+            font-family: $body-font;
         }
         h2 {
-            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+            font-family: $body-font;
         }
         #postcodeForm {
             div {
                 font-size: 1.3em;
                 width: 24em;
                 label {
-                    font-family: MuseoSans,Helmet,Freesans,sans-serif;
+                    font-family: $body-font;
                 }
                 input#pc {
                     color: #777;
@@ -131,123 +149,67 @@ body.fullwidthpage {
                     font-size: 1.1em;
                     height: 2.4em;
                     width: 3.5em;
-                    font-family: MuseoSans,Helmet,Freesans,sans-serif;
+                    font-family: $body-font;
                     font-weight: bold;
                 }
             }
         }
         a#geolocate_link {
-            font-family: MuseoSans,Helmet,Freesans,sans-serif;
+            font-family: $body-font;
             background: url(images/locate-me.png) $left 0 no-repeat;
             height: 34px;
             padding-#{$left}: 24px;
             margin-top: 0.25em;
-            @media only screen and (min-resolution: 320dpi),
-            only screen and (-webkit-min-device-pixel-ratio: 2) {
+            @media ($high-dpi-screen) {
                 background-image: url(images/locate-me@2.png);
                 background-size: 22px 34px;
             }
         }
-    }
-
-    .container {
-        .content {
-            footer {
-                .tablewrapper {
-                    background: #1a1a1a url(images/tile.jpg) 0 0 repeat;
-                }
-            }
+        a#geolocate_link.loading {
+            background: url("/cobrands/fixmystreet/images/spinner-yellow.gif") 100% 33% no-repeat
         }
     }
 }
 
 body.frontpage {
-    .container {
-        background-color: transparent;
+    #site-logo {
+        margin: 2em 0;
+        width: 300px;
+        height: 60px;
+        background: none;
 
-        .content {
-            background-color: transparent;
-            padding: 0em 0em 1em;
-
-            > .tablewrapper {
-                margin: -4em 0em 0em;
-                padding: 1em 1em;
-                background-color: white;
-                width: auto;
-            }
-            > .form-error {
-                margin-top: -4em;
-            }
-            > .form-error + .tablewrapper {
-                margin-top: 0;
-            }
-        }
-        footer {
-            .bordered {
-                margin: 0em;
-            }
+        // Override the width="175" height="35" attributes on the svg element,
+        // forcing the SVG contents to stretch to the new, larger, size.
+        svg {
+            width: 300px;
+            height: 60px;
+            margin-top: 0; // no need for the vertical centering any more
         }
     }
-}
 
-body.twothirdswidthpage {
-    .container {
-        .content {
-            footer {
-                max-width: 48em;
-                @media only screen and (min-width: 61em) {
-                    max-width: 60em;
-                }
-                .tablewrapper {
-                    border: 0px;
-                }
-            }
-        }
+    .site-logo__fallback {
+        width: 300px;
+        padding-top: 60px;
+        // No need for svg-background-image() here because the
+        // logo on the homepage is an inline SVG, and the only browsers
+        // not to show it will be IE8 and below, which are @1x.
+        background-image: url("/cobrands/fixmystreet.com/images/site-logo-homepage.png");
+        background-size: 300px 60px;
     }
-}
 
-#footer-nav {
-    display: block;
-    border: 0px;
-    border-top: 0.25em solid #ffd000;
-    border-image: url(images/tile-y.jpg) 30 0 repeat;
-
-    .tablewrapper {
-      max-width: 60em;
-      margin: 0 auto;
-      background: $base_bg;
-      ul {
-        @include list-reset-soft;
-        float: $left;
-        li {
-          display: inline;
-          float: $left;
-          a, span {
-            display: block;
-            color: $nav_fg;
-            background: none;
-            border-bottom: none;
-            padding: 0.75em;
-            font-size: 0.9em;
-          }
-        }
-      }
-      #footer-main-nav {
-        display: block;
-      }
-      #footer-help-nav {
-        float: $right;
-      }
+    .content {
+        margin-top: -3em; // overlap the bottom of #front-main
     }
 }
 
 .next-steps {
   @include clearfix;
+  @include flex-container();
   margin-bottom: 2em; // add some space between this and the footer
 }
 
 .next-steps__step {
-  font-family: MuseoSans,Helmet,Freesans,sans-serif;
+  font-family: $body-font;
   float: $left;
   width: 33%;
   padding: 1.8em;
@@ -317,8 +279,154 @@ body.unresponsive-council {
     background-position: $right center;
     background-repeat: no-repeat;
 
-    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    @media ($high-dpi-screen) {
         background-image: url(images/unresponsive-council-cta-arrow@2.png);
         background-size: 60px;
+    }
+}
+
+.mysoc-footer {
+  margin-top: 3em;
+  // The below lines are so that on e.g. /about/posters the footer will move on
+  // top of the fixed sidebar in narrow height situations.
+  position: relative;
+  z-index: 1;
+}
+body.mappage .mysoc-footer {
+    display: none;
+}
+
+// FMS Pro advert
+footer {
+  background: $base_bg; // (images/tile.jpg)
+  margin: -1em;
+  padding: 1em 0;
+
+  @media ($high-dpi-screen) {
+    background-image: url(images/tile@2x.jpg);
+    background-size: 500px;
+  }
+}
+
+.fms-pro-promo {
+    @include clearfix();
+    @include flex-container();
+
+    margin: 1em 0 3em 0;
+
+    h2 {
+        font-family: inherit;
+        font-weight: bold;
+    }
+
+    @media (min-width: 60em) {
+        p {
+            font-size: 1.2em;
+        }
+
+        h2 {
+            font-size: 2em;
+        }
+    }
+}
+
+.fms-pro-promo__pro,
+.fms-pro-promo__stats {
+    @include box-sizing(border-box);
+    float: left;
+    padding: 2em;
+
+    @media (min-width: 60em) {
+        padding: 3em;
+    }
+}
+
+.fms-pro-promo__pro {
+    width: 40%;
+    background: $primary url(images/tile-y.jpg) 0 0 repeat;
+
+    @media ($high-dpi-screen) {
+        background-image: url(images/tile-y@2x.jpg);
+        background-size: 500px;
+    }
+}
+
+.fms-pro-promo__stats {
+    width: 56%;
+    margin-left: 4%;
+    border-bottom: none;
+    background: #fff;
+    position: relative;
+
+    &:before {
+        content: "NEW";
+        display: block;
+        position: absolute;
+        top: -0.5em;
+        right: 0.5em;
+        background: $primary;
+        font-weight: bold;
+        width: 4em;
+        line-height: 4em;
+        text-align: center;
+        border-radius: 100%;
+        transform: rotate(5deg);
+    }
+}
+
+.footer-marketing {
+  color: #ccc;
+}
+
+.healthcheck-unit {
+    padding-left: 94px;
+    background-size: 64px;
+
+    & + & {
+        margin-top: 2em;
+    }
+}
+
+.healthcheck-cta-trio {
+    @include clearfix();
+    margin: 0 -2em;
+    text-align: center;
+
+    .dashboard-item {
+        padding-top: 1em;
+        padding-bottom: 1em;
+    }
+}
+
+.dashboard-fms-case-studies {
+    & > div {
+        @include flex-container();
+        @include flex-wrap(wrap);
+        @include justify-content(space-between);
+
+        a {
+            @include box-sizing(border-box);
+            display: block;
+            width: 48%;
+            margin-bottom: 0;
+        }
+    }
+}
+
+.council-dashboard-login {
+    margin: -1em;
+    padding: 2em;
+
+    form {
+        margin-top: 4em;
+        margin-bottom: 4em;
+    }
+}
+
+.area-reports-dashboard-cta {
+    // To overpower `body.mappage .full-width` in core.
+    body.mappage & {
+        margin-top: 1em;
+        margin-bottom: 1em;
     }
 }

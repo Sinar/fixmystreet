@@ -4,7 +4,7 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2333; } # http://mapit.mysociety.org/area/2333.html
+sub council_area_id { return 2333; } # http://mapit.mysociety.org/area/2333.html
 sub council_area { return 'Hart'; }
 sub council_name { return 'Hart Council'; }
 sub council_url { return 'hart'; }
@@ -30,10 +30,9 @@ sub example_places {
     return ( 'GU51 4JX', 'Primrose Drive' );
 }
 
-sub hidden_categories {
-    return (
-        'Graffiti on bridges/subways',
-    );
+sub categories_restriction {
+    my ($self, $rs) = @_;
+    return $rs->search( { category => { '!=' => 'Graffiti on bridges/subways' } } );
 }
 
 sub send_questionnaires {

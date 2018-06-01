@@ -1,33 +1,20 @@
-    </div><!-- #mysociety .container -->
+                    [% IF pagefooter %]
+                    <footer role="contentinfo">
+                        [% INCLUDE 'front/footer-marketing.html' %]
+                    </footer>
+                    [% END %]
+                </div><!-- .content role=main -->
+            </div><!-- .container -->
+        </div><!-- .table-cell -->
 
-    <div id="navigation" class="container" role="navigation">
-        <div class="spacer"></div>
-        <ul id="site-nav" class="nav">
-            <li><[% IF c.req.uri.path == '/' %]span[% ELSE %]a href="/"[% END
-                %]>[% loc("Report a problem") %]</[% c.req.uri.path == '/' ? 'span' : 'a' %]></li>[%
-            %]<li><[% IF c.req.uri.path == '/my' %]span[% ELSE %]a href="/my"[% END
-                %]>[% loc("Your reports") %]</[% c.req.uri.path == '/my' ? 'span' : 'a' %]></li>[%
-            %]<li><[% IF c.req.uri.path == '/reports' %]span[% ELSE %]a href="/reports"[% END
-                %]>[% loc("All reports") %]</[% c.req.uri.path == '/reports' ? 'span' : 'a' %]></li>[%
-            %]<li><[% IF c.req.uri.path == '/alert' %]span[% ELSE %]a href="/alert[% pc ? '/list?pc=' : '' %][% pc | uri %]"[% END
-                %]>[% loc("Local alerts") %]</[% c.req.uri.path == '/alert' ? 'span' : 'a' %]></li>[%
-            %]<li><[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
-                %]>[% loc("Help") %]</[% c.req.uri.path == '/faq' ? 'span' : 'a' %]></li>
-        </ul>
+        <div class="nav-wrapper">
+            <div class="container">
+                [% INCLUDE "main_nav.html" %]
+            </div>
+        </div>
+    </div> <!-- .wrapper -->
 
-    </div>
-
-</div></div></div><!-- wrappers -->
-
-<div id="footer">
-
-    <p><a href="/contact">[% tprintf(loc("Contact %s", "%s is the site name"), site_name) | replace(' ', '&nbsp;') %]</a></p>
-      
-    [% INCLUDE 'front/footer-marketing.html' %]
-
-</div>
-
-[% INCLUDE 'debug_footer.html' %]
+    [% INCLUDE 'common_footer_tags.html' %]
 
 </body>
 </html>

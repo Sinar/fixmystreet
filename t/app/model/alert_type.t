@@ -1,9 +1,4 @@
-use strict;
-use warnings;
-use Test::More;
 use FixMyStreet::TestMech;
-
-mySociety::Locale::gettext_domain( 'FixMyStreet' );
 
 my $mech = FixMyStreet::TestMech->new();
 
@@ -145,7 +140,7 @@ for my $test (
         my @emails = $mech->get_email;
         my $msg = $test->{msg};
         for my $email (@emails) {
-            my $body = $email->body;
+            my $body = $mech->get_text_body_from_email($email);
             my $to = $email->header('To');
 
             like $body, qr/$msg/, 'email says problem is ' . $test->{state};
@@ -188,14 +183,13 @@ subtest "correct text for title after URL" => sub {
         }
     )->delete;
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
 
-    my $email = $mech->get_email;
     (my $title = $report->title) =~ s/ /\\s+/;
-    my $body = $email->body;
+    my $body = $mech->get_text_body_from_email;
 
     like $body, qr#report/$report_id\s+-\s+$title#, 'email contains expected title';
 };
@@ -287,7 +281,7 @@ foreach my $test (
         desc        => 'address only',
         addressLine => '18 North Bridge',
         locality    => undef,
-        nearest     => qr/: 18 North Bridge\n/,
+        nearest     => qr/: 18 North Bridge\r?\n/,
     },
     {
         desc        => 'no fields',
@@ -325,13 +319,12 @@ foreach my $test (
         $report->update();
 
         FixMyStreet::override_config {
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             FixMyStreet::DB->resultset('AlertType')->email_alerts();
         };
 
-        my $email = $mech->get_email;
-        my $body = $email->body;
+        my $body = $mech->get_text_body_from_email;
 
         if ( $test->{nearest} ) {
             like $body, $test->{nearest}, 'correct nearest line';
@@ -434,13 +427,12 @@ subtest "check alerts from cobrand send main site url for alerts for different c
     )->delete;
 
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
 
-    my $email = $mech->get_email;
-    my $body = $email->body;
+    my $body = $mech->get_text_body_from_email;
 
     my $expected1 = FixMyStreet->config('BASE_URL') . '/report/' . $report_to_county_council->id;
     my $expected3 = FixMyStreet->config('BASE_URL') . '/report/' . $report_outside_district->id;
@@ -476,8 +468,7 @@ subtest "check local alerts from cobrand send main site url for alerts for diffe
 
     FixMyStreet::DB->resultset('AlertType')->email_alerts();
 
-    my $email = $mech->get_email;
-    my $body = $email->body;
+    my $body = $mech->get_text_body_from_email;
 
     my $expected1 = FixMyStreet->config('BASE_URL') . '/report/' . $report_to_county_council->id;
     my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker('hart')->new();
@@ -505,16 +496,11 @@ subtest "correct i18n-ed summary for state of closed" => sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
 
-    $mech->email_count_is( 1 );
-    my $email = $mech->get_email;
-    my $body = $email->body;
+    my $body = $mech->get_text_body_from_email;
     my $msg = 'Denne rapporten er for tiden markert som lukket';
     like $body, qr/$msg/, 'email says problem is closed, in Norwegian';
 };
 
 END {
-    $mech->delete_user($user) if $user;
-    $mech->delete_user($user2) if $user2;
-    $mech->delete_user($user3) if $user3;
     done_testing();
 }

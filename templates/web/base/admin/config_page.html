@@ -55,7 +55,7 @@ running version <strong>[% git_version || 'unknown' %]</strong>.
 </tr>
 [% INCLUDE with_cobrand value="MAP_TYPE" cob=c.cobrand.map_type %]
 [% INCLUDE with_cobrand value="EXAMPLE_PLACES"
-    conf = decode(c.config.EXAMPLE_PLACES.join(', '))
+    conf = c.config.EXAMPLE_PLACES.join(', ')
     cob = c.cobrand.example_places %]
 [% INCLUDE with_cobrand value="LANGUAGES"
     cob = c.cobrand.languages %]
@@ -68,6 +68,7 @@ running version <strong>[% git_version || 'unknown' %]</strong>.
 </tr>
 [% INCLUDE with_cobrand value="ALL_REPORTS_PER_PAGE" cob=c.cobrand.reports_per_page %]
 [% INCLUDE just_value value="RSS_LIMIT" %]
+[% INCLUDE just_value value="OPEN311_LIMIT" conf_default = '<em>1000</em>' %]
 [% INCLUDE just_value value="AREA_LINKS_FROM_PROBLEMS" %]
 
 [% INCLUDE subsection heading="Geocoder" %]
@@ -87,6 +88,9 @@ running version <strong>[% git_version || 'unknown' %]</strong>.
 [% INCLUDE subsection heading="MapIt" %]
 [% INCLUDE just_value value="MAPIT_URL"
     conf = "<a href='" _ c.config.MAPIT_URL _ "'>" _ c.config.MAPIT_URL _ "</a>" %]
+[% IF c.config.MAPIT_API_KEY %]
+    [% INCLUDE just_value value="MAPIT_API_KEY" %]
+[% END %]
 [% INCLUDE with_cobrand value="MAPIT_TYPES"
     cob = c.cobrand.area_types %]
 <tr>
@@ -117,7 +121,11 @@ running version <strong>[% git_version || 'unknown' %]</strong>.
 
 [% INCLUDE subsection heading="Development" %]
 [% INCLUDE just_value value="STAGING_SITE" %]
-[% INCLUDE just_value value="SEND_REPORTS_ON_STAGING" %]
+[% staging_conf = FOR k IN c.config.STAGING_FLAGS %]
+    [% k.key %]:[% k.value %]
+    [%- ',' IF NOT loop.last %]
+[% END %]
+[% INCLUDE just_value value="STAGING_FLAGS" conf = staging_conf %]
 [% INCLUDE just_value value="UPLOAD_DIR" %]
 [% INCLUDE just_value value="GEO_CACHE" %]
 [% INCLUDE just_value value="TESTING_COUNCILS" %]
@@ -131,7 +139,7 @@ running version <strong>[% git_version || 'unknown' %]</strong>.
 
 Other things can be changed on a cobrand basis by using functions in an
 (optional) Cobrand .pm module, as explained in the
-<a href="http://fixmystreet.org/customising/" class="admin-offsite-link">customising section of our
+<a href="https://fixmystreet.org/customising/" class="admin-offsite-link">customising section of our
 documentation</a>. If you wish to add new functionality just for your cobrand
 that can't be done simply by changes to your cobrand's templates, you might
 need to add a new Cobrand function.
@@ -139,7 +147,7 @@ need to add a new Cobrand function.
 <p>Examples of cobrand functions are below; this is not exhaustive.
 Many were added for one specific cobrand, so didn't need a general
 configuration option. Please feel free to discuss on <a
-href="http://fixmystreet.org/community/" class="admin-offsite-link">our mailing list</a> if you think
+href="https://fixmystreet.org/community/" class="admin-offsite-link">our mailing list</a> if you think
 something should be moved to the general.yml file, done differently,
 or have any questions.</p>
 

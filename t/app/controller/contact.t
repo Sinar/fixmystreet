@@ -1,7 +1,3 @@
-use strict;
-use warnings;
-use Test::More;
-
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new;
@@ -52,12 +48,7 @@ for my $test (
   )
 {
     subtest 'check reporting a problem displays correctly' => sub {
-        my $user = FixMyStreet::App->model('DB::User')->find_or_create(
-            {
-                name  => $test->{name},
-                email => $test->{email}
-            }
-        );
+        my $user = $mech->create_user_ok($test->{email}, name => $test->{name});
 
         my $problem = FixMyStreet::App->model('DB::Problem')->create(
             {
@@ -80,12 +71,8 @@ for my $test (
 
         if ( $test->{update} ) {
             my $update_info = $test->{update};
-            my $update_user = FixMyStreet::App->model('DB::User')->find_or_create(
-                {
-                    name  => $update_info->{name},
-                    email => $update_info->{email}
-                }
-            );
+            my $update_user = $mech->create_user_ok($update_info->{email},
+                name => $update_info->{name});
 
             $update = FixMyStreet::App->model('DB::Comment')->create(
                 {
@@ -223,6 +210,7 @@ for my $test (
         # we santise this when we submit so need to remove it
         delete $test->{fields}->{id}
           if $test->{fields}->{id} and $test->{fields}->{id} eq 'invalid';
+        $test->{fields}->{'extra.phone'} = '';
         is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
     };
 }
@@ -259,17 +247,17 @@ for my $test (
             $mech->get_ok('/contact');
         }
         $mech->submit_form_ok( { with_fields => $test->{fields} } );
-        $mech->content_contains('Thank you for your feedback');
-        $mech->email_count_is(1);
+        $mech->content_contains('Thank you for your enquiry');
 
         my $email = $mech->get_email;
 
         is $email->header('Subject'), 'FMS message: ' .  $test->{fields}->{subject}, 'subject';
         is $email->header('From'), "\"$test->{fields}->{name}\" <$test->{fields}->{em}>", 'from';
-        like $email->body, qr/$test->{fields}->{message}/, 'body';
-        like $email->body, qr/Sent by contact.cgi on \S+. IP address (?:\d{1,3}\.){3,}\d{1,3}/, 'body footer';
+        my $body = $mech->get_text_body_from_email($email);
+        like $body, qr/$test->{fields}->{message}/, 'body';
+        like $body, qr/Sent by contact.cgi on \S+. IP address (?:\d{1,3}\.){3,}\d{1,3}/, 'body footer';
         my $problem_id = $test->{fields}{id};
-        like $email->body, qr/Complaint about report $problem_id/, 'reporting a report'
+        like $body, qr/Complaint about report $problem_id/, 'reporting a report'
             if $test->{fields}{id};
 
         $problem_main->discard_changes;
@@ -336,6 +324,7 @@ for my $test (
             # we santise this when we submit so need to remove it
             delete $test->{fields}->{id}
               if $test->{fields}->{id} and $test->{fields}->{id} eq 'invalid';
+            $test->{fields}->{'extra.phone'} = '';
             is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
 
             if ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'update' ) {
@@ -385,8 +374,43 @@ for my $test (
             $mech->clear_emails_ok;
             $mech->get_ok('/contact');
             $mech->submit_form_ok( { with_fields => $test->{fields} } );
-            $mech->content_contains('Thank you for your feedback');
+            $mech->content_contains('Thank you for your enquiry');
             $mech->email_count_is(1);
+        }
+    };
+}
+
+for my $test (
+    {
+        fields => {
+            em          => 'test@example.com',
+            name        => 'A name',
+            subject     => 'A subject',
+            message     => 'A message',
+            dest        => 'from_council',
+            success_url => '/faq',
+        },
+        url_should_be => 'http://localhost/faq',
+    },
+    {
+        fields => {
+            em          => 'test@example.com',
+            name        => 'A name',
+            subject     => 'A subject',
+            message     => 'A message',
+            dest        => 'from_council',
+            success_url => 'http://www.example.com',
+        },
+        url_should_be => 'http://www.example.com',
+    },
+  )
+{
+    subtest 'check user can be redirected to a custom URL after contact form is submitted' => sub {
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ 'fixmystreet' ],
+        }, sub {
+            $mech->post('/contact/submit', $test->{fields});
+            is $mech->uri->as_string, $test->{url_should_be};
         }
     };
 }

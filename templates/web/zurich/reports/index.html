@@ -1,30 +1,33 @@
 [%
+    PROCESS "report/photo-js.html";
     PROCESS "maps/${map.type}.html";
+    SET bodyclass = 'mappage';
     INCLUDE 'header.html',
-        title = loc('Summary reports'),
-        bodyclass = 'mappage';
+        title = loc('Summary reports');
 %]
 [% map_html %]
 </div>
 
-<div id="side">
+<div id="map_sidebar">
+    <div id="side">
 
-<h1>[% loc('All Reports') %]</h1>
+        <h1>[% loc('All Reports') %]</h1>
 
-[% INCLUDE 'pagination.html', param = 'p' %]
+        <section class="full-width">
+            [% INCLUDE "reports/_list-filters.html", use_form_wrapper = 1 %]
+            <div class="js-pagination">
+                [% INCLUDE 'pagination.html', param = 'p' %]
+            </div>
 
-<section class="full-width">
-  [% IF problems.0 %]
-    <ul class="item-list item-list--reports">
-      [% FOREACH problem IN problems.0 %]
-        [% INCLUDE 'reports/_list-entry.html' %]
-      [% END %]
-    </ul>
-  [% END %]
-</section>
+            <div id="js-reports-list">
+                [% INCLUDE 'reports/_problem-list.html' %]
+            </div>
 
-[% INCLUDE 'pagination.html', param = 'p' %]
+            <div class="js-pagination">
+                [% INCLUDE 'pagination.html', param = 'p' %]
+            </div>
+        </section>
 
+    </div>
 </div>
 [% INCLUDE 'footer.html' %]
-

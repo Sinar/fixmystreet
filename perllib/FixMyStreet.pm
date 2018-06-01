@@ -11,9 +11,8 @@ use Readonly;
 use Sub::Override;
 
 use mySociety::Config;
-use mySociety::DBHandle;
 
-my $CONF_FILE = $ENV{FMS_OVERRIDE_CONFIG} || 'general';
+my $CONF_FILE = $ENV{FMS_OVERRIDE_CONFIG} || 'general.yml';
 
 # load the config file and store the contents in a readonly hash
 mySociety::Config::set_file( __PACKAGE__->path_to("conf/${CONF_FILE}") );
@@ -51,6 +50,9 @@ my $TEST_MODE = undef;
 sub test_mode {
     my $class = shift;
     $TEST_MODE = shift if scalar @_;
+    # Make sure we don't run on live config
+    # uncoverable branch true
+    die "Do not run tests except through run-tests\n" if $TEST_MODE && $CONF_FILE eq 'general.yml';
     return $TEST_MODE;
 }
 
@@ -106,8 +108,7 @@ sub override_config($&) {
             my ($class, $key) = @_;
             return { %CONFIG, %$config } unless $key;
             return $config->{$key} if exists $config->{$key};
-            my $orig_config = mySociety::Config::load_default();
-            return $orig_config->{$key} if exists $orig_config->{$key};
+            return $CONFIG{$key} if exists $CONFIG{$key};
         }
     );
 
@@ -135,9 +136,6 @@ Most of the values are read from the config file and others are hordcoded here.
 #
 # we use the one that is most similar to DBI's connect.
 
-# FIXME - should we just use mySociety::DBHandle? will that lead to AutoCommit
-# woes (we want it on, it sets it to off)?
-
 sub dbic_connect_info {
     my $class  = shift;
     my $config = $class->config;
@@ -156,55 +154,14 @@ sub dbic_connect_info {
         AutoCommit     => 1,
         pg_enable_utf8 => 1,
     };
-    my $dbic_args = {};
+    my $local_time_zone = local_time_zone();
+    my $dbic_args = {
+        on_connect_do => [
+            "SET TIME ZONE '" . $local_time_zone->name . "'",
+        ],
+    };
 
     return ( $dsn, $user, $password, $dbi_args, $dbic_args );
-}
-
-=head2 configure_mysociety_dbhandle
-
-    FixMyStreet->configure_mysociety_dbhandle();
-
-Calls configure in mySociety::DBHandle with args from the config. We need to do
-this so that old code that uses mySociety::DBHandle finds it properly set up. We
-can't (might not) be able to share the handle as DBIx::Class wants it with
-AutoCommit on (so that its transaction code can be used in preference to calling
-begin and commit manually) and mySociety::* code does not.
-
-This should be fixed/standardized to avoid having two database handles floating
-around.
-
-=cut
-
-sub configure_mysociety_dbhandle {
-    my $class  = shift;
-    my $config = $class->config;
-
-    mySociety::DBHandle::configure(
-        Name     => $config->{FMS_DB_NAME},
-        User     => $config->{FMS_DB_USER},
-        Password => $config->{FMS_DB_PASS},
-        Host     => $config->{FMS_DB_HOST} || undef,
-        Port     => $config->{FMS_DB_PORT} || undef,
-    );
-
-}
-
-=head2 get_email_template
-
-=cut
-
-sub get_email_template {
-    # TODO further refactor this by just using Template path
-    my ($class, $cobrand, $lang, $template) = @_;
-
-    my $template_path = FixMyStreet->path_to( "templates", "email", $cobrand, $lang, $template )->stringify;
-    $template_path = FixMyStreet->path_to( "templates", "email", $cobrand, $template )->stringify
-        unless -e $template_path;
-    $template_path = FixMyStreet->path_to( "templates", "email", "default", $template )->stringify
-        unless -e $template_path;
-    $template = Utils::read_file( $template_path );
-    return $template;
 }
 
 my $tz;
@@ -227,6 +184,21 @@ sub set_time_zone {
     my $tz_f = time_zone();
     $dt->set_time_zone($tz);
     $dt->set_time_zone($tz_f) if $tz_f;
+    return $dt;
+}
+
+# Development functions
+
+sub staging_flag {
+    my ($cls, $flag, $value) = @_;
+    $value = 1 unless defined $value;
+    return unless $cls->config('STAGING_SITE');
+    my $flags = $cls->config('STAGING_FLAGS');
+    unless ($flags && ref $flags eq 'HASH') {
+        # Assume all flags 0 if missing
+        return !$value;
+    }
+    return $flags->{$flag} == $value;
 }
 
 1;

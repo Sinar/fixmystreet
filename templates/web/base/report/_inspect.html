@@ -1,0 +1,207 @@
+[% permissions = c.user.permissions(c, problem.bodies_str) %]
+[% second_column = BLOCK -%]
+  <div id="side-inspect">
+
+    <h2 class="inspect-form-heading">[% loc('Inspect report') %]</h2>
+
+    [% INCLUDE 'errors.html' %]
+
+    <form name="report_inspect_form" id="report_inspect_form" method="post" action="[% c.uri_for( '/report', problem.id ) %]" class="validate">
+
+      <div class="inspect-section">
+        <p style="float: right">
+          <label for="non_public">[% loc('Private') %]</label>
+          <input type="checkbox" id="non_public" name="non_public" value="1"[% ' checked' IF problem.non_public %]>
+        </p>
+        <p>
+          <strong>[% loc('Report ID:') %]</strong>
+          <span class="js-report-id">[% problem.id %]</span>
+          [% IF c.user_exists AND c.cobrand.admin_allow_user(c.user) AND c.user.has_permission_to('report_edit', problem.bodies_str_ids) %]
+            (<a href="[% c.uri_for_action( "admin/report_edit", problem.id ) %]">[% loc('admin') %]</a>)
+          [% END %]
+        </p>
+        [% IF permissions.report_inspect AND problem.user.phone %]
+          <p>
+            <strong>[% loc('Phone Reporter:') %]</strong>
+            <a href="tel:[% problem.user.phone | html %]">[% problem.user.phone_display | html %]</a>
+          </p>
+        [% END %]
+        <p>
+          [% SET local_coords = problem.local_coords; %]
+          [% IF local_coords %]
+              <strong>[% loc('Easting/Northing:') %]</strong>
+              <span id="problem_easting">[% local_coords.0 %]</span>,
+              <span id="problem_northing">[% local_coords.1 %]</span>
+          [% ELSE %]
+              <strong>[% loc('Latitude/Longitude:') %]</strong>
+              <span id="problem_latitude">[% problem.latitude %]</span>,
+              <span id="problem_longitude">[% problem.longitude %]</span>
+          [% END %]
+          <input type="hidden" name="longitude" value="[% problem.longitude %]">
+          <input type="hidden" name="latitude" value="[% problem.latitude %]">
+        </p>
+        [% IF problem.nearest_address() %]
+        <p>
+            <strong>[% loc('Nearest calculated address:') %]</strong>
+            [% problem.nearest_address() %]
+        </p>
+        [% END %]
+        <p>
+          <a target="_blank" href="https://www.google.com/maps/dir/Current+Location/[% problem.latitude %],[% problem.longitude %]" class="btn btn--block btn--navigate">[% loc('Navigate to this problem') %]</a>
+        </p>
+        <p>
+          <a href="#" class="btn btn--block btn--geolocate">[% loc('Set to my current location') %]</a>
+        </p>
+        [% IF permissions.report_reject %]
+          <p>
+            <a href="[% c.uri_for( '/contact', { id => problem.id, reject => 1 } ) %]" class="btn btn--block">[% loc('Reject report') %]</a>
+          </p>
+        [% END %]
+      </div>
+
+    [% IF permissions.report_edit_category OR permissions.report_inspect %]
+      <div class="inspect-section">
+        <p>
+          <label for="category">[% loc('Category') %]</label>
+          [% INCLUDE 'admin/report-category.html' %]
+        </p>
+
+        [% FOREACH category IN category_options %]
+          [% cat_name = category.category;
+             cat_prefix = cat_name | lower | replace('[^a-z]', '');
+             cat_prefix = "category_" _ cat_prefix _ "_" %]
+            <p data-category="[% cat_name | html %]"
+               [%~ IF cat_name != problem.category %] class="hidden"[% END %]
+               data-priorities='[% priorities_by_category.$cat_name | html %]'
+               data-defect-types='[% category_defect_types.$cat_name | html %]'
+               data-templates='[% templates_by_category.$cat_name | html %]'>
+              [% IF cat_name == problem.category %]
+                  [% INCLUDE 'report/new/category_extras_fields.html' metas=category_extras.$cat_name hide_notices=1 show_hidden=1 %]
+              [% ELSE %]
+                  [% INCLUDE 'report/new/category_extras_fields.html' report_meta='' metas=category_extras.$cat_name hide_notices=1 show_hidden=1 %]
+              [% END %]
+            </p>
+        [% END %]
+
+        [% IF permissions.report_inspect %]
+          [% PROCESS 'defect_type/format.html' %]
+          <p>
+            <label for="defect_type">[% loc('Defect type') %]</label>
+            <select id="defect_type" name="defect_type" class="form-control">
+              <option value=""[% ' selected' IF NOT problem.defect_type %]>-</option>
+              [% FOREACH defect_type IN problem.defect_types %]
+                <option[% ' selected' IF problem.defect_type_id == defect_type.id %] value="[% defect_type.id %]">[% defect_type_format() %]</option>
+              [% END %]
+            </select>
+          </p>
+
+          <p>
+            <label for="state">[% loc('State') %]</label>
+            [% INCLUDE 'report/inspect/state_groups_select.html' %]
+          </p>
+        [% IF permissions.report_instruct AND NOT problem.get_extra_metadata('inspected') %]
+          <div id="js-inspect-action-scheduled" class="[% "hidden" UNLESS problem.state == 'action scheduled' %]">
+            <p>[% loc('Do you want to automatically raise a defect?') %]</p>
+            <p class="segmented-control segmented-control--radio">
+                <input type="radio" name="raise_defect" id="raise_defect_yes" value="1">
+                <label class="btn" for="raise_defect_yes">[% loc('Yes') %]</label>
+                <input type="radio" name="raise_defect" id="raise_defect_no" value="0">
+                <label class="btn" for="raise_defect_no">[% loc('No') %]</label>
+            </p>
+          </div>
+        [% END %]
+          <div id="js-duplicate-reports" class="[% "hidden" UNLESS problem.duplicate_of %]">
+            <input type="hidden" name="duplicate_of" value="[% problem.duplicate_of.id %]">
+            <p class="[% "hidden" UNLESS problem.duplicate_of %]"><strong>[% loc('Duplicate of') %]</strong></p>
+            <p class="[% "hidden" IF problem.duplicate_of %]">[% loc('Which report is it a duplicate of?') %]</p>
+            <ul class="item-list item-list--inspect-duplicates">
+              [% IF problem.duplicate_of %]
+                [% INCLUDE 'report/_item.html' item_extra_class = 'item-list--reports__item--selected' problem = problem.duplicate_of %]
+                <li class="item-list__item"><a class="btn" href="#" id="js-change-duplicate-report">[% loc('Choose another') %]</a></li>
+              [% END %]
+            </ul>
+          </div>
+          [% IF problem.duplicates.size %]
+            <p><strong>[% loc('Duplicates') %]</strong></p>
+            <ul class="item-list item-list--inspect-duplicates">
+              [% FOR duplicate IN problem.duplicates %]
+                [% INCLUDE 'report/_item.html' problem = duplicate %]
+              [% END %]
+            </ul>
+          [% END %]
+        [% END %]
+
+      </div>
+    [% END %]
+
+    [% IF permissions.report_edit_priority OR permissions.report_inspect %]
+      <div class="inspect-section">
+        <p>
+          <label for="problem_priority">[% loc('Priority') %]</label>
+          <select name="priority" id="problem_priority" class="form-control">
+            <option value="" [% 'selected' UNLESS problem.response_priority_id OR has_default_priority %]>-</option>
+            [% FOREACH priority IN problem.response_priorities %]
+              <option value="[% priority.id %]" [% 'selected' IF ( problem.response_priority_id == priority.id ) OR priority.is_default %][% 'disabled' IF priority.deleted %]>[% priority.name | html %]</option>
+            [% END %]
+          </select>
+        </p>
+
+        [% IF permissions.report_inspect %]
+        <p>
+          <label for="traffic_information">[% loc('Traffic management required?') %]</label>
+          [% traffic_info = problem.get_extra_metadata('traffic_information') %]
+          <select id="traffic_information" name="traffic_information" class="form-control">
+            <option value=""[% ' selected' IF NOT traffic_info %]>-</option>
+            [% FOREACH option IN problem.traffic_management_options %]
+                <option value='[% option %]'[% ' selected' IF traffic_info == option %]>[% option %]</option>
+            [% END %]
+          </select>
+        </p>
+        <p>
+          <label for="detailed_information">[% loc('Extra details') %]</label> <span id="detailed_information_length"></span>
+          <textarea rows="2" name="detailed_information" id="detailed_information" class="form-control"
+            [% IF max_detailed_info_length %]data-max-length="[% max_detailed_info_length %]" placeholder="[% tprintf(loc('%d characters maximum'), max_detailed_info_length) %]"[% END %]>[% problem.get_extra_metadata('detailed_information') | html %]</textarea>
+        </p>
+        [% END %]
+
+      </div>
+    [% END %]
+
+      <div class="inspect-section">
+
+        [% IF permissions.report_inspect %]
+          <p>
+            <label class="label-containing-checkbox">
+              <input type="checkbox" name="include_update" value="1" class="js-toggle-public-update" checked>
+              [% loc('Save with a public update') %]
+            </label>
+          </p>
+          <p>
+            <label for="public_update">[% loc('Public update:') %]</label>
+            [% INCLUDE 'admin/response_templates_select.html' for='public_update' %]
+            <textarea rows="2" name="public_update" id="public_update" class="form-control">[% public_update | html %]</textarea>
+          </p>
+        [% END %]
+
+        [% IF problem.get_extra_metadata('inspected') %]
+          [% IF problem.whensent %]
+            <p>[% loc("<strong>Note:</strong> This report has been sent onwards for action. Any changes made won't be passed on.") %]</p>
+          [% ELSE %]
+            <p>[% loc("<strong>Note:</strong> This report hasn't yet been sent onwards for action. Any changes made may not be passed on.") %]</p>
+          [% END %]
+          [% TRY %][% INCLUDE 'report/_inspect_extra_info.html' %][% CATCH file %][% END %]
+        [% END %]
+
+        <p>
+          <input type="hidden" name="token" value="[% csrf_token %]" />
+          [% IF permissions.planned_reports %]
+            <input type="hidden" name="post_inspect_url" value="[% post_inspect_url | html %]" />
+          [% END %]
+          <input class="btn btn-primary" type="submit" value="[% loc('Save changes') %]" data-value-original="[% loc('Save changes') %]" data-value-duplicate="[% loc('Save + close as duplicate') %]" name="save" />
+        </p>
+      </div>
+
+      <input type="hidden" name="js" value="">
+    </form>
+  </div>
+[%- END %]

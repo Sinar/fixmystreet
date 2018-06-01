@@ -24,10 +24,6 @@ __PACKAGE__->add_columns(
   { data_type => "text", default_value => "Other", is_nullable => 0 },
   "email",
   { data_type => "text", is_nullable => 0 },
-  "confirmed",
-  { data_type => "boolean", is_nullable => 0 },
-  "deleted",
-  { data_type => "boolean", is_nullable => 0 },
   "editor",
   { data_type => "text", is_nullable => 0 },
   "whenedited",
@@ -46,6 +42,8 @@ __PACKAGE__->add_columns(
   { data_type => "text", default_value => "", is_nullable => 1 },
   "send_method",
   { data_type => "text", is_nullable => 1 },
+  "state",
+  { data_type => "text", is_nullable => 0 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->add_unique_constraint("contacts_body_id_category_idx", ["body_id", "category"]);
@@ -55,10 +53,28 @@ __PACKAGE__->belongs_to(
   { id => "body_id" },
   { is_deferrable => 0, on_delete => "NO ACTION", on_update => "NO ACTION" },
 );
+__PACKAGE__->has_many(
+  "contact_defect_types",
+  "FixMyStreet::DB::Result::ContactDefectType",
+  { "foreign.contact_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+__PACKAGE__->has_many(
+  "contact_response_priorities",
+  "FixMyStreet::DB::Result::ContactResponsePriority",
+  { "foreign.contact_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+__PACKAGE__->has_many(
+  "contact_response_templates",
+  "FixMyStreet::DB::Result::ContactResponseTemplate",
+  { "foreign.contact_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2013-09-10 17:11:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:hq/BFHDEu4OUI4MSy3OyHg
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2017-07-08 20:45:04
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:t/VtPP11R8bbqPZdEVXffw
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
@@ -66,6 +82,39 @@ __PACKAGE__->rabx_column('extra');
 use Moo;
 use namespace::clean -except => [ 'meta' ];
 
-with 'FixMyStreet::Roles::Extra';
+with 'FixMyStreet::Roles::Extra',
+    'FixMyStreet::Roles::Translatable';
+
+__PACKAGE__->many_to_many( response_templates => 'contact_response_templates', 'response_template' );
+__PACKAGE__->many_to_many( response_priorities => 'contact_response_priorities', 'response_priority' );
+__PACKAGE__->many_to_many( defect_types => 'contact_defect_types', 'defect_type' );
+
+sub category_display {
+    my $self = shift;
+    $self->translate_column('category');
+}
+
+sub get_metadata_for_input {
+    my $self = shift;
+    my $id_field = $self->id_field;
+    my @metadata = @{$self->get_extra_fields};
+    # First, ones we always want to ignore (hard-coded, old system)
+    @metadata = grep { $_->{code} !~ /^(easting|northing|closest_address|$id_field)$/ } @metadata;
+    # Also ignore any we have with a 'server_set' automated attribute
+    @metadata = grep { !$_->{automated} || $_->{automated} ne 'server_set' } @metadata;
+
+    # Just in case the extra data is in an old parsed format
+    foreach (@metadata) {
+        if (ref $_->{values} eq 'HASH') {
+            $_->{values} = [ map { { name => $_->{name}[0], key => $_->{key}[0] } } @{$_->{values}->{value}} ];
+        }
+    }
+    return \@metadata;
+}
+
+sub id_field {
+    my $self = shift;
+    return $self->get_extra_metadata('id_field') || 'fixmystreet_id';
+}
 
 1;

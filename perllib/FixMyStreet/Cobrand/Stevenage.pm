@@ -4,11 +4,17 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2347; }
+sub council_area_id { return 2347; }
 sub council_area { return 'Stevenage'; }
 sub council_name { return 'Stevenage Council'; }
 sub council_url { return 'stevenage'; }
 sub is_two_tier { return 1; }
+
+sub base_url {
+    my $self = shift;
+    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
+    return 'http://fixmystreet.stevenage.gov.uk';
+}
 
 sub disambiguate_location {
     my $self = shift;

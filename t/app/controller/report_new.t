@@ -1,8 +1,4 @@
-use strict;
-use utf8; # sign in error message has &ndash; in it
-use warnings;
-use Test::More;
-
+use Test::MockModule;
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
 use Web::Scraper;
@@ -25,7 +21,7 @@ subtest "test that bare requests to /report/new get redirected" => sub {
     is_deeply { $mech->uri->query_form }, {}, "query empty";
 
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok('/report/new?pc=SW1A%201AA');
     };
@@ -41,13 +37,11 @@ for my $body (
     { area_id => 2226, name => 'Gloucestershire County Council' },
     { area_id => 2326, name => 'Cheltenham Borough Council' },
     { area_id => 2504, name => 'Westminster City Council' },
-    # The next three have fixed IDs because bits of the code rely on
-    # the body ID === MapIt area ID.
-    { area_id => 2482, name => 'Bromley Council', id => 2482 },
-    { area_id => 2227, name => 'Hampshire County Council', id => 2227 },
-    { area_id => 2333, name => 'Hart Council', id => 2333 },
+    { area_id => 2482, name => 'Bromley Council' },
+    { area_id => 2227, name => 'Hampshire County Council' },
+    { area_id => 2333, name => 'Hart Council' },
 ) {
-    my $body_obj = $mech->create_body_ok($body->{area_id}, $body->{name}, id => $body->{id});
+    my $body_obj = $mech->create_body_ok($body->{area_id}, $body->{name});
     push @bodies, $body_obj;
     $body_ids{$body->{area_id}} = $body_obj->id;
 }
@@ -85,13 +79,23 @@ my $contact6 = $mech->create_contact_ok(
 );
 my $contact7 = $mech->create_contact_ok(
     body_id => $body_ids{2227}, # Hampshire
-    category => 'Street lighting',
+    category => 'Street  lighting',
     email => 'highways@example.com',
 );
 my $contact8 = $mech->create_contact_ok(
     body_id => $body_ids{2504},
     category => 'Street lighting',
     email => 'highways@example.com'
+);
+my $contact9 = $mech->create_contact_ok(
+    body_id => $body_ids{2226}, # Gloucestershire
+    category => 'Street lighting',
+    email => 'streetlights-2226@example.com',
+);
+my $contact10 = $mech->create_contact_ok(
+    body_id => $body_ids{2326}, # Cheltenham
+    category => 'Street lighting',
+    email => 'streetlights-2326@example.com',
 );
 
 # test that the various bit of form get filled in and errors correctly
@@ -108,6 +112,7 @@ foreach my $test (
             photo3        => '',
             name          => '',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             password_sign_in => '',
@@ -134,6 +139,7 @@ foreach my $test (
             photo3        => '',
             name          => '',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Something bad',
@@ -163,6 +169,7 @@ foreach my $test (
             photo3        => '',
             name          => '',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -189,6 +196,7 @@ foreach my $test (
             photo3        => '',
             name          => '',
             may_show_name => undef,
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -215,6 +223,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => undef,
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -240,6 +249,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -265,6 +275,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -290,6 +301,7 @@ foreach my $test (
             photo3        => '',
             name          => 'DUDE',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -314,6 +326,7 @@ foreach my $test (
             photo3        => '',
             name          => 'anonymous',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -338,14 +351,15 @@ foreach my $test (
             photo3        => '',
             name          => 'Joe Smith',
             may_show_name => '1',
-            email         => 'not an email',
+            username      => 'not an email',
+            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
             remember_me => undef,
         },
-        changes => { email => 'notanemail', },
+        changes => { username => 'notanemail', email => 'notanemail' },
         errors  => [ 'Please enter a valid email', ],
     },
     {
@@ -359,6 +373,7 @@ foreach my $test (
             photo3        => '',
             name          => '',
             may_show_name => '1',
+            username      => '',
             email         => '',
             phone         => '',
             category      => 'Street lighting',
@@ -386,7 +401,8 @@ foreach my $test (
             photo3        => '',
             name          => '  Bob    Jones   ',
             may_show_name => '1',
-            email         => '   BOB @ExAmplE.COM   ',
+            username      => '   BOB @ExAmplE.COM   ',
+            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
@@ -395,6 +411,7 @@ foreach my $test (
         },
         changes => {
             name  => 'Bob Jones',
+            username => 'bob@example.com',
             email => 'bob@example.com',
         },
         errors => [ 'Please enter a subject', 'Please enter some details', ],
@@ -410,6 +427,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
+            username      => 'bob@example.com',
             email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
@@ -420,7 +438,7 @@ foreach my $test (
         changes => {
             photo1 => '',
         },
-        errors => [ "Please upload a JPEG image only" ],
+        errors => [ "Please upload an image only" ],
     },
     {
         msg    => 'bad photo upload gives error',
@@ -433,6 +451,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
+            username      => 'bob@example.com',
             email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
@@ -443,7 +462,7 @@ foreach my $test (
         changes => {
             photo1 => '',
         },
-        errors => [ "That image doesn't appear to have uploaded correctly (Please upload a JPEG image only ), please try again." ],
+        errors => [ "That image doesn't appear to have uploaded correctly (Please upload an image only ), please try again." ],
     },
     {
         msg    => 'photo with octet-stream gets through okay',
@@ -456,6 +475,7 @@ foreach my $test (
             photo3        => '',
             name          => 'Bob Jones',
             may_show_name => '1',
+            username      => 'bob@example.com',
             email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
@@ -476,7 +496,7 @@ foreach my $test (
         # submit initial pc form
         FixMyStreet::override_config {
             ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             $mech->submit_form_ok( { with_fields => { pc => $test->{pc} } },
                 "submit location" );
@@ -549,7 +569,7 @@ foreach my $test (
     $mech->get_ok('/around');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } },
             "submit location" );
@@ -567,7 +587,7 @@ foreach my $test (
                     photo1        => '',
                     name          => 'Joe Bloggs',
                     may_show_name => '1',
-                    email         => 'test-1@example.com',
+                    username      => 'test-1@example.com',
                     phone         => '07903 123 456',
                     category      => 'Street lighting',
                     password_register => $test->{password} ? 'secret' : '',
@@ -606,10 +626,9 @@ foreach my $test (
     # receive token
     my $email = $mech->get_email;
     ok $email, "got an email";
-    like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+    like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-    my ($url) = $email->body =~ m{(http://\S+)};
-    ok $url, "extracted confirm url '$url'";
+    my $url = $mech->get_link_from_email($email);
 
     # confirm token
     $mech->get_ok($url);
@@ -653,8 +672,7 @@ subtest "test password errors for a user who is signing in as they report" => su
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     # setup the user.
     ok $user->update( {
@@ -667,7 +685,7 @@ subtest "test password errors for a user who is signing in as they report" => su
     $mech->get_ok('/around');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } },
             "submit location" );
@@ -683,7 +701,7 @@ subtest "test password errors for a user who is signing in as they report" => su
                     title         => 'Test Report',
                     detail        => 'Test report details.',
                     photo1        => '',
-                    email         => 'test-2@example.com',
+                    username      => 'test-2@example.com',
                     password_sign_in => 'secret1',
                     category      => 'Street lighting',
                 }
@@ -694,19 +712,23 @@ subtest "test password errors for a user who is signing in as they report" => su
 
     # check that we got the errors expected
     is_deeply $mech->page_errors, [
-        "There was a problem with your email/password combination. If you cannot remember your password, or do not have one, please fill in the \x{2018}sign in by email\x{2019} section of the form.",
+        "There was a problem with your login information. If you cannot remember your password, or do not have one, please fill in the \x{2018}No\x{2019} section of the form.",
     ], "check there were errors";
 };
 
-subtest "test report creation for a user who is signing in as they report" => sub {
+foreach my $test (
+  { two_factor => 0, desc => '', },
+  { two_factor => 1, desc => ' with two-factor', },
+) {
+  subtest "test report creation for a user who is signing in as they report$test->{desc}" => sub {
     $mech->log_out_ok;
+    $mech->cookie_jar({});
     $mech->clear_emails_ok;
 
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     # setup the user.
     ok $user->update( {
@@ -715,11 +737,20 @@ subtest "test report creation for a user who is signing in as they report" => su
         password => 'secret2',
     } ), "set user details";
 
+    my $auth;
+    if ($test->{two_factor}) {
+        use Auth::GoogleAuth;
+        $auth = Auth::GoogleAuth->new;
+        $user->is_superuser(1);
+        $user->set_extra_metadata('2fa_secret', $auth->generate_secret32);
+        $user->update;
+    }
+
     # submit initial pc form
     $mech->get_ok('/around');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } },
             "submit location" );
@@ -735,13 +766,22 @@ subtest "test report creation for a user who is signing in as they report" => su
                     title         => 'Test Report',
                     detail        => 'Test report details.',
                     photo1        => '',
-                    email         => 'test-2@example.com',
+                    username      => $test_email,
                     password_sign_in => 'secret2',
                     category      => 'Street lighting',
                 }
             },
             "submit good details"
         );
+
+        if ($test->{two_factor}) {
+            my $code = $auth->code;
+            my $wrong_code = $auth->code(undef, time() - 120);
+            $mech->content_contains('Please generate a two-factor code');
+            $mech->submit_form_ok({ with_fields => { '2fa_code' => $wrong_code } }, "provide wrong 2FA code" );
+            $mech->content_contains('Try again');
+            $mech->submit_form_ok({ with_fields => { '2fa_code' => $code } }, "provide correct 2FA code" );
+        }
 
         # check that we got the message expected
         $mech->content_contains( 'You have successfully signed in; please check and confirm your details are accurate:' );
@@ -761,7 +801,10 @@ subtest "test report creation for a user who is signing in as they report" => su
     my $report = $user->problems->first;
     ok $report, "Found the report";
 
-    $mech->content_contains('Thank you for reporting this issue');
+    if (!$test->{two_factor}) {
+        # The superuser account will be immediately redirected
+        $mech->content_contains('Thank you for reporting this issue');
+    }
 
     # Check the report has been assigned appropriately
     is $report->bodies_str, $body_ids{2651};
@@ -786,7 +829,8 @@ subtest "test report creation for a user who is signing in as they report" => su
 
     # cleanup
     $mech->delete_user($user)
-};
+  };
+}
 
 #### test report creation for user with account and logged in
 my ($saved_lat, $saved_lon);
@@ -815,7 +859,7 @@ foreach my $test (
         $mech->get_ok('/around');
         FixMyStreet::override_config {
             ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             $mech->submit_form_ok( { with_fields => { pc => 'GL50 2PR', } },
                 "submit location" );
@@ -886,7 +930,7 @@ foreach my $test (
 
         # Test that AJAX pages return the right data
         $mech->get_ok(
-            '/ajax?bbox=' . ($report->longitude - 0.01) . ',' .  ($report->latitude - 0.01)
+            '/around?ajax=1&bbox=' . ($report->longitude - 0.01) . ',' .  ($report->latitude - 0.01)
             . ',' . ($report->longitude + 0.01) . ',' .  ($report->latitude + 0.01)
         );
         $mech->content_contains( "Test Report at caf\xc3\xa9" );
@@ -899,6 +943,166 @@ foreach my $test (
 
 }
 
+# XXX add test for category with multiple bodies
+foreach my $test (
+    {
+        desc => "test report creation for multiple bodies",
+        category => 'Street lighting',
+        councils => [ 2226, 2326 ],
+        extra_fields => {},
+        email_count => 2,
+    },
+    {
+        desc => "test single_body_only means only one report body",
+        category => 'Street lighting',
+        councils => [ 2326 ],
+        extra_fields => { single_body_only => 'Cheltenham Borough Council' },
+        email_count => 1,
+    },
+    {
+        desc => "test invalid single_body_only means multiple report bodies",
+        category => 'Street lighting',
+        councils => [ 2226, 2326 ],
+        extra_fields => { single_body_only => 'Invalid council' },
+        email_count => 1,
+    },
+) {
+    subtest $test->{desc} => sub {
+
+        # check that the user does not exist
+        my $test_email = 'test-2@example.com';
+
+        $mech->clear_emails_ok;
+        my $user = $mech->log_in_ok($test_email);
+
+        # setup the user.
+        ok $user->update(
+            {
+                name  => 'Test User',
+                phone => '01234 567 890',
+            }
+          ),
+          "set users details";
+
+        # submit initial pc form
+        $mech->get_ok('/around');
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->submit_form_ok( { with_fields => { pc => 'GL50 2PR', } },
+                "submit location" );
+
+            # click through to the report page
+            $mech->follow_link_ok( { text_regex => qr/skip this step/i, },
+                "follow 'skip this step' link" );
+
+            # check that the fields are correctly prefilled
+            is_deeply(
+                $mech->visible_form_values,
+                {
+                    title         => '',
+                    detail        => '',
+                    may_show_name => '1',
+                    name          => 'Test User',
+                    phone         => '01234 567 890',
+                    photo1        => '',
+                    photo2        => '',
+                    photo3        => '',
+                    category      => '-- Pick a category --',
+                },
+                "user's details prefilled"
+            );
+
+            $mech->submit_form_ok(
+                {
+                    with_fields => {
+                        title         => "Test Report at café",
+                        detail        => 'Test report details.',
+                        photo1        => '',
+                        name          => 'Joe Bloggs',
+                        may_show_name => '1',
+                        phone         => '07903 123 456',
+                        category      => $test->{category},
+                        %{$test->{extra_fields}}
+                    }
+                },
+                "submit good details"
+            );
+        };
+
+        # find the report
+        my $report = $user->problems->first;
+        ok $report, "Found the report";
+
+        # Check the report has been assigned appropriately
+        is $report->bodies_str, join(',', @body_ids{@{$test->{councils}}});
+
+        $mech->content_contains('Thank you for reporting this issue');
+
+        # check that no emails have been sent
+        $mech->email_count_is(0);
+
+        # check report is confirmed and available
+        is $report->state, 'confirmed', "report is now confirmed";
+        $mech->get_ok( '/report/' . $report->id );
+
+        # Test that AJAX pages return the right data
+        $mech->get_ok(
+            '/around?ajax=1&bbox=' . ($report->longitude - 0.01) . ',' .  ($report->latitude - 0.01)
+            . ',' . ($report->longitude + 0.01) . ',' .  ($report->latitude + 0.01)
+        );
+        $mech->content_contains( "Test Report at caf\xc3\xa9" );
+        $saved_lat = $report->latitude;
+        $saved_lon = $report->longitude;
+
+        # cleanup
+        $mech->delete_user($user);
+    };
+
+}
+
+subtest "Test inactive categories" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        BASE_URL => 'https://www.fixmystreet.com',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        # Around and New report have both categories
+        $mech->get_ok('/around?pc=GL50+2PR');
+        $mech->content_contains('Potholes');
+        $mech->content_contains('Trees');
+        $mech->get_ok("/report/new?lat=$saved_lat&lon=$saved_lon");
+        $mech->content_contains('Potholes');
+        $mech->content_contains('Trees');
+        $contact2->update( { state => 'inactive' } ); # Potholes
+        # But when Potholes is inactive, it's not on New report
+        $mech->get_ok('/around?pc=GL50+2PR');
+        $mech->content_contains('Potholes');
+        $mech->content_contains('Trees');
+        $mech->get_ok("/report/new?lat=$saved_lat&lon=$saved_lon");
+        $mech->content_lacks('Potholes');
+        $mech->content_contains('Trees');
+        # Change back
+        $contact2->update( { state => 'confirmed' } );
+    };
+};
+
+subtest "category groups" => sub {
+    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::FixMyStreet');
+    $cobrand->mock('enable_category_groups', sub { 1 });
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'fixmystreet',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $contact2->update( { extra => { group => 'Roads' } } );
+        $contact9->update( { extra => { group => 'Roads' } } );
+        $contact10->update( { extra => { group => 'Roads' } } );
+        $mech->get_ok("/report/new?lat=$saved_lat&lon=$saved_lon");
+        $mech->content_like(qr{<optgroup label="Roads">\s*<option value='Potholes'>Potholes</option>\s*<option value='Street lighting'>Street lighting</option></optgroup>});
+    };
+};
+
 subtest "test report creation for a category that is non public" => sub {
     $mech->log_out_ok;
     $mech->clear_emails_ok;
@@ -906,8 +1110,7 @@ subtest "test report creation for a category that is non public" => sub {
     # check that the user does not exist
     my $test_email = 'test-2@example.com';
 
-    my $user = FixMyStreet::App->model('DB::User')->find_or_create( { email => $test_email } );
-    ok $user, "test user does exist";
+    my $user = $mech->create_user_ok($test_email);
 
     $contact1->update( { non_public => 1 } );
 
@@ -915,7 +1118,7 @@ subtest "test report creation for a category that is non public" => sub {
     $mech->get_ok('/around');
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } },
             "submit location" );
@@ -931,7 +1134,7 @@ subtest "test report creation for a category that is non public" => sub {
                     title         => 'Test Report',
                     detail        => 'Test report details.',
                     photo1        => '',
-                    email         => 'test-2@example.com',
+                    username      => 'test-2@example.com',
                     name          => 'Joe Bloggs',
                     category      => 'Street lighting',
                 }
@@ -949,10 +1152,9 @@ subtest "test report creation for a category that is non public" => sub {
 
     my $email = $mech->get_email;
     ok $email, "got an email";
-    like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+    like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-    my ($url) = $email->body =~ m{(http://\S+)};
-    ok $url, "extracted confirm url '$url'";
+    my $url = $mech->get_link_from_email($email);
 
     # confirm token
     $mech->get_ok($url);
@@ -978,16 +1180,17 @@ $contact2->update;
 my $extra_details;
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
 }, sub {
     $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=' . $saved_lat . '&longitude=' . $saved_lon );
 };
 $mech->content_contains( "Pothol\xc3\xa9s" );
+like $extra_details->{councils_text}, qr/<strong>Cheltenham/;
 ok !$extra_details->{titles_list}, 'Non Bromley does not send back list of titles';
 
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
 }, sub {
     $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.4021&longitude=0.01578');
 };
@@ -1007,7 +1210,7 @@ subtest "check that a lat/lon off coast leads to /around" => sub {
     my $off_coast_longitude = -0.646929;
 
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok(    #
             "/report/new"
@@ -1025,11 +1228,56 @@ subtest "check that a lat/lon off coast leads to /around" => sub {
 
 };
 
+subtest "check we load a partial report correctly" => sub {
+    my $user = FixMyStreet::App->model('DB::User')->find_or_create(
+        {
+            email => 'test-partial@example.com'
+        }
+    );
+
+    my $report = FixMyStreet::App->model('DB::Problem')->create( {
+        name               => '',
+        postcode           => '',
+        category           => 'Street lighting',
+        title              => 'Testing',
+        detail             => "Testing Detail",
+        anonymous          => 0,
+        state              => 'partial',
+        lang               => 'en-gb',
+        service            => '',
+        areas              => '',
+        used_map           => 1,
+        latitude           => '51.754926',
+        longitude          => '-1.256179',
+        user_id            => $user->id,
+    } );
+
+    my $report_id = $report->id;
+
+    my $token = FixMyStreet::App->model("DB::Token")
+        ->create( { scope => 'partial', data => $report->id } );
+
+    my $token_code = $token->token;
+
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        MAPIT_URL => 'http://mapit.uk/',
+    },
+    sub {
+        $mech->get("/L/$token_code");
+        is $mech->res->previous->code, 302, 'partial token page redirects';
+        is $mech->uri->path, "/report/new", "partial redirects to report page";
+        $mech->content_contains('Testing Detail');
+    };
+
+    $mech->delete_user($user);
+};
+
 for my $test (
     {
         desc  => 'user title not set if not bromley problem',
         host  => 'www.fixmystreet.com',
-        postcode => 'EH99 1SP',
+        postcode => 'EH1 1BB',
         fms_extra_title => '',
         extra => [],
         user_title => undef,
@@ -1080,7 +1328,7 @@ for my $test (
     subtest $test->{desc} => sub {
         my $override = {
             ALLOWED_COBRANDS => [ $test->{host} =~ /bromley/ ? 'bromley' : 'fixmystreet' ],
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         };
 
         $mech->host( $test->{host} );
@@ -1120,7 +1368,7 @@ for my $test (
             title             => "Test Report",
             detail            => 'Test report details.',
             photo1            => '',
-            email             => 'firstlast@example.com',
+            username          => 'firstlast@example.com',
             may_show_name     => '1',
             phone             => '07903 123 456',
             category          => 'Trees',
@@ -1145,17 +1393,14 @@ for my $test (
 
         my $email = $mech->get_email;
         ok $email, "got an email";
-        like $email->body, qr/confirm that you want to send your\s+report/i, "confirm the problem";
+        like $mech->get_text_body_from_email($email), qr/confirm that you want to send your\s+report/i, "confirm the problem";
 
-        my ($url) = $email->body =~ m{(https?://\S+)};
-        ok $url, "extracted confirm url '$url'";
+        my $url = $mech->get_link_from_email($email);
 
         # confirm token in order to update the user details
         $mech->get_ok($url);
 
-        my $user =
-          FixMyStreet::App->model('DB::User')
-          ->find( { email => 'firstlast@example.com' } );
+        my $user = FixMyStreet::App->model('DB::User')->find( { email => 'firstlast@example.com' } );
 
         my $report = $user->problems->first;
         ok $report, "Found the report";
@@ -1163,9 +1408,7 @@ for my $test (
         is $user->title, $test->{'user_title'}, 'user title correct';
         is_deeply $extras, $test->{extra}, 'extra contains correct values';
 
-        $user->problems->delete;
-        $user->alerts->delete;
-        $user->delete;
+        $mech->delete_user($user);
     };
 }
 
@@ -1198,9 +1441,9 @@ subtest 'user title not reset if no user title in submission' => sub {
         $mech->get_ok('/');
         FixMyStreet::override_config {
             ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
-            $mech->submit_form_ok( { with_fields => { pc => 'EH99 1SP', } },
+            $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } },
                 "submit location" );
             $mech->follow_link_ok(
                 { text_regex => qr/skip this step/i, },
@@ -1263,14 +1506,14 @@ subtest "test Hart" => sub {
             FixMyStreet::override_config {
                 ALLOWED_COBRANDS => [ 'hart', 'fixmystreet' ],
                 BASE_URL => 'http://www.fixmystreet.com',
-                MAPIT_URL => 'http://mapit.mysociety.org/',
+                MAPIT_URL => 'http://mapit.uk/',
             }, sub {
                 $mech->get_ok('/around');
                 $mech->content_contains( "Hart Council" );
                 $mech->submit_form_ok( { with_fields => { pc => 'GU51 4AE' } }, "submit location" );
                 $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
                 my %optional_fields = $test->{confirm} ?  () :
-                    ( email => $test_email, phone => '07903 123 456' );
+                    ( username => $test_email, phone => '07903 123 456' );
 
                 # we do this as otherwise test::www::mechanize::catalyst
                 # goes to the value set in ->host above irregardless and
@@ -1315,10 +1558,17 @@ subtest "test Hart" => sub {
                 # receive token
                 my $email = $mech->get_email;
                 ok $email, "got an email";
-                like $email->body, qr/to confirm that you want to send your/i, "confirm the problem";
+                my $body = $mech->get_text_body_from_email($email);
+                like $body, qr/to confirm that you want to send your/i, "confirm the problem";
 
-                my ($url) = $email->body =~ m{(http://\S+)};
-                ok $url, "extracted confirm url '$url'";
+                # does it reference the fact that this report hasn't been sent to Hart?
+                if ( $test->{national} ) {
+                    like $body, qr/Hart Council is not responsible for this type/i, "mentions report hasn't gone to Hart";
+                } else {
+                    unlike $body, qr/Hart Council is not responsible for this type/i, "doesn't mention report hasn't gone to Hart";
+                }
+
+                my $url = $mech->get_link_from_email($email);
 
                 # confirm token
                 FixMyStreet::override_config {
@@ -1361,133 +1611,18 @@ subtest "test Hart" => sub {
     }
 };
 
-subtest "test SeeSomething" => sub {
-    $mech->host('seesomething.fixmystreet.com');
-    $mech->clear_emails_ok;
-    $mech->log_out_ok;
-
-    my $cobrand = FixMyStreet::Cobrand::SeeSomething->new();
-
-    my $body_ss = $mech->create_body_ok(2535, 'Sandwell Borough Council', id => 2535);
-    my $bus_contact = $mech->create_contact_ok(
-        body_id => $body_ss->id,
-        category => 'Bus',
-        email => 'bus@example.com',
-        non_public => 1,
-    );
-
-    for my $test ( {
-            desc => 'report with no user details works',
-            pc => 'WS1 4NH',
-            fields => {
-                detail => 'Test report details',
-                category => 'Bus',
-                subcategory => 'Smoking',
-            },
-            email => $cobrand->anonymous_account->{email},
-        },
-        {
-            desc => 'report with user details works',
-            pc => 'WS1 4NH',
-            fields => {
-                detail => 'Test report details',
-                category => 'Bus',
-                subcategory => 'Smoking',
-                email => 'non_anon_user@example.com',
-                name => 'Non Anon',
-            },
-            email => 'non_anon_user@example.com',
-        },
-        {
-            desc => 'report with public category',
-            pc => 'WS1 4NH',
-            fields => {
-                detail => 'Test report details',
-                category => 'Bus',
-                subcategory => 'Smoking',
-            },
-            email => $cobrand->anonymous_account->{email},
-            public => 1,
-        }
-    ) {
-        subtest $test->{desc} => sub {
-            $mech->clear_emails_ok;
-            my $user =
-              FixMyStreet::App->model('DB::User')->find( { email => $test->{email} } );
-
-            if ( $user ) {
-                $user->alerts->delete;
-                $user->problems->delete;
-                $user->delete;
-            }
-
-            if ( $test->{public} ) {
-                $bus_contact->non_public(0);
-                $bus_contact->update;
-            } else {
-                $bus_contact->non_public(1);
-                $bus_contact->update;
-            }
-
-            $mech->get_ok( '/around' );
-            FixMyStreet::override_config {
-                ALLOWED_COBRANDS => [ 'seesomething' ],
-                MAPIT_URL => 'http://mapit.mysociety.org/',
-            }, sub {
-                $mech->submit_form_ok(
-                    {
-                        with_fields => {
-                            pc => $test->{pc},
-                        },
-                    },
-                    'submit around form',
-                );
-                $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
-
-                $mech->submit_form_ok(
-                    {
-                        with_fields => $test->{fields},
-                    },
-                    'Submit form details with no user details',
-                );
-            };
-            is_deeply $mech->page_errors, [], "check there were no errors";
-
-            $user =
-              FixMyStreet::App->model('DB::User')->find( { email => $test->{email} } );
-            ok $user, "user found";
-
-            my $report = $user->problems->first;
-            ok $report, "Found the report";
-
-            $mech->email_count_is(0);
-
-            ok $report->confirmed, 'Report is confirmed automatically';
-
-            is $mech->uri->path, '/report/new', 'stays on report/new page';
-            $mech->content_contains( 'Your report has been sent', 'use report created template' );
-
-            $user->alerts->delete;
-            $user->problems->delete;
-            $user->delete;
-        };
-    }
-
-    $bus_contact->delete;
-};
-
 subtest "categories from deleted bodies shouldn't be visible for new reports" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
-        $mech->get_ok('/report/new/ajax?latitude=51.89&longitude=-2.09'); # Cheltenham
+        $mech->get_ok('/report/new/ajax?latitude=51.896268&longitude=-2.093063'); # Cheltenham
         ok $mech->content_contains( $contact3->category );
 
         # Delete the body which the contact belongs to.
         $contact3->body->update( { deleted => 1 } );
 
-        $mech->get_ok('/report/new/ajax?latitude=51.89&longitude=-2.09'); # Cheltenham
+        $mech->get_ok('/report/new/ajax?latitude=51.896268&longitude=-2.093063'); # Cheltenham
         ok $mech->content_lacks( $contact3->category );
 
         $contact3->body->update( { deleted => 0 } );
@@ -1497,12 +1632,12 @@ subtest "categories from deleted bodies shouldn't be visible for new reports" =>
 subtest "unresponsive body handling works" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         # Test body-level send method
         my $old_send = $contact1->body->send_method;
         $contact1->body->update( { send_method => 'Refused' } );
-        $mech->get_ok('/report/new/ajax?latitude=55.9&longitude=-3.2'); # Edinburgh
+        $mech->get_ok('/report/new/ajax?latitude=55.952055&longitude=-3.189579'); # Edinburgh
         my $body_id = $contact1->body->id;
         ok $mech->content_like( qr{Edinburgh.*accept reports.*/unresponsive\?body=$body_id} );
 
@@ -1518,7 +1653,7 @@ subtest "unresponsive body handling works" => sub {
                     detail        => 'Test report details.',
                     photo1        => '',
                     name          => 'Joe Bloggs',
-                    email         => $test_email,
+                    username      => $test_email,
                     may_show_name => '1',
                     phone         => '07903 123 456',
                     category      => 'Trees',
@@ -1534,17 +1669,51 @@ subtest "unresponsive body handling works" => sub {
         ok $report, "Found the report";
         is $report->bodies_str, undef, "Report not going anywhere";
 
-        my $email = $mech->get_email;
-        ok $email, "got an email";
-        like $email->body, qr/despite not being sent/i, "correct email sent";
+        like $mech->get_text_body_from_email, qr/despite not being sent/i, "correct email sent";
 
         $user->problems->delete;
+        $mech->clear_emails_ok;
+
+        # Make sure the same behaviour occurs for reports from the mobile app
+        $mech->log_out_ok;
+        $mech->post_ok( '/report/new/mobile', {
+            title               => "Test Report at café",
+            detail              => 'Test report details.',
+            photo1              => '',
+            name                => 'Joe Bloggs',
+            email               => $test_email,
+            may_show_name       => '1',
+            phone               => '07903 123 456',
+            category            => 'Trees',
+            service             => 'iOS',
+            lat                 => 55.952055,
+            lon                 => -3.189579,
+            pc                  => '',
+            used_map            => '1',
+            submit_register     => '1',
+            password_register   => '',
+        });
+        my $res = $mech->response;
+        ok $res->header('Content-Type') =~ m{^application/json\b}, 'response should be json';
+
+        $user = FixMyStreet::App->model('DB::User')->find( { email => $test_email } );
+        ok $user, "test user does exist";
+
+        $report = $user->problems->first;
+        ok $report, "Found the report";
+        is $report->bodies_str, undef, "Report not going anywhere";
+
+        like $mech->get_text_body_from_email, qr/despite not being sent/i, "correct email sent";
+
+        $user->problems->delete;
+        $mech->clear_emails_ok;
+
         $contact1->body->update( { send_method => $old_send } );
 
         # And test per-category refusing
         my $old_email = $contact3->email;
         $contact3->update( { email => 'REFUSED' } );
-        $mech->get_ok('/report/new/category_extras?category=Trees&latitude=51.89&longitude=-2.09');
+        $mech->get_ok('/report/new/category_extras?category=Trees&latitude=51.896268&longitude=-2.093063');
         ok $mech->content_like( qr/Cheltenham.*Trees.*unresponsive.*category=Trees/ );
 
         $mech->get_ok('/around');
@@ -1557,7 +1726,7 @@ subtest "unresponsive body handling works" => sub {
                     detail        => 'Test report details.',
                     photo1        => '',
                     name          => 'Joe Bloggs',
-                    email         => $test_email,
+                    username      => $test_email,
                     may_show_name => '1',
                     phone         => '07903 123 456',
                     category      => 'Trees',
@@ -1578,7 +1747,6 @@ subtest "unresponsive body handling works" => sub {
 subtest "unresponsive body page works" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
     }, sub {
         my $old_send = $contact1->body->send_method;
         my $body_id = $contact1->body->id;
@@ -1605,7 +1773,7 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
         BASE_URL => 'https://www.fixmystreet.com',
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         # check that the user does not exist
         my $test_email = 'test-2@example.com';
@@ -1634,7 +1802,7 @@ subtest "extra google analytics code displayed on logged in problem creation" =>
         $mech->submit_form_ok(
             {
                 with_fields => {
-                    title         => "Test Report at café", 
+                    title         => "Test Report at café",
                     detail        => 'Test report details.',
                     photo1        => '',
                     name          => 'Joe Bloggs',
@@ -1661,7 +1829,7 @@ subtest "extra google analytics code displayed on email confirmation problem cre
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
         BASE_URL => 'https://www.fixmystreet.com',
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->log_out_ok;
         $mech->clear_emails_ok;
@@ -1679,7 +1847,7 @@ subtest "extra google analytics code displayed on email confirmation problem cre
             title             => "Test Report",
             detail            => 'Test report details.',
             photo1            => '',
-            email             => 'firstlast@example.com',
+            username          => 'firstlast@example.com',
             name              => 'Test User',
             may_show_name     => '1',
             phone             => '07903 123 456',
@@ -1692,32 +1860,75 @@ subtest "extra google analytics code displayed on email confirmation problem cre
 
         my $email = $mech->get_email;
         ok $email, "got an email";
-        like $email->body, qr/confirm that you want to/i, "confirm the problem";
+        like $mech->get_text_body_from_email($email), qr/confirm that you want to/i, "confirm the problem";
 
-        my ($url) = $email->body =~ m{(https?://\S+)};
-        ok $url, "extracted confirm url '$url'";
+        my $url = $mech->get_link_from_email($email);
 
         # confirm token in order to update the user details
         $mech->get_ok($url);
 
         # find the report
-        my $user =
-          FixMyStreet::App->model('DB::User')
-          ->find( { email => 'firstlast@example.com' } );
+        my $user = FixMyStreet::App->model('DB::User')->find( { email => 'firstlast@example.com' } );
 
         my $report = $user->problems->first;
         ok $report, "Found the report";
 
         $mech->content_contains( "'id': 'report/" . $report->id . "'", 'extra google code present' );
 
-        $user->problems->delete;
-        $user->alerts->delete;
-        $user->delete;
+        $mech->delete_user($user);
     };
 };
 
-done_testing();
+foreach my $test (
+  { non_public => 0 },
+  { non_public => 1 },
+) {
+  subtest "inspectors get redirected directly to the report page, non_public=$test->{non_public}" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        BASE_URL => 'https://www.fixmystreet.com',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->log_out_ok;
 
-END {
-    $mech->delete_body($_) foreach @bodies;
+        my $user = $mech->create_user_ok('inspector@example.org', name => 'inspector', from_body => $bodies[0]);
+        $user->user_body_permissions->find_or_create({
+            body => $bodies[0],
+            permission_type => 'planned_reports',
+        });
+        $user->user_body_permissions->find_or_create({
+            body => $bodies[0],
+            permission_type => 'report_inspect',
+        });
+
+        $mech->log_in_ok('inspector@example.org');
+        $mech->get_ok('/');
+        $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB' } },
+            "submit location" );
+        $mech->follow_link_ok(
+            { text_regex => qr/skip this step/i, },
+            "follow 'skip this step' link"
+        );
+
+        $mech->submit_form_ok(
+            {
+                with_fields => {
+                    title         => "Inspector report",
+                    detail        => 'Inspector report details.',
+                    photo1        => '',
+                    name          => 'Joe Bloggs',
+                    may_show_name => '1',
+                    phone         => '07903 123 456',
+                    category      => 'Trees',
+                    non_public => $test->{non_public},
+                }
+            },
+            "submit good details"
+        );
+
+        like $mech->uri->path, qr/\/report\/[0-9]+/, 'Redirects directly to report';
+    }
+  };
 }
+
+done_testing();

@@ -1,18 +1,11 @@
-use strict;
-use warnings;
-use Test::More;
-use LWP::Protocol::PSGI;
-
-BEGIN {
-    use FixMyStreet;
-    FixMyStreet->test_mode(1);
-}
-
-use t::Mock::MapIt;
 use mySociety::Locale;
 
+use FixMyStreet::Script::Reports;
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
+
+use t::Mock::Nominatim;
+LWP::Protocol::PSGI->register(t::Mock::Nominatim->to_psgi_app, host => 'nominatim.openstreetmap.org');
 
 # Front page test
 
@@ -43,13 +36,14 @@ $mech->email_count_is(0);
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'fixamingata' ],
 }, sub {
-    FixMyStreet::DB->resultset('Problem')->send_reports();
+    FixMyStreet::Script::Reports::send();
 };
 my $email = $mech->get_email;
-like $email->header('Content-Type'), qr/iso-8859-1/, 'encoding looks okay';
+my $plain = $mech->get_text_body_from_email($email, 1);
+like $plain->header('Content-Type'), qr/utf-8/, 'encoding looks okay';
 like $email->header('Subject'), qr/Ny rapport: Test Test/, 'subject looks okay';
 like $email->header('To'), qr/other\@example.org/, 'to line looks correct';
-like $email->body, qr/V=E4nligen,/, 'signature looks correct';
+like $plain->body_str, qr/V\xe4nligen,/, 'signature looks correct';
 $mech->clear_emails_ok;
 
 my $user =
@@ -89,10 +83,10 @@ FixMyStreet::override_config {
     FixMyStreet::DB->resultset('AlertType')->email_alerts();
 };
 
-$mech->email_count_is(1);
 $email = $mech->get_email;
-like $email->header('Content-Type'), qr/iso-8859-1/, 'encoding looks okay';
-like $email->body, qr/V=E4nligen,/, 'signature looks correct';
+$plain = $mech->get_text_body_from_email($email, 1);
+like $plain->header('Content-Type'), qr/utf-8/, 'encoding looks okay';
+like $plain->body_str, qr/V\xe4nligen,/, 'signature looks correct';
 $mech->clear_emails_ok;
 
 subtest "Test ajax decimal points" => sub {
@@ -100,22 +94,20 @@ subtest "Test ajax decimal points" => sub {
     # requesting the page, so that the code performs a full switch to Swedish
     mySociety::Locale::push('en-gb');
 
-    # A note to the future - the run_if_script line must be within a subtest
-    # otherwise it fails to work
-    LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.sweden');
-
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'fixamingata' ],
-        MAPIT_URL => 'http://mapit.sweden/'
+        MAPIT_URL => 'http://mapit.uk/'
     }, sub {
         $mech->get_ok('/ajax/lookup_location?term=12345');
         # We want an actual decimal point in a JSON response...
         $mech->content_contains('51.5');
+
+        $mech->get_ok('/ajax/lookup_location?term=high+street');
+        $mech->content_contains("Ed\xc3\xadnburgh");
     };
 };
 
 END {
-    $mech->delete_body($body);
     ok $mech->host("www.fixmystreet.com"), "change host back";
     done_testing();
 }

@@ -4,8 +4,7 @@
         </div><!-- .table-cell -->
 
         <div class="nav-wrapper">
-            <div class="nav-wrapper-2">
-                <div class="nav-wrapper-3">
+            <div class="container">
                     <div id="main-nav" role="navigation">
                       [% IF c.user_exists %]
                         <p>
@@ -14,19 +13,17 @@
                         </p>
                       [% END %]
                         <ul class="nav-menu nav-menu--main mob-only">
-                            <li><[% IF c.req.uri.path == '/' %]a onclick="$('html, body').animate({scrollTop:0}, 500); return false;" href="#site-header"[% ELSE %]a href="/"[% END %]
-                            >[% loc("Report a problem") %]</[% c.req.uri.path == '/' ? 'a' : 'a' %]></li>[%
+                            <li><[% IF c.req.uri.path == '/' %]span[% ELSE %]a href="/"[% END %]
+                            class="report-a-problem-btn"
+                            >[% loc("Report a problem") %]</[% c.req.uri.path == '/' ? 'span' : 'a' %]></li>[%
                             %]<li><[% IF c.req.uri.path == '/reports' %]span[% ELSE %]a href="/reports"[% END
                             %]>[% loc("All reports") %]</[% c.req.uri.path == '/reports' ? 'span' : 'a' %]></li>[%
                             %]<li><[% IF c.req.uri.path == '/faq' %]span[% ELSE %]a href="/faq"[% END
                             %]>[% loc("Help") %]</[% c.req.uri.path == '/faq' ? 'span' : 'a' %]></li>
                         </ul>
                     </div>
-                </div>
             </div>
         </div>
-
-<!-- [% INCLUDE 'debug_footer.html' %] -->
     </div> <!-- .wrapper -->
 
     <div id="zurich-footer-wrapper" class="desk-only">
@@ -36,6 +33,8 @@
         <span class="hidden">|</span> <a href="http://www.stadt-zuerich.ch/content/portal/de/index/footer/impressum.html">Impressum</a>
     </div>
     </div>
+
+    [% INCLUDE 'common_footer_tags.html' %]
 
 </body>
 </html>

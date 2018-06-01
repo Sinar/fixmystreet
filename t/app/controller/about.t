@@ -1,14 +1,16 @@
-use strict;
-use warnings;
+package FixMyStreet::Cobrand::Tester;
+use parent 'FixMyStreet::Cobrand::Default';
+sub path_to_web_templates { [ FixMyStreet->path_to( 't', 'app', 'controller', 'templates') ] }
 
-use Test::More;
-use Test::WWW::Mechanize::Catalyst 'FixMyStreet::App';
+package main;
 
-ok( my $mech = Test::WWW::Mechanize::Catalyst->new, 'Created mech object' );
+use FixMyStreet::TestMech;
+
+ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
 # check that we can get the page
-$mech->get_ok('/about');
-$mech->content_like(qr{About us ::\s+FixMyStreet});
+$mech->get_ok('/faq');
+$mech->content_like(qr{Frequently Asked Questions ::\s+FixMyStreet});
 $mech->content_contains('html class="no-js" lang="en-gb"');
 
 $mech->get_ok('/privacy');
@@ -21,19 +23,30 @@ ok !$mech->res->is_success(), "want a bad response";
 is $mech->res->code, 404, "got 404";
 
 FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'emptyhomes' ],
+    ALLOWED_COBRANDS => [ 'fiksgatami' ],
 }, sub {
-    # check that geting the page as EHA produces a different page
-    ok $mech->host("reportemptyhomes.co.uk"), 'change host to reportemptyhomes';
-    $mech->get_ok('/about');
-    $mech->content_like(qr{About us ::});
-    $mech->content_contains('html lang="en-gb"');
+    ok $mech->host("www.fiksgatami.no"), 'host to fiksgatami';
+    $mech->get_ok('/faq');
+    $mech->content_like(qr{Ofte spurte spørsmål ::});
+    $mech->content_contains('html class="no-js" lang="nb"');
+};
 
-    # check that geting the page as EHA in welsh produces a different page
-    ok $mech->host("cy.reportemptyhomes.co.uk"), 'host to cy.reportemptyhomes';
-    $mech->get_ok('/about');
-    $mech->content_like(qr{Amdanom ni ::});
-    $mech->content_contains('html lang="cy"');
+$mech->get_ok('/');
+$mech->content_contains('Report a problem');
+$mech->content_lacks('STATIC FRONT PAGE');
+$mech->get('/report');
+is $mech->res->code, 200, "got 200";
+is $mech->res->previous->code, 302, "got 302 for redirect";
+is $mech->uri->path, '/', 'redirected to front page';
+
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ 'tester' ],
+}, sub {
+    $mech->get_ok('/');
+    $mech->content_contains('STATIC FRONT PAGE');
+    $mech->get_ok('/report');
+    is $mech->res->previous, undef, 'No redirect';
+    $mech->content_contains('Report a problem');
 };
 
 done_testing();

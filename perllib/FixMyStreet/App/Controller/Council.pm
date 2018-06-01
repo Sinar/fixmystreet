@@ -36,7 +36,7 @@ there are no areas then return false.
 =cut
 
 sub load_and_check_areas : Private {
-    my ( $self, $c ) = @_;
+    my ( $self, $c, $prefetched_all_areas ) = @_;
 
     my $latitude  = $c->stash->{latitude};
     my $longitude = $c->stash->{longitude};
@@ -49,13 +49,26 @@ sub load_and_check_areas : Private {
         $area_types = $c->cobrand->area_types;
     }
 
+    # Cobrand may wish to add area types to look up for a point at runtime.
+    # This can be used for, e.g., parish councils on a particular council
+    # cobrand. NB three-tier councils break the alerts pages, so don't run the
+    # hook if we're on an alerts page.
+    unless ($c->stash->{area_check_action} eq 'alert') {
+        $area_types = $c->cobrand->call_hook("add_extra_area_types" => $area_types) || $area_types;
+    }
+
     my $all_areas;
 
     my %params;
     $params{generation} = $c->config->{MAPIT_GENERATION}
         if $c->config->{MAPIT_GENERATION};
 
-    if ( $c->stash->{fetch_all_areas} ) {
+    if ($prefetched_all_areas) {
+        $all_areas = {
+            map { $_ => { id => $_ } }
+            @$prefetched_all_areas
+        };
+    } elsif ( $c->stash->{fetch_all_areas} ) {
         my %area_types = map { $_ => 1 } @$area_types;
         $all_areas =
           mySociety::MaPit::call( 'point',

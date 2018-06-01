@@ -11,7 +11,7 @@
 [% ELSE %]
 <h1>[% loc('Contact the team') %]</h1>
 [% END %]
- 
+
 <form method="post" action="/contact/submit" class="validate">
     <fieldset>
         [% INCLUDE 'errors.html' %]
@@ -40,14 +40,12 @@
             <input type="hidden" name="id" value="[% update.problem_id %]">
 
         [% ELSIF problem %]
-            <p>
             [% IF moderation_complaint %]
             <input type="hidden" name="m" value="[% moderation_complaint %]">
-            [% loc('You are complaining that this problem report was unnecessarily moderated:') %]
+            <p>[% loc('You are complaining that this problem report was unnecessarily moderated:') %]</p>
             [% ELSE %]
-            [% loc('You are reporting the following problem report for being abusive, containing personal information, or similar:') %]
+            [% INCLUDE 'contact/unsuitable-text.html' %]
             [% END %]
-            </p>
 
             <blockquote>
                 <h2>[% problem.title_safe | html %]</h2>
@@ -77,21 +75,25 @@
         [% IF field_errors.name %]
            <div class="form-error">[% field_errors.name %]</div>
         [% END %]
-        <input type="text" class="required" name="name" id="form_name" value="[% form_name | html %]" size="30">
-
+        <input type="text" class="form-control required" name="name" id="form_name" value="[% form_name | html %]" size="30">
 
         <label for="form_email">[% loc('Your email') %]</label>
         [% IF field_errors.em %]
            <div class="form-error">[% field_errors.em %]</div>
         [% END %]
-        <input type="text" class="required email" name="em" id="form_email" value="[% em | html %]" size="30">
+        <input type="text" class="form-control required email" name="em" id="form_email" value="[% em | html %]" size="30">
 
+        <div class="form-group">
+          <label for="form_phone">[% loc('Your phone number') %]</label>
+          <span class="required-text required-text--optional">optional</span>
+          <input type="text" class="form-control extra.phone" name="extra.phone" id="form_phone" value="" size="30">
+        </div>
 
         <label for="form_subject">[% loc('Subject') %]</label>
         [% IF field_errors.subject %]
            <div class="form-error">[% field_errors.subject %]</div>
         [% END %]
-        <input type="text" class="required" name="subject" id="form_subject" value="[% subject | html %]" size="30">
+        <input type="text" class="form-control required" name="subject" id="form_subject" value="[% subject | html %]" size="30">
 
         [% INCLUDE 'contact/who.html' %]
 
@@ -99,19 +101,23 @@
         [% IF field_errors.message %]
            <div class="form-error">[% field_errors.message %]</div>
         [% END %]
-        <textarea class="required" name="message" id="form_message" rows="7" cols="50">[% message | html %]</textarea>
+        <textarea class="form-control required" name="message" id="form_message" rows="7" cols="50">[% message | html %]</textarea>
 
 
-        <input class="final-submit green-btn" type="submit" value="[% loc('Post') %]">
+        <input class="final-submit green-btn" type="submit" value="[% loc('Send') %]">
 
     </fieldset>
 </form>
 
-<h4>[% loc("Don't like forms?") %]</h4>
+[% TRY %]
+    [% INCLUDE 'contact/_footer.html' %]
+[% CATCH file %]
+    <h4>[% loc("Don't like forms?") %]</h4>
 
-<p>
-[% tprintf( loc("You can contact technical support on <a href='mailto:%s'>%s</a>"), contact_email, contact_email) %]
-</p>
+    <p>
+    [% tprintf( loc("You can contact technical support on <a href='mailto:%s'>%s</a>"), contact_email, contact_email) %]
+    </p>
+[% END %]
 
 [% TRY %][% INCLUDE 'contact/address.html' %][% CATCH file %][% END %]
 

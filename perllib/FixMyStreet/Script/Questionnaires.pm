@@ -5,17 +5,19 @@ use warnings;
 use Utils;
 use FixMyStreet::DB;
 use FixMyStreet::Email;
+use FixMyStreet::Map;
 use FixMyStreet::Cobrand;
 
 sub send {
     my ( $params ) = @_;
     send_questionnaires_period( '4 weeks', $params );
-    send_questionnaires_period( '26 weeks', $params )
-        if $params->{site} eq 'emptyhomes';
 }
 
 sub send_questionnaires_period {
     my ( $period, $params ) = @_;
+
+    # Don't send if we don't have a fixed state
+    return unless FixMyStreet::DB::Result::Problem::fixed_states->{fixed};
 
     my $rs = FixMyStreet::DB->resultset('Questionnaire');
 
@@ -29,17 +31,11 @@ sub send_questionnaires_period {
         ],
         send_questionnaire => 1,
     };
-    # FIXME Do these a bit better...
-    if ($params->{site} eq 'emptyhomes' && $period eq '4 weeks') {
-        $q_params->{'(select max(whensent) from questionnaire where me.id=problem_id)'} = undef;
-    } elsif ($params->{site} eq 'emptyhomes' && $period eq '26 weeks') {
-        $q_params->{'(select max(whensent) from questionnaire where me.id=problem_id)'} = { '!=', undef };
-    } else {
-        $q_params->{'-or'} = [
-            '(select max(whensent) from questionnaire where me.id=problem_id)' => undef,
-            '(select max(whenanswered) from questionnaire where me.id=problem_id)' => { '<', \"current_timestamp - '$period'::interval" }
-        ];
-    }
+
+    $q_params->{'-or'} = [
+        '(select max(whensent) from questionnaire where me.id=problem_id)' => undef,
+        '(select max(whenanswered) from questionnaire where me.id=problem_id)' => { '<', \"current_timestamp - '$period'::interval" }
+    ];
 
     my $unsent = FixMyStreet::DB->resultset('Problem')->search( $q_params, {
         order_by => { -desc => 'confirmed' }
@@ -49,10 +45,15 @@ sub send_questionnaires_period {
 
         my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($row->cobrand)->new();
         $cobrand->set_lang_and_domain($row->lang, 1);
+        FixMyStreet::Map::set_map_class($cobrand->map_type);
 
         # Not all cobrands send questionnaires
         next unless $cobrand->send_questionnaires;
-        next if $row->is_from_abuser;
+
+        if ($row->is_from_abuser || !$row->user->email_verified) {
+            $row->update( { send_questionnaire => 0 } );
+            next;
+        }
 
         # Cobranded and non-cobranded messages can share a database. In this case, the conf file 
         # should specify a vhost to send the reports for each cobrand, so that they don't get sent 
@@ -60,15 +61,8 @@ sub send_questionnaires_period {
         # call checks if this is the host that sends mail for this cobrand.
         next unless $cobrand->email_host;
 
-        my $template;
-        if ($params->{site} eq 'emptyhomes') {
-            ($template = $period) =~ s/ //;
-            $template = Utils::read_file( FixMyStreet->path_to( "templates/email/emptyhomes/" . $row->lang . "/questionnaire-$template.txt" )->stringify );
-        } else {
-            $template = FixMyStreet->get_email_template($cobrand->moniker, $row->lang, 'questionnaire.txt');
-        }
-
         my %h = map { $_ => $row->$_ } qw/name title detail category/;
+        $h{report} = $row;
         $h{created} = Utils::prettify_duration( time() - $row->confirmed->epoch, 'week' );
 
         my $questionnaire = $rs->create( {
@@ -76,10 +70,8 @@ sub send_questionnaires_period {
             whensent => \'current_timestamp',
         } );
 
-        # We won't send another questionnaire unless they ask for it (or it was
-        # the first EHA questionnaire.
-        $row->send_questionnaire( 0 )
-            if $params->{site} ne 'emptyhomes' || $period eq '26 weeks';
+        # We won't send another questionnaire unless they ask for it
+        $row->send_questionnaire( 0 );
 
         my $token = FixMyStreet::DB->resultset("Token")->new_result( {
             scope => 'questionnaire',
@@ -94,14 +86,15 @@ sub send_questionnaires_period {
 
         my $result = FixMyStreet::Email::send_cron(
             $rs->result_source->schema,
+            'questionnaire.txt',
+            \%h,
             {
-                _template_ => $template,
-                _parameters_ => \%h,
                 To => [ [ $row->user->email, $row->name ] ],
             },
             undef,
             $params->{nomail},
-            $cobrand
+            $cobrand,
+            $row->lang,
         );
         unless ($result) {
             print "  ...success\n" if $params->{verbose};

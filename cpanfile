@@ -1,5 +1,5 @@
 # setenv script
-requires 'List::MoreUtils';
+requires 'List::MoreUtils', '0.402';
 requires 'local::lib';
 requires 'Class::Unload';
 
@@ -7,9 +7,18 @@ requires 'Class::Unload';
 requires 'ExtUtils::MakeMaker', '6.72'; # [1]
 # requires 'MooseX::NonMoose'; # [2]
 
+# Minimum versions of dependencies to upgrade for bugfixes
+requires 'Guard', '1.023';
+requires 'PadWalker', '2.2';
+requires 'aliased', '0.34';
+requires 'Net::SSLeay', '1.81';
+requires 'Module::ScanDeps', '1.24';
+requires 'CGI', '4.38';
+
 # Catalyst itself, and modules/plugins used
 requires 'Catalyst', '5.80031';
 requires 'Catalyst::Action::RenderView';
+requires 'Catalyst::Authentication::Credential::MultiFactor';
 requires 'Catalyst::Authentication::Store::DBIx::Class';
 requires 'Catalyst::Devel';
 requires 'Catalyst::Model::Adaptor';
@@ -22,21 +31,23 @@ requires 'Catalyst::Plugin::Unicode::Encoding';
 requires 'Catalyst::View::TT';
 
 # Modules used by FixMyStreet
+requires 'Auth::GoogleAuth';
 requires 'Authen::SASL';
 requires 'Cache::Memcached';
 requires 'Carp';
-requires 'CGI';
 requires 'Crypt::Eksblowfish::Bcrypt';
+requires 'Data::Password::Common';
 requires 'DateTime';
 requires 'DateTime::Format::HTTP';
 requires 'DateTime::Format::ISO8601';
 requires 'DateTime::Format::Pg';
 requires 'DateTime::Format::W3CDTF';
-requires 'DateTime::TimeZone';
+requires 'DateTime::TimeZone', '2.18';
 requires 'DBD::Pg', '2.9.2';
 requires 'DBI';
 requires 'DBIx::Class::EncodedColumn', '0.00013';
 requires 'DBIx::Class::EncodedColumn::Crypt::Eksblowfish::Bcrypt';
+requires 'DBIx::Class::Factory';
 requires 'DBIx::Class::FilterColumn';
 requires 'DBIx::Class::InflateColumn::DateTime';
 requires 'DBIx::Class::ResultSet';
@@ -44,12 +55,10 @@ requires 'DBIx::Class::Schema::Loader';
 requires 'Digest::MD5';
 requires 'Digest::SHA';
 requires 'Email::MIME';
-requires 'Email::Send';
-requires 'Email::Send::SMTP';
-requires 'Email::Simple';
+requires 'Email::Sender';
 requires 'Email::Valid';
 requires 'Error';
-requires 'FCGI';
+requires 'FCGI'; # Required by e.g. Plack::Handler::FCGI
 requires 'File::Find';
 requires 'File::Path';
 requires 'File::Slurp';
@@ -58,23 +67,24 @@ requires 'Getopt::Long::Descriptive';
 requires 'HTML::Entities';
 requires 'HTTP::Request::Common';
 requires 'Image::Size';
+requires 'IO::Socket::SSL', '2.007';
 requires 'IO::String';
 requires 'JSON::MaybeXS';
 requires 'Locale::gettext';
 requires 'LWP::Simple';
 requires 'LWP::UserAgent';
 requires 'Math::Trig';
+requires 'MIME::Parser'; # HandleMail
 requires 'Module::Pluggable';
 requires 'Moose';
 requires 'MooX::Types::MooseLike';
 requires 'namespace::autoclean';
 requires 'Net::DNS::Resolver';
-requires 'Net::Domain::TLD';
-requires 'Net::Facebook::Oauth2';
+requires 'Net::Domain::TLD', '1.75';
+requires 'Net::Facebook::Oauth2', '0.10';
 requires 'Net::OAuth';
-requires 'Net::SMTP::SSL', '1.03';
-requires 'Net::SMTP::TLS';
-requires 'Net::Twitter::Lite::WithAPIv1_1';
+requires 'Net::Twitter::Lite::WithAPIv1_1', '0.12008';
+requires 'Number::Phone', '3.4003';
 requires 'Path::Class';
 requires 'POSIX';
 requires 'Readonly';
@@ -84,41 +94,49 @@ requires 'Statistics::Distributions';
 requires 'Storable';
 requires 'Template::Plugin::Number::Format';
 requires 'Text::CSV';
-requires 'URI';
+requires 'URI', '1.71';
 requires 'URI::Escape';
 requires 'URI::QueryParam';
+requires 'WWW::Twilio::API';
 requires 'XML::RSS';
 requires 'XML::Simple';
 requires 'YAML';
 
 feature 'uk', 'FixMyStreet.com specific requirements' => sub {
-    # East Hampshire
-    requires 'SOAP::Lite';
-};
-
-feature 'open311-endpoint', 'Open311::Endpoint specific requirements' => sub {
-    requires 'Web::Simple';
-    requires 'Data::Rx';
-    requires 'MooX::HandlesVia';
-    requires 'Types::Standard';
-    requires 'DateTime::Format::Oracle'; # for EXOR
+    # East Hampshire & Angus
+    requires 'SOAP::Lite', '1.20';
 };
 
 feature 'zurich', 'Zueri wie neu specific requirements' => sub {
     # Geocoder
-    requires 'SOAP::Lite';
+    requires 'SOAP::Lite', '1.20';
+};
+
+feature 'kiitc', 'KiitC specific requirements' => sub {
+    requires 'Spreadsheet::Read';
+    requires 'Spreadsheet::ParseExcel';
+    requires 'Spreadsheet::ParseXLSX';
 };
 
 # Moderation by from_body user
 requires 'Algorithm::Diff';
 
-# Modules used by css watcher
+# Modules used by CSS & watcher
+requires 'CSS::Sass';
 requires 'File::ChangeNotify';
-requires 'Path::Tiny';
+requires 'Path::Tiny', '0.104';
 requires 'File::Find::Rule';
 
+# Modules used for development
+requires 'Plack::Middleware::Debug';
+requires 'Plack::Middleware::Debug::DBIC::QueryLog';
+requires 'Plack::Middleware::Debug::LWP';
+requires 'Plack::Middleware::Debug::Template';
+recommends 'Linux::Inotify2' if $^O eq 'linux';
+recommends 'Mac::FSEvents' if $^O eq 'darwin';
+
 # Modules used by the test suite
-requires 'Test::PostgreSQL';
+requires 'Test::PostgreSQL', '1.25';
 requires 'CGI::Simple';
 requires 'HTTP::Headers';
 requires 'HTTP::Response';
@@ -129,6 +147,7 @@ requires 'Test::Exception';
 requires 'Test::LongString';
 requires 'Test::MockTime';
 requires 'Test::More', '0.88';
+requires 'Test::Output';
 requires 'Test::Warn';
 requires 'Test::WWW::Mechanize::Catalyst';
 requires 'Web::Scraper';
