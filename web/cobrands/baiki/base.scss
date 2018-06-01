@@ -1,18 +1,16 @@
+@import '../sass/h5bp';
+@import './_colours';
+@import '../sass/mixins';
 
-@import "../sass/h5bp";
-@import "./_colours";
-@import "../sass/mixins";
-@import "compass";
-
-@import "../sass/base";
+@import '../sass/base';
 
 ul.partner-list li {
-    list-style: none;
+  list-style: none;
 }
 
 .partner-logo {
-    height: 75px;
-    width: 75px;
+  height: 75px;
+  width: 75px;
 }
 
 /* #mpsj-logo { */
@@ -39,4 +37,3 @@ ul.partner-list li {
 /* 	background: url('/i/mpsj-small.gif') no-repeat; */
 /*     } */
 /* } */
-
