@@ -54,12 +54,6 @@ sub reset_report_state {
     $report->update;
 }
 
-<<<<<<< HEAD
-use FixMyStreet::TestMech;
-my $mech = FixMyStreet::TestMech->new;
-
-=======
->>>>>>> master
 # Front page test
 ok $mech->host("zurich.example.com"), "change host to Zurich";
 FixMyStreet::override_config {
@@ -106,18 +100,11 @@ sub get_export_rows_count {
 
 my $EXISTING_REPORT_COUNT = 0;
 
-<<<<<<< HEAD
-=======
 my $superuser;
->>>>>>> master
 subtest "set up superuser" => sub {
     $superuser = $mech->log_in_ok( 'super@example.org' );
     # a user from body $zurich is a superuser, as $zurich has no parent id!
-<<<<<<< HEAD
-    $superuser->update({ from_body => $zurich->id }); 
-=======
     $superuser->update({ from_body => $zurich->id });
->>>>>>> master
     $EXISTING_REPORT_COUNT = get_export_rows_count($mech);
     $mech->log_out_ok;
 };

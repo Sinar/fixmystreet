@@ -185,34 +185,6 @@ subtest "Users with from_body can't access fixmystreet.com admin" => sub {
 
         $mech->log_out_ok;
     };
-<<<<<<< HEAD
-}
-
-subtest "Test setting a report from unconfirmed to something else doesn't cause a front end error" => sub {
-    $report->update( { confirmed => undef, state => 'unconfirmed', non_public => 0 } );
-    $mech->get_ok("/admin/report_edit/$report_id");
-    $mech->submit_form_ok( { with_fields => { state => 'investigating' } } );
-    $report->discard_changes;
-    ok( $report->confirmed, 'report has a confirmed timestamp' );
-    $mech->get_ok("/report/$report_id");
 };
 
-subtest "Check admin_base_url" => sub {
-    my $rs = FixMyStreet::App->model('DB::Problem');
-    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($report->cobrand)->new();
-
-    is ($report->admin_url($cobrand),
-        (sprintf 'https://secure.mysociety.org/admin/bci/report_edit/%d', $report_id),
-        'get_admin_url OK');
-};
-
-$mech->delete_user( $user );
-$mech->delete_user( $user2 );
-$mech->delete_user( $user3 );
-$mech->delete_user( 'test4@example.com' );
-
-=======
-};
-
->>>>>>> master
 done_testing();

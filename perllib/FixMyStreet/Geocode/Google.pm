@@ -41,12 +41,9 @@ sub string {
         $url .=  '&region=' . $params->{google_country};
     } elsif ($params->{country}) {
         $url .=  '&region=' . $params->{country};
-<<<<<<< HEAD
-=======
     }
     if ($params->{components}) {
         $components .= ($components ? '|' : '') . URI::Escape::uri_escape_utf8($params->{components});
->>>>>>> master
     }
     $url .=  '&language=' . $params->{lang} if $params->{lang};
 

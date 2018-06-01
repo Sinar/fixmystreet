@@ -1,36 +1,30 @@
 <style>
-#map_box img {
-    max-width: none;
-}
-#map_box {
-    color: #000;
-}
+    #map_box img {
+        max-width: none;
+    }
+
+    #map_box {
+        color: #000;
+    }
 </style>
-<<<<<<< HEAD
-<script type="text/javascript" src="//maps.googleapis.com/maps/api/js?sensor=false"></script>
-<script type="text/javascript" src="[% version('/js/map-google.js') %]"></script>
-<script type="text/javascript" src="[% version('/js/jquery.ba-hashchange.min.js') %]"></script>
-[% END %]
-=======
->>>>>>> master
 
 [% map_html = BLOCK %]
 <script nonce="[% csp_nonce %]">
-var fixmystreet = fixmystreet || {};
-$.extend(fixmystreet, {
-    'area': [ [% map.area.join(',') %] ],
-    'latitude': [% map.latitude %],
-    'longitude': [% map.longitude %],
-[% IF map.any_zoom -%]
-    'zoomToBounds': 1,
-[%- END %]
+    var fixmystreet = fixmystreet || {};
+    $.extend(fixmystreet, {
+        'area': [[% map.area.join(',') %]],
+        'latitude': [% map.latitude %],
+        'longitude': [% map.longitude %],
+        [% IF map.any_zoom -%]
+        'zoomToBounds': 1,
+        [% - END %]
 [% IF map.zoom -%]
     'zoom': [% map.zoom %],
-[%- END %]
-    'pins': [% INCLUDE maps/pins_js.html %]
-});
+        [% - END %]
+    'pins': [% INCLUDE maps / pins_js.html %]
+    });
 </script>
 <div id="map_box">
     [% pre_map %]
     <div id="map"></div>
-[% END %]
+    [% END %]

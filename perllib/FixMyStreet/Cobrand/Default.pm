@@ -196,11 +196,7 @@ sub restriction {
     return $self->moniker ? { cobrand => $self->moniker } : {};
 }
 
-<<<<<<< HEAD
-=head2 base_url_with_lang
-=======
 =item base_url_with_lang
->>>>>>> master
 
 =cut
 
