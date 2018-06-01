@@ -9,13 +9,7 @@ use base 'FixMyStreet::Map::OSM';
 
 use strict;
 
-sub map_type {
-    return 'OpenLayers.Layer.OSM.MapQuestOpen';
-}
-
-sub map_template {
-    return 'mapquest-attribution';
-}
+sub map_type { 'OpenLayers.Layer.OSM.MapQuestOpen' }
 
 sub map_tiles {
     my ( $self, %params ) = @_;

@@ -6,10 +6,13 @@ use base 'FixMyStreet::Map::OSM';
 
 use strict;
 
-# Is set by the JavaScript
-sub map_type { '""' }
+sub map_type { '' }
 
-sub map_template { 'bing' }
+sub map_javascript { [
+    '/vendor/OpenLayers/OpenLayers.fixmystreet.js',
+    '/js/map-OpenLayers.js',
+    '/js/map-bing-ol.js',
+] }
 
 sub copyright { '' }
 
@@ -27,7 +30,7 @@ sub get_quadkey {
 }
 
 sub map_tile_base {
-    '', "//ecn.%s.tiles.virtualearth.net/tiles/r%s.png?g=3467";
+    '', "//ecn.%s.tiles.virtualearth.net/tiles/r%s.png?g=5941";
 }
 
 sub map_tiles {

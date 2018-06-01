@@ -1,8 +1,9 @@
 [%
+    PROCESS "report/photo-js.html" IF problem.photo;
     PROCESS "maps/${map.type}.html" admin = 1;
+    SET bodyclass = 'mappage with-notes';
     INCLUDE 'admin/header.html'
-        title = tprintf(loc('Editing problem %d'), problem.id ),
-        bodyclass = 'mappage with-notes';
+        title = tprintf(loc('Editing problem %d'), problem.id );
     PROCESS 'admin/report_blocks.html'
 -%]
 
@@ -91,7 +92,6 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 <li>[% loc('Cobrand:') %] [% problem.cobrand %]
 <br><small>[% loc('Cobrand data:') %] [% cobrand_data OR '<em>' _ loc('None') _ '</em>' %]</small>
 </li>
-<li>[% loc('Extra data:') %] [% problem.extra ? 'Yes' : 'No' %]</li>
 <li>[% loc('Going to send questionnaire?') %] [% IF problem.send_questionnaire %][% loc('Yes') %][% ELSE %][% loc('No') %][% END %]</li>
 
 <li><label for="external_id">[% loc('External ID') %]:</label>
@@ -101,6 +101,12 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 <li><label for="external_team">[% loc('External team') %]:</label>
     <input type="text" class="form-control" name="external_team" team="external_team" value="[% problem.external_team | html %]">
 
+[% IF problem.get_extra_metadata('external_status_code') %]
+<li>
+    <label for="external_status_code">[% loc('External status code') %]:</label>
+    <span>[% problem.get_extra_metadata('external_status_code') %]</span>
+</li>
+[% END %]
 </ul>
 </div>
 
@@ -112,31 +118,14 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 <li><label for='detail'>[% loc('Details:') %]</label>
 <textarea class="form-control" name='detail' id='detail' cols=60 rows=10>[% problem.detail | html %]</textarea></li>
 
-<li><label class="inline-text" for="state">[% loc('State:') %]</label>
-<select class="form-control" name="state"  id="state">
-[% FOREACH group IN state_groups %]
-    <optgroup label="[% group.0 %]">
-    [% FOREACH state IN group.1 %]
-        <option [% 'selected ' IF state == problem.state %] value="[% state %]">[% state_pretty.$state %]</option>
-    [% END %]
-    </optgroup>
-[% END %]
-</select></li>
+<li>
+    <label class="inline-text" for="state">[% loc('State:') %]</label>
+    [% INCLUDE 'admin/state_groups_select.html' %]
+</li>
 <li><label class="inline-text" for="category">[% loc('Category:') %]</label>
-<select class="form-control" name="category" id="category">
-  [% IF NOT problem.category OR NOT categories.grep(problem.category).size %]
-  <optgroup label="[% loc('Existing category') %]">
-    <option selected value="[% problem.category | html %]">[% (problem.category OR '-') | html %]</option>
-  </optgroup>
-  [% END %]
-  [% IF categories.size %]
-    <optgroup label="[% loc('Available categories') %]">
-      [% FOREACH cat IN categories %]
-        <option[% ' selected' IF problem.category == cat %]>[% cat | html %]</option>
-      [% END %]
-    </optgroup>
-  [% END %]
-</select></li>
+    [% INCLUDE 'admin/report-category.html' %]
+</li>
+<li>[% loc('Extra data:') %] [% IF extra_fields.size %]<ul>[% FOREACH field IN extra_fields %]<li><strong>[% field.name %]</strong>: [% field.val %]</li>[% END %]</ul>[% ELSE %]No[% END %]</li>
 <li><label class="inline-text" for="anonymous">[% loc('Anonymous:') %]</label>
 <select class="form-control" name="anonymous"  id="anonymous">
 <option [% 'selected ' IF problem.anonymous %]value="1">[% loc('Yes') %]</option>
@@ -144,12 +133,19 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 </select></li>
 <li><label for="name">[% loc('Name:') %]</label>
     <input type='text' class="form-control" name='name' id='name' value='[% problem.name | html %]'></li>
-<li><label for="email">[% loc('Email:') %]</label>
-    <input type='text' class="form-control" id='email' name='email' value='[% problem.user.email | html %]'>
+<li><label for="username">[% loc('User:') %]</label>
+    <input type='text' class="form-control" id='username' name='username' value='[% problem.user.username | html %]'>
     [% PROCESS abuse_button %]
     [% PROCESS flag_button user=problem.user %]
 </li>
-<li>[% loc('Phone:') %] [% problem.user.phone | html %]</li>
+[% IF problem.user.phone_display != problem.user.username %]
+<li>[% loc('Phone:') %] [% problem.user.phone_display | html %]</li>
+[% END %]
+[% IF problem.user.email != problem.user.username %]
+<li>[% loc('Email:') %]
+<a href="mailto:[% problem.user.email | html %]">[% problem.user.email | html %]</a>
+</li>
+[% END %]
 <li><label class="inline-text" for="flagged">[% loc('Flagged:') %]</label>
     <input type="checkbox" id="flagged" name="flagged"[% ' checked' IF problem.flagged %]></li>
 <li><label class="inline-text" for="non_public">[% loc('Private') %]:</label>
@@ -175,6 +171,9 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 </ul>
 </li>
 [% END %]
+
+<li><label class="inline-text" for="closed_updates">[% loc('Closed to updates') %]:</label>
+    <input type="checkbox" id="closed_updates" name="closed_updates"[% ' checked' IF problem.extra.closed_updates %]></li>
 
 </ul>
 <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]">

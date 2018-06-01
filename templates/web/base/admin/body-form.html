@@ -25,6 +25,8 @@
         <input type="text" class="form-control" name="name" id="name" value="[% body.name | html %]" size="50">
     </p>
 
+    [% INCLUDE 'admin/_translations.html' %]
+
     <div class="admin-hint">
       <p>
         [% loc(
@@ -68,13 +70,12 @@
             your config file is not pointing to a live MapIt service.") %]
         [% END %]
         <br>
-        [% loc("For more information, see <a href='http://fixmystreet.org/customising/fms_and_mapit' class='admin-offsite-link'>How FixMyStreet uses Mapit</a>.")%]
+        [% loc("For more information, see <a href='https://fixmystreet.org/customising/fms_and_mapit' class='admin-offsite-link'>How FixMyStreet uses Mapit</a>.")%]
       </p>
     </div>
     <p>
         <label for="area_ids">[% loc('Area covered') %]</label>
-        <select class="form-control" name="area_ids" id="area_ids" multiple>
-            <option value=""> -- [% loc('Select an area') %] -- </option>
+        <select class="form-control js-multiple" name="area_ids" id="area_ids" multiple data-none="-- [% loc('Select an area') %] --">
             [% SET body_areas = body.areas %]
             [% FOR area IN areas %]
             [% SET aid = area.id %]

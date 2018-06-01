@@ -1,7 +1,3 @@
-use strict;
-use warnings;
-use Test::More;
-
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
@@ -12,9 +8,8 @@ subtest "check that the form goes to /around" => sub {
     $mech->get_ok('/');
     is $mech->uri->path, '/', "still on '/'";
 
-    # submit form
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/'
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'SW1A 1AA', } } );
     };
@@ -52,7 +47,7 @@ subtest "does pc, (x,y), (e,n) or (lat,lon) go to /around" => sub {
 
         # get the uri and check for 302
         FixMyStreet::override_config {
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             $mech->get_ok($uri);
         };
@@ -80,7 +75,7 @@ ok $mech->get('/report/' . $edinburgh_problems[2]->id);
 is $mech->res->code, 403, 'page forbidden';
 is $problem_rs->count, $num+5;
 
-my $oxon = $mech->create_body_ok(2237, 'Oxfordshire County Council', id => 2237);
+my $oxon = $mech->create_body_ok(2237, 'Oxfordshire County Council');
 subtest "prefilters /around if user has categories" => sub {
     my $user = $mech->log_in_ok('test@example.com');
     my $categories = [
@@ -97,7 +92,5 @@ subtest "prefilters /around if user has categories" => sub {
 };
 
 END {
-    $mech->delete_problems_for_body( 2651 );
-    $mech->delete_body($oxon);
     done_testing();
 }

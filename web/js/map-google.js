@@ -41,7 +41,7 @@ fixmystreet.maps = {};
             });
             fixmystreet.report_marker = marker;
             google.maps.event.removeListener(fixmystreet.event_update_map);
-            for (m=0; m<fixmystreet.markers.length; m++) {
+            for (var m=0; m<fixmystreet.markers.length; m++) {
                 fixmystreet.markers[m].setMap(null);
             }
         }
@@ -55,6 +55,9 @@ fixmystreet.maps = {};
         fixmystreet.event_update_map = google.maps.event.addListener(fixmystreet.map, 'idle', update_pins);
         google.maps.event.trigger(fixmystreet.map, 'idle');
     };
+
+    // This is a noop on Google Maps right now.
+    fixmystreet.maps.markers_highlight = function() {};
 
     function PaddingControl(div) {
         div.style.padding = '40px';
@@ -111,12 +114,9 @@ fixmystreet.maps = {};
 
     /* Pan data handler */
     function read_pin_json(obj) {
-        var current, current_near;
-        if (typeof(obj.current) != 'undefined' && (current = document.getElementById('current'))) {
-            current.innerHTML = obj.current;
-        }
-        if (typeof(obj.current_near) != 'undefined' && (current_near = document.getElementById('current_near'))) {
-            current_near.innerHTML = obj.current_near;
+        var reports_list;
+        if (typeof(obj.reports_list) != 'undefined' && (reports_list = document.getElementById('js-reports-list'))) {
+            reports_list.innerHTML = obj.reports_list;
         }
         fixmystreet.markers = markers_list( obj.pins, false );
     }
@@ -127,12 +127,10 @@ fixmystreet.maps = {};
             b_ne = b.getNorthEast(),
             bbox = b_sw.lng() + ',' + b_sw.lat() + ',' + b_ne.lng() + ',' + b_ne.lat(),
             params = {
+                ajax: 1,
                 bbox: bbox
             };
-        if (fixmystreet.all_pins) {
-            params.all_pins = 1;
-        }
-        $.getJSON('/ajax', params, read_pin_json);
+        $.getJSON('/around', params, read_pin_json);
     }
 
     function map_initialize() {
@@ -208,63 +206,24 @@ fixmystreet.maps = {};
         }
         */
 
-        $('#hide_pins_link').click(function(e) {
+        $('#hide_pins_link, .big-hide-pins-link').click(function(e) {
             var i, m;
             e.preventDefault();
-            var showhide = [
-                'Show pins', 'Hide pins',
-                'Dangos pinnau', 'Cuddio pinnau',
-                "Vis nåler", "Gjem nåler",
-                "Zeige Stecknadeln", "Stecknadeln ausblenden"
-            ];
-            for (i=0; i<showhide.length; i+=2) {
-                if (this.innerHTML == showhide[i]) {
-                    for (m=0; m<fixmystreet.markers.length; m++) {
-                        fixmystreet.markers[m].setMap(fixmystreet.map);
-                    }
-                    this.innerHTML = showhide[i+1];
-                } else if (this.innerHTML == showhide[i+1]) {
-                    for (m=0; m<fixmystreet.markers.length; m++) {
-                        fixmystreet.markers[m].setMap(null);
-                    }
-                    this.innerHTML = showhide[i];
+            if (this.innerHTML == translation_strings.show_pins) {
+                for (m=0; m<fixmystreet.markers.length; m++) {
+                    fixmystreet.markers[m].setMap(fixmystreet.map);
                 }
+                $('#hide_pins_link, .big-hide-pins-link').html(translation_strings.hide_pins);
+            } else if (this.innerHTML == translation_strings.hide_pins) {
+                for (m=0; m<fixmystreet.markers.length; m++) {
+                    fixmystreet.markers[m].setMap(null);
+                }
+                $('#hide_pins_link, .big-hide-pins-link').html(translation_strings.show_pins);
+            }
+            if (typeof ga !== 'undefined') {
+                ga('send', 'event', 'toggle-pins-on-map', 'click');
             }
         });
-
-        $('#all_pins_link').click(function(e) {
-            var i;
-            e.preventDefault();
-            for (i=0; i<fixmystreet.markers.length; i++) {
-                fixmystreet.markers[i].setMap(fixmystreet.map);
-            }
-            var texts = [
-                'en', 'Show old', 'Hide old',
-                'nb', 'Inkluder utdaterte problemer', 'Skjul utdaterte rapporter',
-                'cy', 'Cynnwys hen adroddiadau', 'Cuddio hen adroddiadau'
-            ];
-            for (i=0; i<texts.length; i+=3) {
-                if (this.innerHTML == texts[i+1]) {
-                    this.innerHTML = texts[i+2];
-                    fixmystreet.markers.protocol.options.params = { all_pins: 1 };
-                    fixmystreet.markers.refresh( { force: true } );
-                    lang = texts[i];
-                } else if (this.innerHTML == texts[i+2]) {
-                    this.innerHTML = texts[i+1];
-                    fixmystreet.markers.protocol.options.params = { };
-                    fixmystreet.markers.refresh( { force: true } );
-                    lang = texts[i];
-                }
-            }
-            if (lang == 'cy') {
-                document.getElementById('hide_pins_link').innerHTML = 'Cuddio pinnau';
-            } else if (lang == 'nb') {
-                document.getElementById('hide_pins_link').innerHTML = 'Gjem nåler';
-            } else {
-                document.getElementById('hide_pins_link').innerHTML = 'Hide pins';
-            }
-        });
-
     }
 
     google.maps.visualRefresh = true;

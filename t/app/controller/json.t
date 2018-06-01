@@ -1,8 +1,3 @@
-use strict;
-use warnings;
-
-use Test::More;
-
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
@@ -115,7 +110,5 @@ is_deeply    #
     }
   ],
   "correct response";
-
-$mech->delete_user($user);
 
 done_testing();

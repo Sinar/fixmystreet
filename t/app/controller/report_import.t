@@ -1,13 +1,11 @@
-use strict;
-use warnings;
-use Test::More;
-use LWP::Protocol::PSGI;
-
-use t::Mock::MapIt;
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
 use Web::Scraper;
 use Path::Class;
+use LWP::Protocol::PSGI;
+use t::Mock::MapItZurich;
+
+LWP::Protocol::PSGI->register(t::Mock::MapItZurich->to_psgi_app, host => 'mapit.zurich');
 
 my $mech = FixMyStreet::TestMech->new;
 $mech->get_ok('/import');
@@ -92,8 +90,6 @@ subtest "Test creating bad partial entries" => sub {
 };
 
 subtest "Submit a correct entry" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapIt->run_if_script, host => 'mapit.uk');
-
     $mech->get_ok('/import');
 
     $mech->submit_form_ok(    #
@@ -156,7 +152,6 @@ subtest "Submit a correct entry" => sub {
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
-        gender => undef,
       },
       "check imported fields are shown";
 
@@ -193,7 +188,6 @@ subtest "Submit a correct entry" => sub {
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
-        gender => undef,
       },
       "check imported fields are shown";
 
@@ -261,7 +255,7 @@ subtest "Submit a correct entry (with location)" => sub {
     # go to the token url
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok($token_url);
     };
@@ -281,14 +275,13 @@ subtest "Submit a correct entry (with location)" => sub {
         phone         => '',
         may_show_name => '1',
         category      => '-- Pick a category --',
-        gender => undef,
       },
       "check imported fields are shown";
 
     # change the details
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ { 'fixmystreet' => '.' } ],
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->submit_form_ok(    #
             {
@@ -321,7 +314,7 @@ subtest "Submit a correct entry (with location)" => sub {
 subtest "Submit a correct entry (with location) to cobrand" => sub {
   FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'zurich' ],
-    MAPIT_URL => 'http://global.mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.zurich/',
     MAPIT_TYPES => [ 'O08' ],
     MAPIT_ID_WHITELIST => [],
     MAP_TYPE => 'Zurich,OSM',
@@ -369,14 +362,12 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
         photo2         => '',
         photo3         => '',
         phone         => '',
-        email => 'test-ll@example.com',
+        username => 'test-ll@example.com',
       },
       "check imported fields are shown"
           or diag Dumper( $mech->visible_form_values ); use Data::Dumper;
 
-    my $user =
-      FixMyStreet::App->model('DB::User')
-      ->find( { email => 'test-ll@example.com' } );
+    my $user = FixMyStreet::App->model('DB::User')->find( { email => 'test-ll@example.com' } );
     ok $user, "Found a user";
 
     my $report = $user->problems->first;
@@ -389,7 +380,3 @@ subtest "Submit a correct entry (with location) to cobrand" => sub {
 };
 
 done_testing();
-
-END {
-    $mech->delete_body($body);
-}

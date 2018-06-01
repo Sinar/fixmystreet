@@ -31,8 +31,6 @@ sub determine_location_from_coords : Private {
 
     my $latitude = $c->get_param('latitude') || $c->get_param('lat');
     my $longitude = $c->get_param('longitude') || $c->get_param('lon');
-    $c->log->debug($longitude);
-    $c->log->debug($latitude);
 
     if ( defined $latitude && defined $longitude ) {
         ($c->stash->{latitude}, $c->stash->{longitude}) =
@@ -98,7 +96,6 @@ sub determine_location_from_pc : Private {
     if ( ref($error) eq 'ARRAY' ) {
         foreach (@$error) {
             my $a = $_->{address};
-            $a = decode_utf8($a) if !utf8::is_utf8($a);
             $a =~ s/, United Kingdom//;
             $a =~ s/, UK//;
             $_->{address} = $a;
@@ -111,6 +108,21 @@ sub determine_location_from_pc : Private {
     $c->stash->{location_error_pc_lookup} = 1;
     $c->stash->{location_error} = $error;
     return;
+}
+
+sub determine_location_from_bbox : Private {
+    my ( $self, $c ) = @_;
+
+    my $bbox = $c->get_param('bbox');
+    return unless $bbox;
+
+    my ($min_lon, $min_lat, $max_lon, $max_lat) = split /,/, $bbox;
+    my $longitude = ($max_lon + $min_lon ) / 2;
+    my $latitude = ($max_lat + $min_lat ) / 2;
+    $c->stash->{bbox} = $bbox;
+    $c->stash->{latitude} = $latitude;
+    $c->stash->{longitude} = $longitude;
+    return $c->forward('check_location');
 }
 
 =head2 check_location

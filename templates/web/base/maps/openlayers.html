@@ -6,8 +6,9 @@
 
 <input type="hidden" name="zoom" value="[% map.zoom %]">
 <div id="js-map-data"
+[%- UNLESS c.cobrand.call_hook('hide_areas_on_reports') %]
     data-area="[% map.area.join(',') %]"
-    data-all_pins='[% all_pins %]'
+[%- END %]
     data-latitude=[% map.latitude %]
     data-longitude=[% map.longitude %]
 [% IF map.any_zoom -%]
@@ -16,13 +17,14 @@
 [% IF map.zoom -%]
     data-zoom=[% map.zoom %]
 [%- END %]
-    data-pin_prefix='[% c.config.ADMIN_BASE_URL IF admin %][% c.cobrand.path_to_pin_icons %]',
+    data-pin_prefix='[% c.config.ADMIN_BASE_URL IF admin %][% c.cobrand.path_to_pin_icons %]'
+    data-pin_new_report_colour='[% c.cobrand.pin_new_report_colour %]'
     data-numZoomLevels=[% map.numZoomLevels %]
     data-zoomOffset=[% map.zoomOffset %]
-    data-map_type=[% map.map_type %]
+    data-map_type="[% map.map_type %]"
 [% IF include_key -%]
     data-key='[% c.config.BING_MAPS_API_KEY %]'
-[%- END %]
+[%- END -%]
 >
 </div>
 <div id="map_box" aria-hidden="true">
@@ -33,4 +35,4 @@
     [% IF map.copyright %]
     <div class="olControlAttribution" style="position: absolute;">[% map.copyright %]</div>
     [% END %]
-
+    <img id="loading-indicator" class="hidden" aria-hidden="true" src="/i/loading.svg" alt="Loading...">

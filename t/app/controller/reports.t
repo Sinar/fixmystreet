@@ -1,10 +1,14 @@
-use strict;
-use warnings;
-use Test::More;
+use Test::MockTime qw(:all);
 use FixMyStreet::TestMech;
 use mySociety::MaPit;
 use FixMyStreet::App;
+use FixMyStreet::Script::UpdateAllReports;
 use DateTime;
+
+set_absolute_time('2017-07-07T16:00:00');
+END {
+    restore_time;
+}
 
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
@@ -14,13 +18,19 @@ my $body_west_id = $mech->create_body_ok(2504, 'Westminster City Council')->id;
 my $body_fife_id = $mech->create_body_ok(2649, 'Fife Council')->id;
 my $body_slash_id = $mech->create_body_ok(10000, 'Electricity/Gas Council')->id;
 
-$mech->delete_problems_for_body( $body_west_id );
-$mech->delete_problems_for_body( $body_edin_id );
-$mech->delete_problems_for_body( $body_fife_id );
+my @edinburgh_problems = $mech->create_problems_for_body(3, $body_edin_id, 'All reports', { category => 'Potholes' });
+my @westminster_problems = $mech->create_problems_for_body(5, $body_west_id, 'All reports', { category => 'Graffiti' });
+my @fife_problems = $mech->create_problems_for_body(15, $body_fife_id, 'All reports', { category => 'Flytipping' });
 
-my @edinburgh_problems = $mech->create_problems_for_body(3, $body_edin_id, 'All reports');
-my @westminster_problems = $mech->create_problems_for_body(5, $body_west_id, 'All reports');
-my @fife_problems = $mech->create_problems_for_body(15, $body_fife_id, 'All reports');
+my $west_trans = FixMyStreet::DB->resultset('Translation')->find_or_create({
+    tbl => 'body',
+    object_id => $body_west_id,
+    col => 'name',
+    lang => 'de',
+    msgstr => 'De Westminster'
+});
+
+ok $west_trans, 'created westminster translation';
 
 is scalar @westminster_problems, 5, 'correct number of westminster problems created';
 is scalar @edinburgh_problems, 3, 'correct number of edinburgh problems created';
@@ -85,31 +95,41 @@ $fife_problems[10]->update( {
     state => 'hidden',
 });
 
+# Run the cron script old-data (for the table no longer used by default)
+FixMyStreet::Script::UpdateAllReports::generate(1);
+
 # Run the cron script that makes the data for /reports so we don't get an error.
-system( "bin/update-all-reports" );
+my $data = FixMyStreet::Script::UpdateAllReports::generate_dashboard();
 
 # check that we can get the page
-$mech->get_ok('/reports');
-$mech->title_like(qr{Summary reports});
+FixMyStreet::override_config {
+    TEST_DASHBOARD_DATA => $data,
+}, sub {
+    $mech->get_ok('/reports');
+};
+$mech->title_like(qr{Dashboard});
 $mech->content_contains('Birmingham');
 
-my $stats = $mech->extract_report_stats;
-
-is $stats->{'City of Edinburgh Council'}->[1], 2, 'correct number of new reports for Edinburgh';
-is $stats->{'City of Edinburgh Council'}->[2], 1, 'correct number of older reports for Edinburgh';
-
-is $stats->{'Westminster City Council'}->[1], 5, 'correct number of reports for Westminster';
-
-is $stats->{'Fife Council'}->[1], 5, 'correct number of new reports for Fife';
-is $stats->{'Fife Council'}->[2], 4, 'correct number of old reports for Fife';
-is $stats->{'Fife Council'}->[3], 1, 'correct number of unknown reports for Fife';
-is $stats->{'Fife Council'}->[4], 3, 'correct number of fixed reports for Fife';
-is $stats->{'Fife Council'}->[5], 1, 'correct number of older fixed reports for Fife';
+$mech->content_contains('&quot;Apr&quot;,&quot;May&quot;,&quot;Jun&quot;,&quot;Jul&quot;');
+$mech->content_contains('5,9,10,22');
+$mech->content_contains('2,3,4,4');
 
 FixMyStreet::override_config {
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
 }, sub {
-    $mech->follow_link_ok( { text_regex => qr/Birmingham/ } );
+    $mech->submit_form_ok( { with_fields => { body => $body_edin_id } }, 'Submitted dropdown okay' );
+    is $mech->uri->path, '/reports/City+of+Edinburgh+Council';
+
+    subtest "test ward pages" => sub {
+        $mech->get_ok('/reports/Birmingham/Bad-Ward');
+        is $mech->uri->path, '/reports/Birmingham+City+Council';
+        $mech->get_ok('/reports/Birmingham/Aston');
+        is $mech->uri->path, '/reports/Birmingham+City+Council/Aston';
+        $mech->get_ok('/reports/Birmingham/Aston|Bournville');
+        is $mech->uri->path, '/reports/Birmingham+City+Council/Aston%7CBournville';
+        $mech->content_contains('Aston, Bournville');
+    };
+
     $mech->get_ok('/reports/Westminster');
 };
 
@@ -121,57 +141,48 @@ my $problems = $mech->extract_problem_list;
 is scalar @$problems, 5, 'correct number of problems displayed';
 
 FixMyStreet::override_config {
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
+    TEST_DASHBOARD_DATA => $data,
 }, sub {
     $mech->get_ok('/reports');
-    $mech->follow_link_ok({ url_regex => qr{/reports/Electricity_Gas\+Council} });
+    $mech->submit_form_ok({ with_fields => { body => $body_slash_id } }, 'Submitted dropdown okay');
     is $mech->uri->path, '/reports/Electricity_Gas+Council', 'Path is correct';
 
-    $mech->get_ok('/reports/City+of+Edinburgh?t=new');
+    $mech->get_ok('/reports/City+of+Edinburgh?status=open');
 };
 $problems = $mech->extract_problem_list;
-is scalar @$problems, 2, 'correct number of new problems displayed';
+is scalar @$problems, 3, 'correct number of open problems displayed';
 
 FixMyStreet::override_config {
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
 }, sub {
-    $mech->get_ok('/reports/City+of+Edinburgh?t=older');
+    $mech->get_ok('/reports/City+of+Edinburgh?status=closed');
 };
 $problems = $mech->extract_problem_list;
-is scalar @$problems, 1, 'correct number of older problems displayed';
+is scalar @$problems, 0, 'correct number of closed problems displayed';
 
 for my $test (
     {
-        desc => 'new fife problems on report page',
-        type => 'new',
-        expected => 5
+        desc => 'open fife problems on report page',
+        type => 'open',
+        expected => 10
     },
     {
-        desc => 'older fife problems on report page',
-        type => 'older',
-        expected => 4
-    },
-    {
-        desc => 'unknown fife problems on report page',
-        type => 'unknown',
-        expected => 1
+        desc => 'closed fife problems on report page',
+        type => 'closed',
+        expected => 0
     },
     {
         desc => 'fixed fife problems on report page',
         type => 'fixed',
-        expected => 3
-    },
-    {
-        desc => 'older_fixed fife problems on report page',
-        type => 'older_fixed',
-        expected => 1
+        expected => 4
     },
 ) {
     subtest $test->{desc} => sub {
         FixMyStreet::override_config {
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
-            $mech->get_ok('/reports/Fife+Council?t=' . $test->{type});
+            $mech->get_ok('/reports/Fife+Council?status=' . $test->{type});
         };
 
         $problems = $mech->extract_problem_list;
@@ -183,7 +194,7 @@ my $private = $westminster_problems[2];
 ok $private->update( { non_public => 1 } ), 'problem marked non public';
 
 FixMyStreet::override_config {
-    MAPIT_URL => 'http://mapit.mysociety.org/',
+    MAPIT_URL => 'http://mapit.uk/',
 }, sub {
     $mech->get_ok('/reports/Westminster');
 };
@@ -192,14 +203,19 @@ is scalar @$problems, 4, 'only public problems are displayed';
 
 $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible');
 
-$mech->get_ok('/reports');
-$stats = $mech->extract_report_stats;
-is $stats->{'Westminster City Council'}->[1], 5, 'non public reports included in stats';
+# No change to numbers if report is non-public
+FixMyStreet::override_config {
+    TEST_DASHBOARD_DATA => $data,
+}, sub {
+    $mech->get_ok('/reports');
+};
+$mech->content_contains('&quot;Apr&quot;,&quot;May&quot;,&quot;Jun&quot;,&quot;Jul&quot;');
+$mech->content_contains('5,9,10,22');
 
 subtest "test fiksgatami all reports page" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'fiksgatami' ],
-        MAPIT_URL => 'http://mapit.nuug.no/',
+        TEST_DASHBOARD_DATA => $data, # Not relevant to what we're testing, just so page loads
     }, sub {
         $mech->create_body_ok(3, 'Oslo');
         ok $mech->host("fiksgatami.no"), 'change host to fiksgatami';
@@ -213,14 +229,14 @@ subtest "test fiksgatami all reports page" => sub {
 subtest "test greenwich all reports page" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'greenwich' ],
-        MAPIT_URL => 'http://mapit.mysociety.org/'
+        MAPIT_URL => 'http://mapit.uk/'
     }, sub {
         my $body = $mech->create_body_ok(2493, 'Royal Borough of Greenwich');
         my $deleted_contact = $mech->create_contact_ok(
             body_id => $body->id,
             category => 'Deleted',
             email => 'deleted@example.com',
-            deleted => 1
+            state => 'deleted',
         );
         ok $mech->host("greenwich.fixmystreet.com"), 'change host to greenwich';
         $mech->get_ok('/reports/Royal+Borough+of+Greenwich');
@@ -233,5 +249,142 @@ subtest "test greenwich all reports page" => sub {
     }
 };
 
-done_testing();
+subtest "it lists shortlisted reports" => sub {
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/'
+    }, sub {
+        my $body = FixMyStreet::App->model('DB::Body')->find( $body_edin_id );
+        my $user = $mech->log_in_ok( 'test@example.com' );
+        $user->update({ from_body => $body });
+        $user->user_body_permissions->find_or_create({
+            body => $body,
+            permission_type => 'planned_reports',
+        });
 
+        my ($shortlisted_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'Shortlisted report');
+        my ($unshortlisted_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'Unshortlisted report');
+        my ($removed_from_shortlist_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'Removed from shortlist report');
+
+        $user->add_to_planned_reports($shortlisted_problem);
+        $user->add_to_planned_reports($removed_from_shortlist_problem);
+        $user->remove_from_planned_reports($removed_from_shortlist_problem);
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council');
+        $mech->content_contains('<option value="shortlisted">Shortlisted</option>');
+        $mech->content_contains('<option value="unshortlisted">Unshortlisted</option>');
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council?status=shortlisted');
+
+        $mech->content_contains('Shortlisted report');
+        $mech->content_lacks('Unshortlisted report');
+        $mech->content_lacks('Removed from shortlist report');
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council?status=shortlisted,open');
+
+        $mech->content_contains('Shortlisted report');
+        $mech->content_lacks('Unshortlisted report');
+        $mech->content_lacks('Removed from shortlist report');
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council?status=unshortlisted,open');
+
+        $mech->content_contains('Unshortlisted report');
+        $mech->content_contains('Removed from shortlist report');
+        $mech->content_lacks('Shortlisted report');
+
+        $user->admin_user_body_permissions->delete;
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council');
+        $mech->content_lacks('<option value="shortlisted">Shortlisted</option>');
+        $mech->content_lacks('<option value="unshortlisted">Unshortlisted</option>');
+    };
+};
+
+subtest "it allows body users to filter by subtypes" => sub {
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/'
+    }, sub {
+        my $body = FixMyStreet::App->model('DB::Body')->find( $body_edin_id );
+        my $user = $mech->log_in_ok( 'test@example.com' );
+        $user->update({ from_body => $body });
+
+        my ($investigating_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'Investigating report');
+        my ($scheduled_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'A Scheduled report');
+        my ($in_progress_problem) = $mech->create_problems_for_body(1, $body_edin_id, 'In progress report');
+
+        $investigating_problem->update({ state => 'investigating' });
+        $scheduled_problem->update({ state => 'action scheduled' });
+        $in_progress_problem->update({ state => 'in progress' });
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council');
+        $mech->content_contains('<option value="investigating">Investigating</option>');
+        $mech->content_contains('<option value="in progress">In progress</option>');
+        $mech->content_contains('<option value="action scheduled">Action scheduled</option>');
+        $mech->content_contains('<option value="unable to fix">No further action</option>');
+        $mech->content_contains('<option value="not responsible">Not responsible</option>');
+        $mech->content_contains('<option value="internal referral">Internal referral</option>');
+        $mech->content_contains('<option value="duplicate">Duplicate</option>');
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council?status=investigating');
+
+        $in_progress_problem->discard_changes();
+
+        $mech->content_contains('Investigating report');
+        $mech->content_lacks('In progress report');
+        $mech->content_lacks('A Scheduled report');
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council?status=in progress');
+
+        $mech->content_lacks('Investigating report');
+        $mech->content_contains('In progress report');
+        $mech->content_lacks('A Scheduled report');
+    };
+};
+
+subtest "it does not allow non body users to filter by subtypes" => sub {
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/'
+    }, sub {
+        my $user = $mech->log_in_ok( 'test@example.com' );
+        $user->update({ from_body => undef });
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council');
+        $mech->content_lacks('<option value="investigating">Investigating</option>');
+        $mech->content_lacks('<option value="in progress">In progress</option>');
+        $mech->content_lacks('<option value="action scheduled">Action scheduled</option>');
+        $mech->content_lacks('<option value="unable to fix">No further action</option>');
+        $mech->content_lacks('<option value="not responsible">Not responsible</option>');
+        $mech->content_lacks('<option value="internal referral">Internal referral</option>');
+        $mech->content_lacks('<option value="duplicate">Duplicate</option>');
+    };
+};
+
+subtest "it does not allow body users to filter subcategories for other bodies" => sub {
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/'
+    }, sub {
+        my $body = FixMyStreet::App->model('DB::Body')->find( $body_west_id );
+        my $user = $mech->log_in_ok( 'test@example.com' );
+        $user->update({ from_body => $body });
+
+        $mech->get_ok('/reports/City+of+Edinburgh+Council');
+
+        $mech->content_lacks('<option value="investigating">Investigating</option>');
+        $mech->content_lacks('<option value="in progress">In progress</option>');
+        $mech->content_lacks('<option value="action scheduled">Action scheduled</option>');
+        $mech->content_lacks('<option value="unable to fix">No further action</option>');
+        $mech->content_lacks('<option value="not responsible">Not responsible</option>');
+        $mech->content_lacks('<option value="internal referral">Internal referral</option>');
+        $mech->content_lacks('<option value="duplicate">Duplicate</option>');
+    };
+};
+
+subtest "can use translated body name" => sub {
+    FixMyStreet::override_config {
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->get_ok('/reports/De Westminster');
+        $mech->title_like(qr/Westminster City Council/);
+    };
+};
+
+done_testing();

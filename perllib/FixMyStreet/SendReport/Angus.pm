@@ -7,7 +7,6 @@ BEGIN { extends 'FixMyStreet::SendReport'; }
 use Try::Tiny;
 use Encode;
 use XML::Simple;
-use mySociety::Web qw(ent);
 
 sub get_auth_token {
     my ($self, $authxml) = @_;
@@ -155,7 +154,6 @@ sub send {
         my $external_id = $self->get_external_id( $result );
         if ( $external_id ) {
             $row->external_id( $external_id );
-            $row->send_method_used('Angus');
             $return = 0;
         }
     } catch {

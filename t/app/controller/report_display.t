@@ -1,7 +1,3 @@
-use strict;
-use warnings;
-use Test::More;
-
 use FixMyStreet::TestMech;
 use Web::Scraper;
 use Path::Class;
@@ -10,8 +6,6 @@ use DateTime;
 
 my $mech = FixMyStreet::TestMech->new;
 
-# create a test user and report
-$mech->delete_user('test@example.com');
 my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
 my $user2 = $mech->create_user_ok('test2@example.com', name => 'Other User');
@@ -25,40 +19,20 @@ my $dt = DateTime->new(
     second => 23
 );
 
-my $report = FixMyStreet::App->model('DB::Problem')->find_or_create(
-    {
-        postcode           => 'SW1A 1AA',
-        bodies_str         => '2504',
-        areas              => ',105255,11806,11828,2247,2504,',
-        category           => 'Other',
-        title              => 'Test 2',
-        detail             => 'Test 2 Detail',
-        used_map           => 't',
-        name               => 'Test User',
-        anonymous          => 'f',
-        state              => 'confirmed',
-        confirmed          => $dt->ymd . ' ' . $dt->hms,
-        lang               => 'en-gb',
-        service            => '',
-        cobrand            => 'default',
-        cobrand_data       => '',
-        send_questionnaire => 't',
-        latitude           => '51.5016605453401',
-        longitude          => '-0.142497580865087',
-        user_id            => $user->id,
-    }
-);
+my $westminster = $mech->create_body_ok(2504, 'Westminster City Council');
+my ($report, $report2) = $mech->create_problems_for_body(2, $westminster->id, "Example", {
+    user => $user,
+    confirmed => $dt->ymd . ' ' . $dt->hms,
+});
+$report->update({
+    title => 'Test 2',
+    detail => 'Test 2 Detail'
+});
 my $report_id = $report->id;
-ok $report, "created test report - $report_id";
 
 subtest "check that no id redirects to homepage" => sub {
     $mech->get_ok('/report');
     is $mech->uri->path, '/', "at home page";
-};
-
-subtest "test id=NNN redirects to /NNN" => sub {
-    $mech->get_ok("/report?id=$report_id");
-    is $mech->uri->path, "/report/$report_id", "at /report/$report_id";
 };
 
 subtest "test bad council email clients web links" => sub {
@@ -125,6 +99,28 @@ subtest "check owner of report can view non public reports" => sub {
     ok $report->update( { non_public => 0 } ), 'make report public';
 };
 
+subtest "duplicate reports are signposted correctly" => sub {
+    $report2->set_extra_metadata(duplicate_of => $report->id);
+    $report2->state('duplicate');
+    $report2->update;
+
+    my $report2_id = $report2->id;
+    ok $mech->get("/report/$report2_id"), "get '/report/$report2_id'";
+    $mech->content_contains('This report is a duplicate');
+    $mech->content_contains($report->title);
+    $mech->log_out_ok;
+
+    $report2->unset_extra_metadata('duplicate_of');
+    $report2->state('confirmed');
+    $report2->update;
+};
+
+subtest "test /report/ajax" => sub {
+    my $json = $mech->get_ok_json( "/report/ajax/$report_id" );
+    is $json->{report}->{title}, "Test 2", "correct title";
+    is $json->{report}->{state}, "confirmed", "correct state";
+};
+
 subtest "test a good report" => sub {
     $mech->get_ok("/report/$report_id");
     is $mech->uri->path, "/report/$report_id", "at /report/$report_id";
@@ -138,7 +134,7 @@ subtest "test a good report" => sub {
 
     my %fields = (
         name      => '',
-        rznvy     => '',
+        username => '',
         update    => '',
         add_alert => 1, # defaults to true
         fixed     => undef
@@ -209,13 +205,13 @@ foreach my $meta (
     $report->update;
     subtest "test correct problem meta information" => sub {
         $mech->get_ok("/report/$report_id");
-    
+
     is $mech->extract_problem_meta, $meta->{meta};
 
     };
 }
 
-for my $test ( 
+for my $test (
     {
         description => 'new report',
         date => DateTime->now,
@@ -323,7 +319,7 @@ for my $test (
         date => DateTime->now,
         state => 'investigating',
         banner_id => 'progress',
-        banner_text => 'progress',
+        banner_text => 'investigating',
         fixed => 0
     },
     {
@@ -331,7 +327,7 @@ for my $test (
         date => DateTime->now,
         state => 'action scheduled',
         banner_id => 'progress',
-        banner_text => 'progress',
+        banner_text => 'action scheduled',
         fixed => 0
     },
     {
@@ -339,7 +335,7 @@ for my $test (
         date => DateTime->now,
         state => 'planned',
         banner_id => 'progress',
-        banner_text => 'progress',
+        banner_text => 'planned',
         fixed => 0
     },
     {
@@ -384,7 +380,7 @@ for my $test (
 my $body_westminster = $mech->create_body_ok(2504, 'Westminster City Council');
 my $body_camden = $mech->create_body_ok(2505, 'Camden Borough Council');
 
-for my $test ( 
+for my $test (
     {
         desc => 'no state dropdown if user not from authority',
         from_body => undef,
@@ -429,108 +425,58 @@ for my $test (
     };
 }
 
-subtest "Zurich unconfirmeds are 200" => sub {
-    FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ 'zurich' ],
-        MAP_TYPE => 'Zurich,OSM',
-    }, sub {
-        $mech->host( 'zurich.example.com' );
-        ok $report->update( { state => 'unconfirmed' } ), 'unconfirm report';
-        $mech->get_ok("/report/$report_id");
-        $mech->content_contains( '&Uuml;berpr&uuml;fung ausstehend' );
-        ok $report->update( { state => 'confirmed' } ), 'confirm report again';
-        $mech->host( 'www.fixmystreet.com' );
-    };
+my $oxfordshire = $mech->create_body_ok(2237, 'Oxfordshire County Council');
+my $oxfordshireuser = $mech->create_user_ok('counciluser@example.com', name => 'Council User', from_body => $oxfordshire);
+
+subtest "check user details show when a user has correct permissions" => sub {
+    $report->update( {
+      name => 'Oxfordshire County Council',
+      user_id => $oxfordshireuser->id,
+      service => '',
+      anonymous => 'f',
+      bodies_str => $oxfordshire->id,
+      confirmed => '2012-01-10 15:17:00'
+    });
+
+    ok $oxfordshireuser->user_body_permissions->create({
+        body => $oxfordshire,
+        permission_type => 'view_body_contribute_details',
+    });
+
+    $mech->log_in_ok( $oxfordshireuser->email );
+    ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
+    is $mech->extract_problem_meta,
+      'Reported in the Roads category by Oxfordshire County Council (Council User) at 15:17, Tue 10 January 2012 (Hide your name?)',
+      'correct problem meta information';
+
+    ok $oxfordshireuser->user_body_permissions->delete_all, "Remove view_body_contribute_details permissions";
+
+    ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
+    is $mech->extract_problem_meta,
+      'Reported in the Roads category by Oxfordshire County Council at 15:17, Tue 10 January 2012 (Hide your name?)',
+      'correct problem meta information for user without relevant permissions';
+
+    $mech->log_out_ok;
+
+    ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
+    is $mech->extract_problem_meta,
+      'Reported in the Roads category by Oxfordshire County Council at 15:17, Tue 10 January 2012',
+      'correct problem meta information for logged out user';
+
 };
 
-subtest "Zurich banners are displayed correctly" => sub {
-  FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'zurich' ],
-    MAP_TYPE => 'Zurich,OSM',
-  }, sub {
-    $mech->host( 'zurich.example.com' );
+subtest "check brackets don't appear when username and report name are the same" => sub {
+    $report->update( {
+      name => 'Council User'
+    });
 
-    for my $test (
-        {
-            description => 'new report',
-            state => 'unconfirmed',
-            banner_id => 'closed',
-            banner_text => 'Erfasst'
-        },
-        {
-            description => 'confirmed report',
-            state => 'confirmed',
-            banner_id => 'closed',
-            banner_text => 'Aufgenommen',
-        },
-        {
-            description => 'fixed report',
-            state => 'fixed - council',
-            banner_id => 'fixed',
-            banner_text => 'Beantwortet',
-        },
-        {
-            description => 'closed report',
-            state => 'closed',
-            banner_id => 'closed',
-            banner_text => _('Extern'),
-        },
-        {
-            description => 'in progress report',
-            state => 'in progress',
-            banner_id => 'progress',
-            banner_text => 'In Bearbeitung',
-        },
-        {
-            description => 'planned report',
-            state => 'planned',
-            banner_id => 'progress',
-            banner_text => 'In Bearbeitung',
-        },
-        {
-            description => 'planned report',
-            state => 'planned',
-            banner_id => 'progress',
-            banner_text => 'In Bearbeitung',
-        },
-        {
-            description => 'jurisdiction unknown',
-            state => 'unable to fix',
-            banner_id => 'fixed',
-            # We can't use _('Jurisdiction Unknown') here because
-            # TestMech::extract_problem_banner decodes the HTML entities before
-            # the string is passed back.
-            banner_text => 'Zust\x{e4}ndigkeit unbekannt',
-        },
-    ) {
-        subtest "banner for $test->{description}" => sub {
-            $report->state( $test->{state} );
-            $report->update;
-
-            $mech->get_ok("/report/$report_id");
-            is $mech->uri->path, "/report/$report_id", "at /report/$report_id";
-            my $banner = $mech->extract_problem_banner;
-            if ( $banner->{text} ) {
-                $banner->{text} =~ s/^ //g;
-                $banner->{text} =~ s/ $//g;
-            }
-
-            is $banner->{id}, $test->{banner_id}, 'banner id';
-            if ($test->{banner_text}) {
-                like_string( $banner->{text}, qr/$test->{banner_text}/i, 'banner text is ' . $test->{banner_text} );
-            } else {
-                is $banner->{text}, $test->{banner_text}, 'banner text';
-            }
-
-        };
-    }
-
-    $mech->host( 'www.fixmystreet.com' );
-  };
+    $mech->log_in_ok( $oxfordshireuser->email );
+    ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
+    is $mech->extract_problem_meta,
+      'Reported in the Roads category by Council User at 15:17, Tue 10 January 2012 (Hide your name?)',
+      'correct problem meta information';
 };
-
 
 END {
-    $mech->delete_user('test@example.com');
     done_testing();
 }

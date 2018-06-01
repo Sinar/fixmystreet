@@ -30,12 +30,8 @@ sub tile_parameters {
         dpi             => 96,
         inches_per_unit => 39.3701, # BNG uses metres
         projection      => 'EPSG:27700',
-        # The original tile origin values from the getCapabilities call are
-        # -5220400.0/4470200.0, but this results in the map tile being offset
-        # slightly. These corrected values were figured out manually by
-        # trial and error...
-        origin_x        => -5220385.5,
-        origin_y        => 4470189.0,
+        origin_x        => -5220400.0,
+        origin_y        => 4470200.0,
     };
     return $params;
 }
@@ -60,9 +56,16 @@ sub copyright {
     return '&copy; BCC';
 }
 
-sub map_type {
-    return 'bristol';
-}
+sub map_template { 'bristol' }
+
+sub map_javascript { [
+    '/vendor/OpenLayers/OpenLayers.bristol.js',
+    '/js/map-OpenLayers.js',
+    '/js/map-wmts-base.js',
+    '/js/map-wmts-bristol.js',
+    '/cobrands/fixmystreet/assets.js',
+    '/cobrands/bristol/js.js',
+] }
 
 # Reproject a WGS84 lat/lon into BNG easting/northing
 sub reproject_from_latlon($$$) {

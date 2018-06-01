@@ -1,8 +1,3 @@
-use strict;
-use warnings;
-
-use Test::More;
-
 use FixMyStreet::TestMech;
 use FixMyStreet::DB;
 
@@ -19,6 +14,7 @@ is $user->planned_reports, 0;
 $user->add_to_planned_reports($problem);
 is $user->active_planned_reports, 1;
 is $user->planned_reports, 1;
+is $user->is_planned_report($problem), 1;
 
 $user->add_to_planned_reports($problem);
 is $user->active_planned_reports, 1;
@@ -27,10 +23,14 @@ is $user->planned_reports, 1;
 $user->remove_from_planned_reports($problem);
 is $user->active_planned_reports, 0;
 is $user->planned_reports, 1;
+$user->discard_changes;
+is $user->is_planned_report($problem), 0;
 
 $user->add_to_planned_reports($problem);
 is $user->active_planned_reports, 1;
 is $user->planned_reports, 2;
+$user->discard_changes;
+is $user->is_planned_report($problem), 1;
 
 $user2->add_to_planned_reports($problem);
 is $user->active_planned_reports, 0;
@@ -45,8 +45,3 @@ is $user2->active_planned_reports, 0;
 is $user2->planned_reports, 1;
 
 done_testing();
-
-END {
-    $mech->delete_user($user);
-    $mech->delete_user($user2);
-}

@@ -18,8 +18,18 @@
         </li>
         <li><label for="email">[% loc('Email:') %]</label>
         <input type='text' class="form-control" id='email' name='email' value='[% user.email | html %]'></li>
+        <li><label class="inline" for="email_verified">[% loc('Email verified:') %]</label>
+        <input type="checkbox" id="email_verified" name="email_verified" value="1" [% user.email_verified ? ' checked' : '' %]>
         <li><label for="phone">[% loc('Phone:') %]</label>
         <input type='text' class="form-control" id='phone' name='phone' value='[% user.phone | html %]'></li>
+        <li><label class="inline" for="phone_verified">[% loc('Phone verified:') %]</label>
+        <input type="checkbox" id="phone_verified" name="phone_verified" value="1" [% user.phone_verified ? ' checked' : '' %]>
+
+      [% IF username_in_abuse %]
+      <li>
+            <p class="error">[% loc('User in abuse table') %] <input name="unban" type="submit" value="[% loc('Unban') %]"></p>
+      </li>
+      [% END %]
 
       [% IF c.user.is_superuser || c.cobrand.moniker == 'zurich' %]
         <li>
@@ -33,23 +43,27 @@
               %]
             </p>
           </div>
-          [% loc('Body:') %] <select class="form-control" id='body' name='body'>
+          <label for="body">[% loc('Body:') %]</label>
+          <select class="form-control" id='body' name='body'>
             <option value=''>[% loc('No body') %]</option>
           [% FOR body IN bodies %]
             <option value="[% body.id %]"[% ' selected data-originally-selected' IF body.id == user.from_body.id %]>[% body.name %]</option>
           [% END %]
           </select>
         </li>
-        [% ELSE %]
-          <li>
+      [% ELSE %]
+        <li>
             <div class="admin-hint">
               <p>
                 [% loc("Staff users have permission to log in to the admin.") %]
               </p>
             </div>
-            [% loc('Staff:') %] <input type="checkbox" id="body" name="body" value="[% c.user.from_body.id %]" [% user.from_body.id == c.user.from_body.id ? ' checked' : '' %] [% 'disabled' UNLESS c.user.is_superuser OR c.user.has_body_permission_to('user_assign_body') %]>
+            <label>
+              [% loc('Staff:') %]
+              <input type="checkbox" id="body" name="body" value="[% c.user.from_body.id %]" [% user.from_body.id == c.user.from_body.id ? ' checked' : '' %] [% 'disabled' UNLESS c.user.has_body_permission_to('user_assign_body') %]>
+            </label>
           </li>
-        [% END %]
+      [% END %]
 
         [% IF areas AND c.cobrand.moniker != 'zurich' %]
           <li>
@@ -61,7 +75,7 @@
                 %]
               </p>
             </div>
-            [% loc('Area:') %]
+            <label for="area_id">[% loc('Area:') %]</label>
             <select class="form-control" id='area_id' name='area_id' [% 'disabled' UNLESS c.user.has_permission_to('user_assign_areas', user.from_body.id) %]>
               <option value=''>[% loc('No area') %]</option>
               [% FOREACH area IN areas %]
@@ -97,7 +111,10 @@
             </p>
           </div>
 
-          [% loc('Flagged:') %] <input type="checkbox" id="flagged" name="flagged"[% user.flagged ? ' checked' : '' %]>
+          <label>
+            [% loc('Flagged:') %]
+            <input type="checkbox" id="flagged" name="flagged"[% user.flagged ? ' checked' : '' %]>
+          </label>
         </li>
 
         [% UNLESS user.is_superuser %]
@@ -108,8 +125,8 @@
               </p>
             </div>
             [% IF c.user.is_superuser %]
-              [% loc('Trusted by bodies:') %]<br />
-              <select class="form-control" id='body' name='trusted_bodies' multiple>
+              <label for="trusted_bodies">[% loc('Trusted by bodies:') %]</label>
+              <select class="form-control js-multiple" id='trusted_bodies' name='trusted_bodies' multiple>
                 [% FOR body IN bodies %]
                   <option value="[% body.id %]"[% ' selected' IF user.has_permission_to('trusted', body.id) %]>[% body.name %]</option>
                 [% END %]
@@ -121,14 +138,6 @@
               </label>
             [% END %]
           </li>
-          <li>
-            <div class="admin-hint">
-              <p>
-                [% loc("Reports from users with high enough reputation will be sent immediately without requiring inspection. Each category's threshold can be managed on its edit page. Users earn reputation when a report they have made is marked as inspected by inspectors.") %]
-              </p>
-            </div>
-            [% loc('Reputation:') %] [% user.get_extra_metadata('reputation') %]
-          </li>
         [% END %]
 
         [% IF c.user.is_superuser %]
@@ -138,7 +147,10 @@
                 [% loc("Superusers have permission to perform <strong>all actions</strong> within the admin.") %]
               </p>
             </div>
-            [% loc('Superuser:') %] <input type="checkbox" id="is_superuser" name="is_superuser"[% user.is_superuser ? ' checked' : '' %]>
+            <label>
+              [% loc('Superuser:') %]
+              <input type="checkbox" id="is_superuser" name="is_superuser"[% user.is_superuser ? ' checked' : '' %]>
+            </label>
           </li>
         [% END %]
 
@@ -162,7 +174,7 @@
                 [% FOREACH permission IN group.value %]
                   <li>
                     <label class="inline">
-                      <input type="checkbox" id="perms_[% permission.key %]" name="permissions[[% permission.key %]]" [% "checked" IF user.has_body_permission_to(permission.key) %]>
+                      <input type="checkbox" id="perms_[% permission.key %]" name="permissions[[% permission.key %]]" [% "checked" IF NOT user.is_superuser AND user.has_body_permission_to(permission.key) %]>
                       [% permission.value %]
                     </label>
                   </li>
@@ -173,6 +185,18 @@
             </ul>
         [% END %]
       [% END %]
+      [% TRY %][% INCLUDE 'admin/user-form-extra-fields.html' %][% CATCH file %][% END %]
     </ul>
-    <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" >
+    <p>
+      <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" >
+    </p>
+  [% IF user AND NOT user.from_body %]
+    <ul class="no-bullets danger-zone">
+      <li><input class="btn-danger" type="submit" name="logout_everywhere" value="[% loc('Log out of all sessions') %]">
+      <li><input class="btn-danger" type="submit" name="anon_everywhere" value="[% loc('Make anonymous on all reports and updates') %]">
+      <li><input class="btn-danger" type="submit" name="hide_everywhere" value="[% loc('Hide all reports and updates') %]">
+      <li><input class="btn-danger" type="submit" name="remove_account" value="[% loc('Remove account details') %]">
+    </ul>
+  [% END %]
+
 </form>

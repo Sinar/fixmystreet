@@ -19,16 +19,22 @@ __PACKAGE__->add_columns(
     sequence          => "users_id_seq",
   },
   "email",
-  { data_type => "text", is_nullable => 0 },
+  { data_type => "text", is_nullable => 1 },
+  "email_verified",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "name",
   { data_type => "text", is_nullable => 1 },
   "phone",
   { data_type => "text", is_nullable => 1 },
+  "phone_verified",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "password",
   { data_type => "text", default_value => "", is_nullable => 0 },
   "from_body",
   { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
   "flagged",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "is_superuser",
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "title",
   { data_type => "text", is_nullable => 1 },
@@ -36,15 +42,26 @@ __PACKAGE__->add_columns(
   { data_type => "bigint", is_nullable => 1 },
   "facebook_id",
   { data_type => "bigint", is_nullable => 1 },
-  "is_superuser",
-  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "area_id",
   { data_type => "integer", is_nullable => 1 },
   "extra",
   { data_type => "text", is_nullable => 1 },
+  "created",
+  {
+    data_type     => "timestamp",
+    default_value => \"current_timestamp",
+    is_nullable   => 0,
+    original      => { default_value => \"now()" },
+  },
+  "last_active",
+  {
+    data_type     => "timestamp",
+    default_value => \"current_timestamp",
+    is_nullable   => 0,
+    original      => { default_value => \"now()" },
+  },
 );
 __PACKAGE__->set_primary_key("id");
-__PACKAGE__->add_unique_constraint("users_email_key", ["email"]);
 __PACKAGE__->add_unique_constraint("users_facebook_id_key", ["facebook_id"]);
 __PACKAGE__->add_unique_constraint("users_twitter_id_key", ["twitter_id"]);
 __PACKAGE__->has_many(
@@ -102,13 +119,19 @@ __PACKAGE__->has_many(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2016-09-16 14:22:10
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:7wfF1VnZax2QTXCIPXr+vg
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2018-05-23 18:54:36
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:/V7+Ygv/t6VX8dDhNGN16w
+
+# These are not fully unique constraints (they only are when the *_verified
+# is true), but this is managed in ResultSet::User's find() wrapper.
+__PACKAGE__->add_unique_constraint("users_email_verified_key", ["email", "email_verified"]);
+__PACKAGE__->add_unique_constraint("users_phone_verified_key", ["phone", "phone_verified"]);
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 
 use Moo;
+use FixMyStreet::SMS;
 use mySociety::EmailUtil;
 use namespace::clean -except => [ 'meta' ];
 
@@ -116,14 +139,39 @@ with 'FixMyStreet::Roles::Extra';
 
 __PACKAGE__->many_to_many( planned_reports => 'user_planned_reports', 'report' );
 
+sub cost {
+    FixMyStreet->test_mode ? 1 : 12;
+}
+
 __PACKAGE__->add_columns(
     "password" => {
         encode_column => 1,
         encode_class => 'Crypt::Eksblowfish::Bcrypt',
-        encode_args => { cost => 8 },
+        encode_args => { cost => cost() },
         encode_check_method => 'check_password',
     },
 );
+
+=head2 username
+
+Returns a verified email or phone for this user, preferring email,
+or undef if neither verified (shouldn't happen).
+
+=cut
+
+sub username {
+    my $self = shift;
+    return $self->email if $self->email_verified;
+    return $self->phone_display if $self->phone_verified;
+}
+
+sub phone_display {
+    my $self = shift;
+    return $self->phone unless $self->phone;
+    my $country = FixMyStreet->config('PHONE_COUNTRY');
+    my $parsed = FixMyStreet::SMS->parse_username($self->phone);
+    return $parsed->{phone} ? $parsed->{phone}->format_for_country($country) : $self->phone;
+}
 
 sub latest_anonymity {
     my $self = shift;
@@ -157,11 +205,23 @@ sub check_for_errors {
         $errors{name} = _('Please enter your name');
     }
 
-    if ( $self->email !~ /\S/ ) {
-        $errors{email} = _('Please enter your email');
-    }
-    elsif ( !mySociety::EmailUtil::is_valid_email( $self->email ) ) {
-        $errors{email} = _('Please enter a valid email');
+    if ($self->email_verified) {
+        if ($self->email !~ /\S/) {
+            $errors{username} = _('Please enter your email');
+        } elsif (!mySociety::EmailUtil::is_valid_email($self->email)) {
+            $errors{username} = _('Please enter a valid email');
+        }
+    } elsif ($self->phone_verified) {
+        my $parsed = FixMyStreet::SMS->parse_username($self->phone);
+        if (!$parsed->{phone}) {
+            # Errors with the phone number may apply to both the username or
+            # phone field depending on the form.
+            $errors{username} = _('Please check your phone number is correct');
+            $errors{phone} = _('Please check your phone number is correct');
+        } elsif (!$parsed->{may_be_mobile}) {
+            $errors{username} = _('Please enter a mobile number');
+            $errors{phone} = _('Please enter a mobile number');
+        }
     }
 
     return \%errors;
@@ -202,6 +262,27 @@ sub alert_for_problem {
         alert_type => 'new_updates',
         parameter  => $id,
     } );
+}
+
+=head2 create_alert
+
+Sign a user up to receive alerts on a given problem
+
+=cut
+
+sub create_alert {
+    my ( $self, $id, $options ) = @_;
+    my $alert = $self->alert_for_problem($id);
+
+    unless ( $alert ) {
+      $alert = $self->alerts->create({
+          %$options,
+          alert_type   => 'new_updates',
+          parameter    => $id,
+      });
+    }
+
+    $alert->confirm();
 }
 
 sub body {
@@ -248,6 +329,15 @@ sub split_name {
     return { first => $first || '', last => $last || '' };
 }
 
+has body_permissions => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        return [ $self->user_body_permissions->all ];
+    },
+);
+
 sub permissions {
     my ($self, $c, $body_id) = @_;
 
@@ -258,44 +348,56 @@ sub permissions {
 
     return unless $self->belongs_to_body($body_id);
 
-    my @permissions = $self->user_body_permissions->search({
-        body_id => $self->from_body->id,
-    })->all;
+    my @permissions = grep { $_->body_id == $self->from_body->id } @{$self->body_permissions};
     return { map { $_->permission_type => 1 } @permissions };
 }
 
 sub has_permission_to {
     my ($self, $permission_type, $body_ids) = @_;
 
-    return 1 if $self->is_superuser;
-    return 0 unless $body_ids;
+    # Nobody, including superusers, can have a permission which isn't available
+    # in the current cobrand.
+    my $cobrand = $self->result_source->schema->cobrand;
+    my $cobrand_perms = $cobrand->available_permissions;
+    my %available = map { %$_ } values %$cobrand_perms;
+    # The 'trusted' permission is never set in the cobrand's
+    # available_permissions (see note there in Default.pm) so include it here.
+    $available{trusted} = 1;
+    return 0 unless $available{$permission_type};
 
-    my $permission = $self->user_body_permissions->find({
-            permission_type => $permission_type,
-            body_id => $body_ids,
-        });
-    return $permission ? 1 : 0;
+    return 1 if $self->is_superuser;
+    return 0 if !$body_ids || (ref $body_ids && !@$body_ids);
+    $body_ids = [ $body_ids ] unless ref $body_ids;
+    my %body_ids = map { $_ => 1 } @$body_ids;
+
+    foreach (@{$self->body_permissions}) {
+        return 1 if $_->permission_type eq $permission_type && $body_ids{$_->body_id};
+    }
+    return 0;
 }
 
 =head2 has_body_permission_to
 
-Checks if the User has a from_body set, and the specified permission on that body.
+Checks if the User has a from_body set, the specified permission on that body,
+and optionally that their from_body is one particular body.
 
 Instead of saying:
 
-    ($user->from_body && $user->has_permission_to('user_edit', $user->from_body->id))
+    ($user->from_body && $user->from_body->id == $body_id && $user->has_permission_to('user_edit', $body_id))
 
 You can just say:
 
-    $user->has_body_permission_to('user_edit')
-
-NB unlike has_permission_to, this doesn't blindly return 1 if the user is a superuser.
+    $user->has_body_permission_to('user_edit', $body_id)
 
 =cut
 
 sub has_body_permission_to {
-    my ($self, $permission_type) = @_;
+    my ($self, $permission_type, $body_id) = @_;
+
+    return 1 if $self->is_superuser;
+
     return unless $self->from_body;
+    return if $body_id && $self->from_body->id != $body_id;
 
     return $self->has_permission_to($permission_type, $self->from_body->id);
 }
@@ -314,6 +416,11 @@ sub admin_user_body_permissions {
     return $self->user_body_permissions->search({
         permission_type => { '!=' => 'trusted' },
     });
+}
+
+sub has_2fa {
+    my $self = shift;
+    return $self->is_superuser && $self->get_extra_metadata('2fa_secret');
 }
 
 sub contributing_as {
@@ -349,6 +456,25 @@ sub adopt {
     $other->delete;
 }
 
+sub anonymize_account {
+    my $self = shift;
+
+    $self->problems->update({ anonymous => 1, name => '', send_questionnaire => 0 });
+    $self->comments->update({ anonymous => 1, name => '' });
+    $self->alerts->update({ whendisabled => \'current_timestamp' });
+    $self->password('', 1);
+    $self->update({
+        email => 'removed-' . $self->id . '@' . FixMyStreet->config('EMAIL_DOMAIN'),
+        email_verified => 0,
+        name => '',
+        phone => '',
+        phone_verified => 0,
+        title => undef,
+        twitter_id => undef,
+        facebook_id => undef,
+    });
+}
+
 # Planned reports / shortlist
 
 # Override the default auto-created function as we only want one live entry so
@@ -371,6 +497,8 @@ around add_to_planned_reports => sub {
 around remove_from_planned_reports => sub {
     my ($orig, $self, $report) = @_;
     $self->user_planned_reports->active->for_report($report->id)->remove();
+    $report->unset_extra_metadata('order');
+    $report->update;
 };
 
 sub active_planned_reports {
@@ -378,9 +506,19 @@ sub active_planned_reports {
     $self->planned_reports->search({ removed => undef });
 }
 
+has active_user_planned_reports => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        [ $self->user_planned_reports->search({ removed => undef })->all ];
+    },
+);
+
 sub is_planned_report {
     my ($self, $problem) = @_;
-    return $self->active_planned_reports->find({ id => $problem->id });
+    my $id = $problem->id;
+    return scalar grep { $_->report_id == $id } @{$self->active_user_planned_reports};
 }
 
 sub update_reputation {
@@ -405,5 +543,12 @@ has categories => (
         return \@categories;
     },
 );
+
+sub set_last_active {
+    my $self = shift;
+    my $time = shift;
+    $self->unset_extra_metadata('inactive_email_sent');
+    $self->last_active($time or \'current_timestamp');
+}
 
 1;

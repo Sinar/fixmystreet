@@ -1,9 +1,6 @@
 #!/usr/bin/env perl
 
-use strict;
-use warnings;
-use Test::More;
-
+use FixMyStreet::Test;
 use FixMyStreet::DB;
 
 use_ok( 'Open311::PopulateServiceList' );
@@ -42,6 +39,15 @@ subtest 'check basic functionality' => sub {
 
     my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
+
+    for my $test (
+        { code => "001", group => "sanitation" },
+        { code => "002", group => "street" },
+        { code => "003", group => "street" },
+    ) {
+        my $contact = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1, email => $test->{code} } )->first;
+        is $contact->get_extra->{group}, $test->{group}, "Group set correctly";
+    }
 };
 
 subtest 'check non open311 contacts marked as deleted' => sub {
@@ -52,8 +58,7 @@ subtest 'check non open311 contacts marked as deleted' => sub {
             body_id => 1,
             email =>   'contact@example.com',
             category => 'An old category',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -69,7 +74,7 @@ subtest 'check non open311 contacts marked as deleted' => sub {
     my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 4, 'correct number of contacts';
 
-    $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1, deleted => 1 } )->count();
+    $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1, state => 'deleted' } )->count();
     is $contact_count, 1, 'correct number of deleted contacts';
 };
 
@@ -81,8 +86,7 @@ subtest 'check email changed if matching category' => sub {
             body_id => 1,
             email =>   '009',
             category => 'Cans left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -99,8 +103,7 @@ subtest 'check email changed if matching category' => sub {
 
     $contact->discard_changes;
     is $contact->email, '001', 'email unchanged';
-    is $contact->confirmed, 1, 'contact still confirmed';
-    is $contact->deleted, 0, 'contact still not deleted';
+    is $contact->state, 'confirmed', 'contact still confirmed';
 
     my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
@@ -114,8 +117,7 @@ subtest 'check category name changed if updated' => sub {
             body_id => 1,
             email =>   '001',
             category => 'Bins left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -133,8 +135,7 @@ subtest 'check category name changed if updated' => sub {
     $contact->discard_changes;
     is $contact->email, '001', 'email unchanged';
     is $contact->category, 'Cans left out 24x7', 'category changed';
-    is $contact->confirmed, 1, 'contact still confirmed';
-    is $contact->deleted, 0, 'contact still not deleted';
+    is $contact->state, 'confirmed', 'contact still confirmed';
 
     my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 3, 'correct number of contacts';
@@ -148,8 +149,7 @@ subtest 'check conflicting contacts not changed' => sub {
             body_id => 1,
             email =>   'existing@example.com',
             category => 'Cans left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -163,8 +163,7 @@ subtest 'check conflicting contacts not changed' => sub {
             body_id => 1,
             email =>   '001',
             category => 'Bins left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -182,14 +181,12 @@ subtest 'check conflicting contacts not changed' => sub {
     $contact->discard_changes;
     is $contact->email, 'existing@example.com', 'first contact email unchanged';
     is $contact->category, 'Cans left out 24x7', 'first contact category unchanged';
-    is $contact->confirmed, 1, 'first contact contact still confirmed';
-    is $contact->deleted, 0, 'first contact contact still not deleted';
+    is $contact->state, 'confirmed', 'first contact still confirmed';
 
     $contact2->discard_changes;
     is $contact2->email, '001', 'second contact email unchanged';
     is $contact2->category, 'Bins left out 24x7', 'second contact category unchanged';
-    is $contact2->confirmed, 1, 'second contact contact still confirmed';
-    is $contact2->deleted, 0, 'second contact contact still not deleted';
+    is $contact2->state, 'confirmed', 'second contact still confirmed';
 
     my $contact_count = FixMyStreet::DB->resultset('Contact')->search( { body_id => 1 } )->count();
     is $contact_count, 4, 'correct number of contacts';
@@ -220,8 +217,7 @@ subtest 'check meta data population' => sub {
             body_id => 1,
             email =>   '001',
             category => 'Bins left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -400,8 +396,7 @@ for my $test (
                 body_id => 1,
                 email =>   '100',
                 category => 'Cans left out 24x7',
-                confirmed => 1,
-                deleted => 0,
+                state => 'confirmed',
                 editor => $0,
                 whenedited => \'current_timestamp',
                 note => 'test contact',
@@ -474,8 +469,7 @@ subtest 'check attribute ordering' => sub {
             body_id => 1,
             email =>   '001',
             category => 'Bins left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',
@@ -576,8 +570,7 @@ subtest 'check bromely skip code' => sub {
             body_id => 1,
             email =>   '001',
             category => 'Bins left out 24x7',
-            confirmed => 1,
-            deleted => 0,
+            state => 'confirmed',
             editor => $0,
             whenedited => \'current_timestamp',
             note => 'test contact',

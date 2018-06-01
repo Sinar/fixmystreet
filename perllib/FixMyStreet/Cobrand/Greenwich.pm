@@ -4,7 +4,7 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2493; }
+sub council_area_id { return 2493; }
 sub council_area { return 'Greenwich'; }
 sub council_name { return 'Royal Borough of Greenwich'; }
 sub council_url { return 'greenwich'; }
@@ -53,6 +53,17 @@ sub pin_colour {
 sub contact_email {
     my $self = shift;
     return join( '@', 'fixmystreet', 'royalgreenwich.gov.uk' );
+}
+
+sub reports_per_page { return 20; }
+
+sub open311_config {
+    my ($self, $row, $h, $params) = @_;
+
+    my $extra = $row->get_extra_fields;
+    # Greenwich doesn't have category metadata to fill this
+    push @$extra, { name => 'external_id', value => $row->id };
+    $row->set_extra_fields( @$extra );
 }
 
 1;

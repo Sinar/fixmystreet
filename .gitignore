@@ -19,8 +19,7 @@ FixMyBarangay.po
 /web/css/main.css
 /web/cobrands/*/*.css
 /web/cobrands/*/*.css.map
-/web/cobrands/seesomething
-*.auto.min.js
+*.auto.*
 
 # Photo upload cache
 /web/photo
@@ -46,3 +45,12 @@ UG_FixMyCommunity.pm
 gh_fixmycommunity
 *[Aa]rregla[Mm]i[Bb]arrio*
 *[Ff]ix[Mm]indelo*
+*[Dd]ans[Mm]on[Qq]wat*
+*[Cc]uido[Mm]i[Cc]iudad*
+*[Yy]o[Dd]enuncio*
+
+# Commercial
+/fixmystreet-commercial
+*[Gg]round[Cc]ontrol*
+[Ss]midsy*
+[Kk]iit[Cc]*

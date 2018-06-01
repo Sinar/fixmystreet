@@ -1,71 +1,38 @@
+$pin_prefix: '/i/' !default;
+
+// Like .item-list__item--indented except with a pin icon baked in!
 .item-list__item--with-pin {
-  position: relative;
-  margin: 0;
-  padding: 0;
-  background: none;
+  @extend .item-list__item--indented;
 
   a {
-    display: block;
-    padding: 1em;
-    padding-#{$left}: 3em;
-    border-#{$left}: solid 1em transparent;
-    background: transparent url(/i/pin-yellow-small.png) no-repeat $left center;
+    background-image: url('#{$pin_prefix}pin-yellow-small.png');
+    background-size: 24px 32px;
+    background-repeat: no-repeat;
+    background-position: $left center;
   }
 
   &.yellow a {
-      background-image: url(/i/pin-yellow-small.png);
+      background-image: url('#{$pin_prefix}pin-yellow-small.png');
   }
   &.green a {
-      background-image: url(/i/pin-green-small.png);
+      background-image: url('#{$pin_prefix}pin-green-small.png');
   }
   &.red a {
-      background-image: url(/i/pin-red-small.png);
+      background-image: url('#{$pin_prefix}pin-red-small.png');
   }
   &.grey a {
-      background-image: url(/i/pin-grey-small.png);
+      background-image: url('#{$pin_prefix}pin-grey-small.png');
   }
-
-  &:after {
-    content: "";
-    display: block;
-    height: 1px;
-    position: absolute;
-    #{$left}: 3em;
-    #{$right}: 0;
-    bottom: 0;
-    background-color: #e5e5e5;
-  }
-
-  h3, p {
-    margin: 0;
-  }
-
-  h3 {
-    color: $primary;
-    margin-bottom: 0.2em;
-  }
-
-  p {
-    font-size: 0.8em;
-    color: #777;
+  &.orange a {
+      background-image: url('#{$pin_prefix}pin-orange-small.png');
   }
 }
+.item-list--reports__item--selected {
+  background: $base_bg;
 
-.item-list__item--empty {
-  background: none;
-  color: #777;
-  p {
-    padding: 1em;
-    text-align: center;
+  a, a:hover, a:focus {
+    background-color: transparent;
   }
-}
-
-/* We have no padding on the front page */
-body.frontpage {
-    .item-list__item--with-pin a {
-        padding: 0;
-        padding-#{$left}: 3em;
-    }
 }
 
 

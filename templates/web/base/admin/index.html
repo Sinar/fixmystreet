@@ -3,11 +3,11 @@
 
 <div class="fms-admin-info fms-admin-floated">
 This is the administration interface for [% site_name %]. If you
-need any help or guidance, there is <a href="http://fixmystreet.org/">plenty of
+need any help or guidance, there is <a href="https://fixmystreet.org/">plenty of
 online documentation</a>. The FixMyStreet Platform is
 <a href="https://github.com/mysociety/fixmystreet">actively supported</a> by
 its developers, and has a community of people using or working on the code.
-Please <a href="http://fixmystreet.org/community/">sign up to the mailing list
+Please <a href="https://fixmystreet.org/community/">sign up to the mailing list
 or get in touch</a> to let us know about your use of the FixMyStreet Platform,
 and to receive notices of updates.
 </div>
@@ -20,14 +20,18 @@ and to receive notices of updates.
   </p>
 [% END %]
 
+<div class="admin-index-search form-txt-submit-box clearfix">
+
 <form method="get" action="[% c.uri_for('reports') %]" accept-charset="utf-8">
     <p><label for="search_reports">[% loc('Search Reports') %]</label>
         <input type="text" class="form-control" name="search"  size="30" id="search_reports" value="[% searched | html %]">
+        <input type="submit" class="btn" value="[% loc('Go') %]">
 </form>
 
 <form method="get" action="[% c.uri_for('users') %]" accept-charset="utf-8">
     <p><label for="search_users">[% loc('Search Users') %]</label>
         <input type="text" class="form-control" name="search"  size="30" id="search_users" value="[% searched | html %]">
+        <input type="submit" class="btn" value="[% loc('Go') %]">
 </form>
 
 [% IF c.user.is_superuser %]
@@ -45,6 +49,8 @@ and to receive notices of updates.
   <input type="submit" class="btn" value="[% loc('Go') %]">
   </form>
 [% END %]
+
+</div>
 
 [% IF unsent_reports.size %]
 <h2>[% loc('Reports waiting to be sent') %]</h2>

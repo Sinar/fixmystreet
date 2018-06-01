@@ -1,21 +1,78 @@
+if (!Object.keys) {
+  Object.keys = function(obj) {
+    var result = [];
+    for (var prop in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, prop)) {
+        result.push(prop);
+      }
+    }
+    return result;
+  };
+}
+
 var fixmystreet = fixmystreet || {};
+
+fixmystreet.utils = fixmystreet.utils || {};
+
+$.extend(fixmystreet.utils, {
+    parse_query_string: function() {
+        var qs = {};
+        if (!location.search) {
+            return qs;
+        }
+        $.each(location.search.substring(1).split(/[;&]/), function(n, i) {
+            var s = i.split('='),
+                k = s[0],
+                v = s[1] && decodeURIComponent(s[1].replace(/\+/g, ' '));
+            qs[k] = v;
+        });
+        return qs;
+    }
+});
 
 (function() {
 
-    fixmystreet.maps = {
-      // This function might be passed either an OpenLayers.LonLat (so has
-      // lon and lat), or an OpenLayers.Geometry.Point (so has x and y).
+    fixmystreet.maps = fixmystreet.maps || {};
+
+    var drag = {
+        activate: function() {
+            this._drag = new OpenLayers.Control.DragFeatureFMS( fixmystreet.markers, {
+                onComplete: function(feature, e) {
+                    fixmystreet.update_pin( feature.geometry );
+                }
+            } );
+            fixmystreet.map.addControl( this._drag );
+            this._drag.activate();
+        },
+        deactivate: function() {
+            if (this._drag) {
+              this._drag.deactivate();
+            }
+        }
+    };
+
+    $.extend(fixmystreet.maps, {
       update_pin: function(lonlat) {
+        // This function might be passed either an OpenLayers.LonLat (so has
+        // lon and lat), or an OpenLayers.Geometry.Point (so has x and y).
+        if (lonlat.x !== undefined && lonlat.y !== undefined) {
+            // It's a Point, convert to a LatLon
+            lonlat = new OpenLayers.LonLat(lonlat.x, lonlat.y);
+        }
+
         var transformedLonlat = lonlat.clone().transform(
             fixmystreet.map.getProjectionObject(),
             new OpenLayers.Projection("EPSG:4326")
         );
 
-        var lat = transformedLonlat.lat || transformedLonlat.y;
-        var lon = transformedLonlat.lon || transformedLonlat.x;
+        var lat = transformedLonlat.lat;
+        var lon = transformedLonlat.lon;
 
         document.getElementById('fixmystreet.latitude').value = lat;
         document.getElementById('fixmystreet.longitude').value = lon;
+
+        $(fixmystreet).trigger('maps:update_pin', [ lonlat ]);
+
         return {
             'url': { 'lon': lon, 'lat': lat },
             'state': { 'lon': lonlat.lon, 'lat': lonlat.lat }
@@ -50,7 +107,8 @@ var fixmystreet = fixmystreet || {};
             /* Already have a pin */
             fixmystreet.markers.features[0].move(lonlat);
         } else {
-            var markers = fixmystreet.maps.markers_list( [ [ lonlat.lat, lonlat.lon, 'green' ] ], false );
+            var markers = fixmystreet.maps.markers_list( [ [ lonlat.lat, lonlat.lon, fixmystreet.pin_new_report_colour ] ], false );
+            fixmystreet.bbox_strategy.layer.protocol.abort(fixmystreet.bbox_strategy.response);
             fixmystreet.bbox_strategy.deactivate();
             fixmystreet.markers.removeAllFeatures();
             fixmystreet.markers.addFeatures( markers );
@@ -68,12 +126,8 @@ var fixmystreet = fixmystreet || {};
 
       markers_list: function(pins, transform) {
         var markers = [];
-        var size = fixmystreet.maps.marker_size_for_zoom(
-            fixmystreet.map.getZoom() + fixmystreet.zoomOffset
-        );
-        var selected_size = fixmystreet.maps.selected_marker_size_for_zoom(
-            fixmystreet.map.getZoom() + fixmystreet.zoomOffset
-        );
+        var size = fixmystreet.maps.marker_size();
+        var selected_size = fixmystreet.maps.selected_marker_size();
         for (var i=0; i<pins.length; i++) {
             var pin = pins[i];
             var loc = new OpenLayers.Geometry.Point(pin[1], pin[0]);
@@ -84,13 +138,15 @@ var fixmystreet = fixmystreet || {};
                     fixmystreet.map.getProjectionObject()
                 );
             }
-            var marker_size = (pin[3] === window.selected_problem_id) ? selected_size : size;
+            var id = pin[3] === undefined ? pin[3] : +pin[3];
+            var marker_size = (id === window.selected_problem_id) ? selected_size : size;
             var marker = new OpenLayers.Feature.Vector(loc, {
                 colour: pin[2],
                 size: pin[5] || marker_size,
                 faded: 0,
-                id: pin[3],
-                title: pin[4] || ''
+                id: id,
+                title: pin[4] || '',
+                draggable: pin[6] === false ? false : true
             });
             markers.push( marker );
         }
@@ -98,12 +154,8 @@ var fixmystreet = fixmystreet || {};
       },
 
       markers_resize: function() {
-        var size = fixmystreet.maps.marker_size_for_zoom(
-            fixmystreet.map.getZoom() + fixmystreet.zoomOffset
-        );
-        var selected_size = fixmystreet.maps.selected_marker_size_for_zoom(
-            fixmystreet.map.getZoom() + fixmystreet.zoomOffset
-        );
+        var size = fixmystreet.maps.marker_size();
+        var selected_size = fixmystreet.maps.selected_marker_size();
         for (var i = 0; i < fixmystreet.markers.features.length; i++) {
             if (fixmystreet.markers.features[i].attributes.id == window.selected_problem_id) {
                 fixmystreet.markers.features[i].attributes.size = selected_size;
@@ -118,7 +170,8 @@ var fixmystreet = fixmystreet || {};
         return fixmystreet.markers.getFeaturesByAttribute('id', problem_id)[0];
       },
 
-      marker_size_for_zoom: function(zoom) {
+      marker_size: function() {
+        var zoom = fixmystreet.map.getZoom() + fixmystreet.zoomOffset;
         if (zoom >= 15) {
             return window.selected_problem_id ? 'small' : 'normal';
         } else if (zoom >= 13) {
@@ -128,7 +181,8 @@ var fixmystreet = fixmystreet || {};
         }
       },
 
-      selected_marker_size_for_zoom: function(zoom) {
+      selected_marker_size: function() {
+        var zoom = fixmystreet.map.getZoom() + fixmystreet.zoomOffset;
         if (zoom >= 15) {
             return 'big';
         } else if (zoom >= 13) {
@@ -144,7 +198,7 @@ var fixmystreet = fixmystreet || {};
       admin_drag: function(pin_moved_callback, confirm_change) {
           confirm_change = confirm_change || false;
           var original_lonlat;
-          var drag = new OpenLayers.Control.DragFeature( fixmystreet.markers, {
+          var drag = new OpenLayers.Control.DragFeatureFMS( fixmystreet.markers, {
               onStart: function(feature, e) {
                   // Keep track of where the feature started, so we can put it
                   // back if the user cancels the operation.
@@ -167,61 +221,79 @@ var fixmystreet = fixmystreet || {};
           } );
           fixmystreet.map.addControl( drag );
           drag.activate();
+      },
+
+      // `markers.redraw()` in markers_highlight will trigger an
+      // `overFeature` event if the mouse cursor is still over the same
+      // marker on the map, which would then run markers_highlight
+      // again, causing an infinite flicker while the cursor remains over
+      // the same marker. We really only want to redraw the markers when
+      // the cursor moves from one marker to another (ie: when there is an
+      // overFeature followed by an outFeature followed by an overFeature).
+      // Therefore, we keep track of the previous event in
+      // fixmystreet.latest_map_hover_event and only call markers_highlight
+      // if we know the previous event was different to the current one.
+      // (See the `overFeature` and `outFeature` callbacks inside of
+      // fixmystreet.select_feature).
+
+      markers_highlight: function(problem_id) {
+          for (var i = 0; i < fixmystreet.markers.features.length; i++) {
+              if (typeof problem_id == 'undefined') {
+                  // There is no highlighted marker, so unfade this marker
+                  fixmystreet.markers.features[i].attributes.faded = 0;
+              } else if (problem_id == fixmystreet.markers.features[i].attributes.id) {
+                  // This is the highlighted marker, unfade it
+                  fixmystreet.markers.features[i].attributes.faded = 0;
+              } else {
+                  // This is not the hightlighted marker, fade it
+                  fixmystreet.markers.features[i].attributes.faded = 1;
+              }
+          }
+          fixmystreet.markers.redraw();
+      },
+
+      /* Keep track of how many things are loading simultaneously, and only hide
+       * the loading spinner when everything has finished.
+       * This allows multiple layers to be loading at once without each layer
+       * having to keep track of the others or be responsible for manipulating
+       * the spinner in the DOM.
+       */
+      loading_spinner: {
+          count: {},
+          show: function() {
+              fixmystreet.maps.loading_spinner.count[this.id] = 1;
+              if (Object.keys(fixmystreet.maps.loading_spinner.count).length) {
+                  // Show the loading indicator over the map
+                  $('#loading-indicator').removeClass('hidden');
+                  $('#loading-indicator').attr('aria-hidden', false);
+              }
+          },
+          hide: function() {
+              delete fixmystreet.maps.loading_spinner.count[this.id];
+              if (!Object.keys(fixmystreet.maps.loading_spinner.count).length) {
+                  // Remove loading indicator
+                  $('#loading-indicator').addClass('hidden');
+                  $('#loading-indicator').attr('aria-hidden', true);
+              }
+          }
       }
-    };
+    });
 
-    var drag = {
-        activate: function() {
-            this._drag = new OpenLayers.Control.DragFeature( fixmystreet.markers, {
-                onComplete: function(feature, e) {
-                    fixmystreet.update_pin( feature.geometry );
-                }
-            } );
-            fixmystreet.map.addControl( this._drag );
-            this._drag.activate();
-        },
-        deactivate: function() {
-            this._drag && this._drag.deactivate();
-        }
-    };
-
+    /* Make sure pins aren't going to reload just because we're zooming out,
+     * we already have the pins when the page loaded */
     function zoomToBounds(bounds) {
         if (!bounds) { return; }
+        var strategy = fixmystreet.markers.strategies[0];
+        strategy.deactivate();
         var center = bounds.getCenterLonLat();
         var z = fixmystreet.map.getZoomForExtent(bounds);
-        if ( z < 13 && $('html').hasClass('mobile') ) {
-            z = 13;
-        }
         fixmystreet.map.setCenter(center, z);
-    }
-
-    // `markers.redraw()` in markers_highlight will trigger an
-    // `overFeature` event if the mouse cursor is still over the same
-    // marker on the map, which would then run markers_highlight
-    // again, causing an infinite flicker while the cursor remains over
-    // the same marker. We really only want to redraw the markers when
-    // the cursor moves from one marker to another (ie: when there is an
-    // overFeature followed by an outFeature followed by an overFeature).
-    // Therefore, we keep track of the previous event in
-    // fixmystreet.latest_map_hover_event and only call markers_highlight
-    // if we know the previous event was different to the current one.
-    // (See the `overFeature` and `outFeature` callbacks inside of
-    // fixmystreet.select_feature).
-
-    function markers_highlight(problem_id) {
-        for (var i = 0; i < fixmystreet.markers.features.length; i++) {
-            if (typeof problem_id == 'undefined') {
-                // There is no highlighted marker, so unfade this marker
-                fixmystreet.markers.features[i].attributes.faded = 0;
-            } else if (problem_id == fixmystreet.markers.features[i].attributes.id) {
-                // This is the highlighted marker, unfade it
-                fixmystreet.markers.features[i].attributes.faded = 0;
-            } else {
-                // This is not the hightlighted marker, fade it
-                fixmystreet.markers.features[i].attributes.faded = 1;
-            }
+        // Reactivate the strategy and make it think it's done an update
+        strategy.activate();
+        if (strategy instanceof OpenLayers.Strategy.BBOX) {
+            strategy.calculateBounds();
+            strategy.resolution = fixmystreet.map.getResolution();
         }
-        fixmystreet.markers.redraw();
     }
 
     function sidebar_highlight(problem_id) {
@@ -270,20 +342,6 @@ var fixmystreet = fixmystreet || {};
         fixmystreet.markers.refresh({force: true});
     }
 
-    function parse_query_string() {
-        var qs = {};
-        if (!location.search) {
-            return qs;
-        }
-        location.search.substring(1).split('&').forEach(function(i) {
-            var s = i.split('='),
-                k = s[0],
-                v = s[1] && decodeURIComponent(s[1].replace(/\+/g, ' '));
-            qs[k] = v;
-        });
-        return qs;
-    }
-
     function replace_query_parameter(qs, id, key) {
         var value = $('#' + id).val();
         if (value) {
@@ -294,15 +352,7 @@ var fixmystreet = fixmystreet || {};
         return value;
     }
 
-    function categories_or_status_changed_history() {
-        if (!('pushState' in history)) {
-            return;
-        }
-        var qs = parse_query_string();
-        var filter_categories = replace_query_parameter(qs, 'filter_categories', 'filter_category');
-        var filter_statuses = replace_query_parameter(qs, 'statuses', 'status');
-        var sort_key = replace_query_parameter(qs, 'sort', 'sort');
-        delete qs['p'];
+    function update_url(qs) {
         var new_url;
         if ($.isEmptyObject(qs)) {
             new_url = location.href.replace(location.search, "");
@@ -311,6 +361,37 @@ var fixmystreet = fixmystreet || {};
         } else {
             new_url = location.href + '?' + $.param(qs);
         }
+        return new_url;
+    }
+
+    function page_changed_history() {
+        if (!('pushState' in history)) {
+            return;
+        }
+        var qs = fixmystreet.utils.parse_query_string();
+
+        var page = $('.pagination').data('page');
+        if (page > 1) {
+            qs.p = page;
+        } else {
+            delete qs.p;
+        }
+        var new_url = update_url(qs);
+        history.pushState({
+            page_change: { 'page': page }
+        }, null, new_url);
+    }
+
+    function categories_or_status_changed_history() {
+        if (!('pushState' in history)) {
+            return;
+        }
+        var qs = fixmystreet.utils.parse_query_string();
+        var filter_categories = replace_query_parameter(qs, 'filter_categories', 'filter_category');
+        var filter_statuses = replace_query_parameter(qs, 'statuses', 'status');
+        var sort_key = replace_query_parameter(qs, 'sort', 'sort');
+        delete qs.p;
+        var new_url = update_url(qs);
         history.pushState({
             filter_change: { 'filter_categories': filter_categories, 'statuses': filter_statuses, 'sort': sort_key }
         }, null, new_url);
@@ -330,6 +411,8 @@ var fixmystreet = fixmystreet || {};
             );
             $("#problem_northing").text(bng.y.toFixed(1));
             $("#problem_easting").text(bng.x.toFixed(1));
+            $("#problem_latitude").text(lonlat.y.toFixed(6));
+            $("#problem_longitude").text(lonlat.x.toFixed(6));
             $("form#report_inspect_form input[name=latitude]").val(lonlat.y);
             $("form#report_inspect_form input[name=longitude]").val(lonlat.x);
         },
@@ -355,6 +438,37 @@ var fixmystreet = fixmystreet || {};
             ]);
             var loaded = 0;
             var new_geometry = new OpenLayers.Geometry.Polygon(lr);
+            var style_area = function() {
+                loaded++;
+                var style = this.styleMap.styles['default'];
+                if ( fixmystreet.area_format ) {
+                    style.defaultStyle = fixmystreet.area_format;
+                } else {
+                    $.extend(style.defaultStyle, { fillColor: 'black', strokeColor: 'black' });
+                }
+                var geometry = this.features[0].geometry;
+                if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Collection') {
+                    $.each(geometry.components, function(i, polygon) {
+                        new_geometry.addComponents(polygon.components);
+                        extent.extend(polygon.getBounds());
+                    });
+                } else if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Polygon') {
+                    new_geometry.addComponents(geometry.components);
+                    extent.extend(this.getDataExtent());
+                }
+                if (loaded == fixmystreet.area.length) {
+                    var f = this.features[0].clone();
+                    f.geometry = new_geometry;
+                    this.removeAllFeatures();
+                    this.addFeatures([f]);
+                    var qs = fixmystreet.utils.parse_query_string();
+                    if (!qs.bbox) {
+                        zoomToBounds(extent);
+                    }
+                } else {
+                    fixmystreet.map.removeLayer(this);
+                }
+            };
             for (var i=0; i<fixmystreet.area.length; i++) {
                 var area = new OpenLayers.Layer.Vector("KML", {
                     renderers: ['SVGBig', 'VML', 'Canvas'],
@@ -365,34 +479,7 @@ var fixmystreet = fixmystreet || {};
                     })
                 });
                 fixmystreet.map.addLayer(area);
-                area.events.register('loadend', area, function(a,b,c) {
-                    loaded++;
-                    var style = this.styleMap.styles['default'];
-                    if ( fixmystreet.area_format ) {
-                        style.defaultStyle = fixmystreet.area_format;
-                    } else {
-                        $.extend(style.defaultStyle, { fillColor: 'black', strokeColor: 'black' });
-                    }
-                    var geometry = this.features[0].geometry;
-                    if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Collection') {
-                        $.each(geometry.components, function(i, polygon) {
-                            new_geometry.addComponents(polygon.components)
-                            extent.extend(polygon.getBounds());
-                        });
-                    } else if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Polygon') {
-                        new_geometry.addComponents(geometry.components);
-                        extent.extend(this.getDataExtent());
-                    }
-                    if (loaded == fixmystreet.area.length) {
-                        var f = this.features[0].clone();
-                        f.geometry = new_geometry;
-                        this.removeAllFeatures();
-                        this.addFeatures([f]);
-                        zoomToBounds(extent);
-                    } else {
-                        fixmystreet.map.removeLayer(this);
-                    }
-                });
+                area.events.register('loadend', area, style_area);
             }
         }
 
@@ -469,14 +556,14 @@ var fixmystreet = fixmystreet || {};
         if (fixmystreet.page == 'around') {
             fixmystreet.bbox_strategy = fixmystreet.bbox_strategy || new OpenLayers.Strategy.FixMyStreet();
             pin_layer_options.strategies = [ fixmystreet.bbox_strategy ];
-            pin_layer_options.protocol = new OpenLayers.Protocol.FixMyStreet({
-                url: '/ajax',
-                params: fixmystreet.all_pins ? { all_pins: 1 } : { },
-                format: new OpenLayers.Format.FixMyStreet()
-            });
         }
-        if (fixmystreet.page == 'reports' || fixmystreet.page == 'my') {
+        if (fixmystreet.page == 'reports') {
+            pin_layer_options.strategies = [ new OpenLayers.Strategy.FixMyStreetNoLoad() ];
+        }
+        if (fixmystreet.page == 'my') {
             pin_layer_options.strategies = [ new OpenLayers.Strategy.FixMyStreetFixed() ];
+        }
+        if (fixmystreet.page == 'around' || fixmystreet.page == 'reports' || fixmystreet.page == 'my') {
             pin_layer_options.protocol = new OpenLayers.Protocol.FixMyStreet({
                 url: fixmystreet.original.href.split('?')[0] + '?ajax=1',
                 format: new OpenLayers.Format.FixMyStreet()
@@ -488,6 +575,11 @@ var fixmystreet = fixmystreet || {};
                 fixmystreet.map.removePopup(fixmystreet.map.popups[0]);
             }
         });
+        fixmystreet.markers.events.register( 'loadstart', null, fixmystreet.maps.loading_spinner.show);
+        fixmystreet.markers.events.register( 'loadend', null, fixmystreet.maps.loading_spinner.hide);
+        OpenLayers.Request.XMLHttpRequest.onabort = function() {
+            fixmystreet.markers.events.triggerEvent("loadend", {response: null});
+        };
 
         var markers = fixmystreet.maps.markers_list( fixmystreet.pins, true );
         fixmystreet.markers.addFeatures( markers );
@@ -505,7 +597,7 @@ var fixmystreet = fixmystreet || {};
                     overFeature: function (feature) {
                         if (fixmystreet.latest_map_hover_event != 'overFeature') {
                             document.getElementById('map').style.cursor = 'pointer';
-                            markers_highlight(feature.attributes.id);
+                            fixmystreet.maps.markers_highlight(feature.attributes.id);
                             sidebar_highlight(feature.attributes.id);
                             fixmystreet.latest_map_hover_event = 'overFeature';
                         }
@@ -513,7 +605,7 @@ var fixmystreet = fixmystreet || {};
                     outFeature: function (feature) {
                         if (fixmystreet.latest_map_hover_event != 'outFeature') {
                             document.getElementById('map').style.cursor = '';
-                            markers_highlight();
+                            fixmystreet.maps.markers_highlight();
                             sidebar_highlight();
                             fixmystreet.latest_map_hover_event = 'outFeature';
                         }
@@ -523,14 +615,30 @@ var fixmystreet = fixmystreet || {};
             fixmystreet.map.addControl( fixmystreet.select_feature );
             fixmystreet.select_feature.activate();
             fixmystreet.map.events.register( 'zoomend', null, fixmystreet.maps.markers_resize );
+            fixmystreet.map.events.register( 'zoomend', null, function() {
+              fixmystreet.run(fixmystreet.maps.show_shortlist_control);
+            });
 
             // Set up the event handlers to populate the filters and react to them changing
             $("#filter_categories").on("change.filters", categories_or_status_changed);
             $("#statuses").on("change.filters", categories_or_status_changed);
             $("#sort").on("change.filters", categories_or_status_changed);
+            $('.js-pagination').on('change.filters', categories_or_status_changed);
+            $('.js-pagination').on('click', 'a', function(e) {
+                e.preventDefault();
+                var page = $('.pagination').data('page');
+                if ($(this).hasClass('next')) {
+                    $('.pagination').data('page', page + 1);
+                } else {
+                    $('.pagination').data('page', page - 1);
+                }
+                fixmystreet.markers.protocol.use_page = true;
+                $(this).trigger('change');
+            });
             $("#filter_categories").on("change.user", categories_or_status_changed_history);
             $("#statuses").on("change.user", categories_or_status_changed_history);
             $("#sort").on("change.user", categories_or_status_changed_history);
+            $('.js-pagination').on('click', 'a', page_changed_history);
         } else if (fixmystreet.page == 'new') {
             drag.activate();
         }
@@ -544,57 +652,21 @@ var fixmystreet = fixmystreet || {};
             zoomToBounds( fixmystreet.markers.getDataExtent() );
         }
 
-        $('#hide_pins_link').click(function(e) {
+        $('#hide_pins_link, .big-hide-pins-link').click(function(e) {
             e.preventDefault();
-            var showhide = [
-                'Show pins', 'Hide pins',
-                'Dangos pinnau', 'Cuddio pinnau',
-                "Vis nåler", "Skjul nåler",
-                "Zeige Stecknadeln", "Stecknadeln ausblenden"
-            ];
-            for (var i=0; i<showhide.length; i+=2) {
-                if (this.innerHTML == showhide[i]) {
-                    fixmystreet.markers.setVisibility(true);
-                    fixmystreet.select_feature.activate();
-                    this.innerHTML = showhide[i+1];
-                } else if (this.innerHTML == showhide[i+1]) {
-                    fixmystreet.markers.setVisibility(false);
-                    fixmystreet.select_feature.deactivate();
-                    this.innerHTML = showhide[i];
-                }
+            if (this.innerHTML == translation_strings.show_pins) {
+                fixmystreet.markers.setVisibility(true);
+                fixmystreet.select_feature.activate();
+                $('#hide_pins_link, .big-hide-pins-link').html(translation_strings.hide_pins);
+            } else if (this.innerHTML == translation_strings.hide_pins) {
+                fixmystreet.markers.setVisibility(false);
+                fixmystreet.select_feature.deactivate();
+                $('#hide_pins_link, .big-hide-pins-link').html(translation_strings.show_pins);
+            }
+            if (typeof ga !== 'undefined') {
+                ga('send', 'event', 'toggle-pins-on-map', 'click');
             }
         });
-
-        $('#all_pins_link').click(function(e) {
-            e.preventDefault();
-            fixmystreet.markers.setVisibility(true);
-            var texts = [
-                'en', 'Show old', 'Hide old',
-                'nb', 'Vis gamle', 'Skjul gamle',
-                'cy', 'Cynnwys hen adroddiadau', 'Cuddio hen adroddiadau'
-            ];
-            for (var i=0; i<texts.length; i+=3) {
-                if (this.innerHTML == texts[i+1]) {
-                    this.innerHTML = texts[i+2];
-                    fixmystreet.markers.protocol.options.params = { all_pins: 1 };
-                    fixmystreet.markers.refresh( { force: true } );
-                    lang = texts[i];
-                } else if (this.innerHTML == texts[i+2]) {
-                    this.innerHTML = texts[i+1];
-                    fixmystreet.markers.protocol.options.params = { };
-                    fixmystreet.markers.refresh( { force: true } );
-                    lang = texts[i];
-                }
-            }
-            if (lang == 'cy') {
-                document.getElementById('hide_pins_link').innerHTML = 'Cuddio pinnau';
-            } else if (lang == 'nb') {
-                document.getElementById('hide_pins_link').innerHTML = 'Skjul nåler';
-            } else {
-                document.getElementById('hide_pins_link').innerHTML = 'Hide pins';
-            }
-        });
-
     }
 
     $(function(){
@@ -606,6 +678,7 @@ var fixmystreet = fixmystreet || {};
         // Create the basics of the map
         fixmystreet.map = new OpenLayers.Map(
             "map", OpenLayers.Util.extend({
+                theme: null,
                 controls: fixmystreet.controls,
                 displayProjection: new OpenLayers.Projection("EPSG:4326")
             }, fixmystreet.map_options)
@@ -661,13 +734,13 @@ var fixmystreet = fixmystreet || {};
 
         (function() {
             var timeout;
-            $('.item-list--reports').on('mouseenter', '.item-list--reports__item', function(){
+            $('#js-reports-list').on('mouseenter', '.item-list--reports__item', function(){
                 var href = $('a', this).attr('href');
-                var id = parseInt(href.replace(/^.*[/]([0-9]+)$/, '$1'));
+                var id = parseInt(href.replace(/^.*[\/]([0-9]+)$/, '$1'),10);
                 clearTimeout(timeout);
-                markers_highlight(id);
+                fixmystreet.maps.markers_highlight(id);
             }).on('mouseleave', '.item-list--reports__item', function(){
-                timeout = setTimeout(markers_highlight, 50);
+                timeout = setTimeout(fixmystreet.maps.markers_highlight, 50);
             });
         })();
     });
@@ -688,14 +761,6 @@ OpenLayers.Control.PanZoomFMS = OpenLayers.Class(OpenLayers.Control.PanZoom, {
         btn.action = id;
         btn.className = "olButton";
         this.div.appendChild(btn);
-        if (OpenLayers.VERSION_NUMBER.indexOf('2.11') > -1) {
-            btn.map = this.map;
-            OpenLayers.Event.observe(btn, "mousedown", OpenLayers.Function.bindAsEventListener(this.buttonDown, btn));
-            var slideFactorPixels = this.slideFactor;
-            btn.getSlideFactor = function() {
-                return slideFactorPixels;
-            };
-        }
         this.buttons.push(btn);
         return btn;
     },
@@ -733,6 +798,10 @@ OpenLayers.Control.PermalinkFMS = OpenLayers.Class(OpenLayers.Control.Permalink,
         }
         href += separator + OpenLayers.Util.getParameterString(this.createParams(center, zoom));
         // Could use mlat/mlon here as well if we are on a page with a marker
+        if (this.base == '/around') {
+            href += '&js=1';
+        }
+
         if (this.anchor && !this.element) {
             window.location.href = href;
         }
@@ -751,6 +820,8 @@ OpenLayers.Control.PermalinkFMSz = OpenLayers.Class(OpenLayers.Control.Permalink
 });
 
 OpenLayers.Strategy.FixMyStreet = OpenLayers.Class(OpenLayers.Strategy.BBOX, {
+    // Update when the zoom changes, pagination means there might be new things
+    resFactor: 1.5,
     ratio: 1,
     // The transform in Strategy.BBOX's getMapBounds could mean you end up with
     // co-ordinates too precise, which could then cause the Strategy to think
@@ -777,6 +848,22 @@ OpenLayers.Strategy.FixMyStreet = OpenLayers.Class(OpenLayers.Strategy.BBOX, {
     }
 });
 
+/* This strategy additionally does not update on load, as we already have the data. */
+OpenLayers.Strategy.FixMyStreetNoLoad = OpenLayers.Class(OpenLayers.Strategy.FixMyStreet, {
+    activate: function() {
+        var activated = OpenLayers.Strategy.prototype.activate.call(this);
+        if (activated) {
+            this.layer.events.on({
+                "moveend": this.update,
+                "refresh": this.update,
+                "visibilitychanged": this.update,
+                scope: this
+            });
+        }
+        return activated;
+    }
+});
+
 /* Copy of Strategy.Fixed, but with no initial load */
 OpenLayers.Strategy.FixMyStreetFixed = OpenLayers.Class(OpenLayers.Strategy.Fixed, {
     activate: function() {
@@ -792,21 +879,35 @@ OpenLayers.Strategy.FixMyStreetFixed = OpenLayers.Class(OpenLayers.Strategy.Fixe
 });
 
 /* Pan data request handler */
-// This class is used to get a JSON object from /ajax that contains
+// This class is used to get a JSON object from /around?ajax that contains
 // pins for the map and HTML for the sidebar. It does a fetch whenever the map
 // is dragged (modulo a buffer extending outside the viewport).
 // This subclass is required so we can pass the 'filter_category' and 'status' query
-// params to /ajax if the user has filtered the map.
+// params to /around?ajax if the user has filtered the map.
 OpenLayers.Protocol.FixMyStreet = OpenLayers.Class(OpenLayers.Protocol.HTTP, {
+    initial_page: null,
+    use_page: false,
+
     read: function(options) {
         // Pass the values of the category, status, and sort fields as query params
+        options.params = options.params || {};
         $.each({ filter_category: 'filter_categories', status: 'statuses', sort: 'sort' }, function(key, id) {
             var val = $('#' + id).val();
             if (val !== undefined) {
-                options.params = options.params || {};
                 options.params[key] = val;
             }
         });
+        var page;
+        if (this.use_page) {
+            page = $('.pagination').data('page');
+            this.use_page = false;
+        } else if (this.initial_page) {
+            page = 1;
+        } else {
+            var qs = fixmystreet.utils.parse_query_string();
+            this.initial_page = page = qs.p || 1;
+        }
+        options.params.p = page;
         return OpenLayers.Protocol.HTTP.prototype.read.apply(this, [options]);
     },
     CLASS_NAME: "OpenLayers.Protocol.FixMyStreet"
@@ -815,25 +916,11 @@ OpenLayers.Protocol.FixMyStreet = OpenLayers.Class(OpenLayers.Protocol.HTTP, {
 /* Pan data handler */
 OpenLayers.Format.FixMyStreet = OpenLayers.Class(OpenLayers.Format.JSON, {
     read: function(json, filter) {
-        // Check we haven't received the data after the map has been clicked.
-        if (fixmystreet.page == 'new') {
-            // If we have, we want to do nothing, which means returning an
-            // array of the back-projected version of the current pin
-            var pin = fixmystreet.markers.features[0].clone();
-            pin.geometry.transform(
-                fixmystreet.map.getProjectionObject(),
-                new OpenLayers.Projection("EPSG:4326")
-            );
-            return [ pin ];
-        }
+        var obj;
         if (typeof json == 'string') {
             obj = OpenLayers.Format.JSON.prototype.read.apply(this, [json, filter]);
         } else {
             obj = json;
-        }
-        var current;
-        if (typeof(obj.current) != 'undefined' && (current = document.getElementById('current'))) {
-            current.innerHTML = obj.current;
         }
         var reports_list;
         if (typeof(obj.reports_list) != 'undefined' && (reports_list = document.getElementById('js-reports-list'))) {
@@ -883,6 +970,19 @@ OpenLayers.Control.Click = OpenLayers.Class(OpenLayers.Control, {
 
         if ( typeof ga !== 'undefined' && fixmystreet.cobrand == 'fixmystreet' ) {
             ga('send', 'pageview', { 'page': '/map_click' } );
+        }
+    }
+});
+
+/* Drag handler that allows individual features to disable dragging */
+OpenLayers.Control.DragFeatureFMS = OpenLayers.Class(OpenLayers.Control.DragFeature, {
+    CLASS_NAME: "OpenLayers.Control.DragFeatureFMS",
+
+    overFeature: function(feature) {
+        if (feature.attributes.draggable) {
+            return OpenLayers.Control.DragFeature.prototype.overFeature.call(this, feature);
+        } else {
+            return false;
         }
     }
 });

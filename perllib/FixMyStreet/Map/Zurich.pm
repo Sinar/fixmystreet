@@ -22,24 +22,20 @@ sub tile_parameters {
     my $self = shift;
     my $params = {
         urls            => [
-          'https://www.gis.stadt-zuerich.ch/maps/rest/services/tiled95/LuftbildHybrid/MapServer/WMTS/tile',
-          'https://www.gis.stadt-zuerich.ch/maps/rest/services/tiled95/Stadtplan3D/MapServer/WMTS/tile'
+          'http://www.ogc.stadt-zuerich.ch/mapproxy/wmts/',
+          'http://www.ogc.stadt-zuerich.ch/mapproxy/wmts/',
         ],
         layer_names     => [ 'LuftbildHybrid', 'Stadtplan3D' ],
         wmts_version    => '1.0.0',
         layer_style     => 'default',
-        matrix_set      => 'default028mm',
-        suffix          => '.jpg', # appended to tile URLs
+        matrix_set      => 'stzh',
+        suffix          => '.jpeg', # appended to tile URLs
         size            => 512, # pixels
         dpi             => 96,
         inches_per_unit => 39.3701, # BNG uses metres
         projection      => 'EPSG:2056',
-        # The original tile origin values from the getCapabilities call are
-        # -27386400.0/31814500.0, but this results in the map tile being offset
-        # slightly. These corrected values were figured out manually by
-        # trial and error...
-        origin_x        => -27386322.5,
-        origin_y        => 31814423.0,
+        origin_x        => 2672499.0,
+        origin_y        => 1256999.0,
     };
     return $params;
 }
@@ -67,10 +63,15 @@ sub copyright {
     return '&copy; Stadt Z&uuml;rich';
 }
 
-sub map_type {
-    return 'zurich';
-}
+sub map_template { 'zurich' }
 
+sub map_javascript { [
+    '/vendor/OpenLayers/OpenLayers.zurich.js',
+    '/js/OpenLayers.Projection.CH1903Plus.js',
+    '/js/map-OpenLayers.js',
+    '/js/map-wmts-base.js',
+    '/js/map-wmts-zurich.js',
+] }
 
 # Reproject a WGS84 lat/lon into Swiss easting/northing
 sub reproject_from_latlon($$$) {

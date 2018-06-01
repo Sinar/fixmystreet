@@ -1,4 +1,4 @@
-Subject: Problemrapport: [% title %]
+Subject: Problemrapport: [% report.title %]
 
 Til [% bodies_name %],
 
@@ -13,17 +13,21 @@ problemet, ver venleg og besøk følgjande lenkje:
 
 [% has_photo %]----------
 
-Namn: [% name %]
+Namn: [% report.name %]
 
-E-post: [% email %]
+E-post: [% report.user.email OR '-' %]
 
-[% phone_line %][% category_line %]Tema: [% title %]
+Telefon: [% report.user.phone OR '-' %]
 
-Detaljer: [% detail %]
+Kategori: [% report.category %]
 
-Breiddegrad: [% latitude %]
+Tema: [% report.title %]
 
-Lengdegrad: [% longitude %]
+Detaljer: [% report.detail %]
+
+Breiddegrad: [% report.latitude %]
+
+Lengdegrad: [% report.longitude %]
 
 [% closest_address %]----------
 

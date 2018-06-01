@@ -54,7 +54,8 @@ sub submit : Path('submit') : Args(0) {
           && $c->forward('determine_contact_type')
           && $c->forward('validate')
           && $c->forward('prepare_params_for_email')
-          && $c->forward('send_email');
+          && $c->forward('send_email')
+          && $c->forward('redirect_on_success');
 }
 
 =head2 determine_contact_type
@@ -92,6 +93,10 @@ sub determine_contact_type : Private {
 
             $c->stash->{update} = $update;
         }
+
+        if ( $c->get_param("reject") && $c->user->has_permission_to(report_reject => $c->stash->{problem}->bodies_str_ids) ) {
+            $c->stash->{rejecting_report} = 1;
+        }
     }
 
     return 1;
@@ -99,7 +104,7 @@ sub determine_contact_type : Private {
 
 =head2 validate
 
-Validate the form submission parameters. Sets error messages and redirect 
+Validate the form submission parameters. Sets error messages and redirect
 to index page if errors.
 
 =cut
@@ -168,8 +173,7 @@ sub prepare_params_for_email : Private {
 
     if ( $c->stash->{update} ) {
 
-        $c->stash->{problem_url} = $base_url . '/report/' . $c->stash->{update}->problem_id
-            . '#update_' . $c->stash->{update}->id;
+        $c->stash->{problem_url} = $base_url . $c->stash->{update}->url;
         $c->stash->{admin_url} = $admin_url . '/update_edit/' . $c->stash->{update}->id;
         $c->stash->{complaint} = sprintf(
             "Complaint about update %d on report %d",
@@ -258,10 +262,24 @@ sub send_email : Private {
         $params->{from} = $from;
     }
 
-    $c->send_email('contact.txt', $params);
+    $c->stash->{success} = $c->send_email('contact.txt', $params);
 
-    # above is always succesful :(
-    $c->stash->{success} = 1;
+    return 1;
+}
+
+=head2 redirect_on_success
+
+Redirect to a custom URL if one was provided
+
+=cut
+
+sub redirect_on_success : Private {
+    my ( $self, $c ) = @_;
+
+    if (my $success_url = $c->get_param('success_url')) {
+        $c->res->redirect($success_url);
+        $c->detach;
+    }
 
     return 1;
 }

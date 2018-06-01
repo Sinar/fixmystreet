@@ -1,9 +1,4 @@
-use strict;
-use warnings;
-use Test::More;
 use FixMyStreet::TestMech;
-
-mySociety::Locale::gettext_domain( 'FixMyStreet' );
 
 my $mech = FixMyStreet::TestMech->new();
 
@@ -188,7 +183,7 @@ subtest "correct text for title after URL" => sub {
         }
     )->delete;
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
@@ -324,7 +319,7 @@ foreach my $test (
         $report->update();
 
         FixMyStreet::override_config {
-            MAPIT_URL => 'http://mapit.mysociety.org/',
+            MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             FixMyStreet::DB->resultset('AlertType')->email_alerts();
         };
@@ -432,7 +427,7 @@ subtest "check alerts from cobrand send main site url for alerts for different c
     )->delete;
 
     FixMyStreet::override_config {
-        MAPIT_URL => 'http://mapit.mysociety.org/',
+        MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
@@ -507,8 +502,5 @@ subtest "correct i18n-ed summary for state of closed" => sub {
 };
 
 END {
-    $mech->delete_user($user) if $user;
-    $mech->delete_user($user2) if $user2;
-    $mech->delete_user($user3) if $user3;
     done_testing();
 }

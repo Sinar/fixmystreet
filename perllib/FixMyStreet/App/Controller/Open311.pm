@@ -160,7 +160,7 @@ sub get_services : Private {
     my $lon = $c->get_param('long') || '';
 
     # Look up categories for this council or councils
-    my $categories = $c->model('DB::Contact')->not_deleted;
+    my $categories = $c->model('DB::Contact')->active;
 
     if ($lat || $lon) {
         my $area_types = $c->cobrand->area_types;
@@ -231,46 +231,46 @@ sub output_requests : Private {
 
         $problem->state( $statusmap{$problem->state} );
 
+        my ($lat, $lon) = map { Utils::truncate_coordinate($_) } $problem->latitude, $problem->longitude;
         my $request =
         {
-            'service_request_id' => [ $id ],
-            'title' => [ $problem->title ], # Not in Open311 v2
-            'detail'  => [ $problem->detail ], # Not in Open311 v2
-            'description' => [ $problem->title .': ' . $problem->detail ],
-            'lat' => [ $problem->latitude ],
-            'long' => [ $problem->longitude ],
-            'status' => [ $problem->state ],
-#            'status_notes' => [ {} ],
-            'requested_datetime' => [ w3date($problem->confirmed) ],
-            'updated_datetime' => [ w3date($problem->lastupdate) ],
-#            'expected_datetime' => [ {} ],
-#            'address' => [ {} ],
-#            'address_id' => [ {} ],
-            'service_code' => [ $problem->category ],
-            'service_name' => [ $problem->category ],
-#            'service_notice' => [ {} ],
-#            'zipcode' => [ {} ],
-            'interface_used' => [ $problem->service ], # Not in Open311 v2
+            'service_request_id' => $id,
+            'title' => $problem->title, # Not in Open311 v2
+            'detail'  => $problem->detail, # Not in Open311 v2
+            'description' => $problem->title .': ' . $problem->detail,
+            'lat' => $lat,
+            'long' => $lon,
+            'status' => $problem->state,
+#            'status_notes' => {},
+            # Zurich has visible unconfirmed reports
+            'requested_datetime' => w3date($problem->confirmed || $problem->created),
+            'updated_datetime' => w3date($problem->lastupdate),
+#            'expected_datetime' => {},
+#            'address' => {},
+#            'address_id' => {},
+            'service_code' => $problem->category,
+            'service_name' => $problem->category,
+#            'service_notice' => {},
+#            'zipcode' => {},
+            'interface_used' => $problem->service, # Not in Open311 v2
         };
 
         if ( $c->cobrand->moniker eq 'zurich' ) {
-            $request->{service_notice} = [ 
-                $problem->get_extra_metadata('public_response')
-            ];
+            $request->{service_notice} = $problem->get_extra_metadata('public_response');
         }
         else {
             # FIXME Not according to Open311 v2
-            $request->{agency_responsible} = $problem->bodies;
+            my $body_names = $problem->body_names;
+            $request->{agency_responsible} = {'recipient' => $body_names };
         }
 
         if ( !$problem->anonymous ) {
             # Not in Open311 v2
-            $request->{'requestor_name'} = [ $problem->name ];
+            $request->{'requestor_name'} = $problem->name;
         }
         if ( $problem->whensent ) {
             # Not in Open311 v2
-            $request->{'agency_sent_datetime'} =
-                [ w3date($problem->whensent) ];
+            $request->{'agency_sent_datetime'} = w3date($problem->whensent);
         }
 
         # Extract number of updates
@@ -279,25 +279,18 @@ sub output_requests : Private {
         )->count;
         if ($updates) {
             # Not in Open311 v2
-            $request->{'comment_count'} = [ $updates ];
+            $request->{'comment_count'} = $updates;
         }
 
         my $display_photos = $c->cobrand->allow_photo_display($problem);
         if ($display_photos && $problem->photo) {
             my $url = $c->cobrand->base_url();
-            my $imgurl = $url . $problem->photos->[0]->{url_full};
-            $request->{'media_url'} = [ $imgurl ];
+            my $imgurl = $url . $problem->photos->[$display_photos-1]->{url_full};
+            $request->{'media_url'} = $imgurl;
         }
         push(@problemlist, $request);
     }
 
-    foreach my $request (@problemlist) {
-        if ($request->{agency_responsible}) {
-            my @body_names = map { $_->name } values %{$request->{agency_responsible}} ;
-            $request->{agency_responsible} =
-                [ {'recipient' => [ @body_names ] } ];
-        }
-    }
     $c->forward( 'format_output', [ {
         'requests' => [ {
             'request' => \@problemlist
@@ -315,6 +308,7 @@ sub get_requests : Private {
     # Only provide access to the published reports
     my $states = FixMyStreet::DB::Result::Problem->visible_states();
     delete $states->{unconfirmed};
+    delete $states->{submitted};
     my $criteria = {
         state => [ keys %$states ]
     };
@@ -417,6 +411,7 @@ sub get_request : Private {
 
     my $states = FixMyStreet::DB::Result::Problem->visible_states();
     delete $states->{unconfirmed};
+    delete $states->{submitted};
     my $criteria = {
         state => [ keys %$states ],
         id => $id,
@@ -427,12 +422,13 @@ sub get_request : Private {
 sub format_output : Private {
     my ( $self, $c, $hashref ) = @_;
     my $format = $c->stash->{format};
+    $c->response->header('Access-Control-Allow-Origin' => '*');
     if ('json' eq $format) {
         $c->res->content_type('application/json; charset=utf-8');
         $c->res->body( encode_json($hashref) );
     } elsif ('xml' eq $format) {
         $c->res->content_type('application/xml; charset=utf-8');
-        $c->res->body( XMLout($hashref, RootName => undef) );
+        $c->res->body( XMLout($hashref, RootName => undef, NoAttr => 1 ) );
     } else {
         $c->detach( 'error', [
             sprintf(_('Invalid format %s specified.'), $format)
@@ -449,11 +445,10 @@ sub is_jurisdiction_id_ok : Private {
 
 # Input:  DateTime object
 # Output: 2011-04-23T10:28:55+02:00
-# FIXME Need generic solution to find time zone
 sub w3date : Private {
     my $datestr = shift;
     return unless $datestr;
-    return DateTime::Format::W3CDTF->format_datetime($datestr);
+    return DateTime::Format::W3CDTF->format_datetime($datestr->truncate(to => 'second'));
 }
 
 =head1 AUTHOR

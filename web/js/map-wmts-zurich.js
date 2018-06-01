@@ -1,115 +1,102 @@
-/* 
- * Maps for FMZ using Zurich council's WMTS tile server 
+/*
+ * Maps for FMZ using Zurich council's WMTS tile server
  */
 
 // From 'fullExtent' from http://www.gis.stadt-zuerich.ch/maps/rest/services/tiled95/LuftbildHybrid/MapServer?f=pjson
 fixmystreet.maps.layer_bounds = new OpenLayers.Bounds(
-    2676000.9069999997, // W
-    1241399.842, // S
-    2689900.9069999997, // E
-    1254599.842); // N
+    2672499, // W
+    1238999, // S
+    2689999, // E
+    1256999); // N
 
 fixmystreet.maps.matrix_ids = [
-  // The two highest zoom levels are pretty much useless so they're disabled.
-  // {
-  //   "matrixHeight": 882,
-  //   "scaleDenominator": 241905.24571522293,
-  //   "identifier": "0",
-  //   "tileWidth": 512,
-  //   "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
-  //   "tileHeight": 512,
-  //   "matrixWidth": 868
-  // },
-  // {
-  //   "matrixHeight": 1764,
-  //   "scaleDenominator": 120952.62285761147,
-  //   "identifier": "1",
-  //   "tileWidth": 512,
-  //   "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
-  //   "tileHeight": 512,
-  //   "matrixWidth": 1735
-  // },
-
   {
-    "matrixHeight": 3527,
-    "scaleDenominator": 60476.31142880573,
+    "matrixHeight": 7,
+    "scaleDenominator": 241904.761905,
+    "identifier": "0",
+    "tileWidth": 512,
+    "tileHeight": 512,
+    "matrixWidth": 13
+  },
+  {
+    "matrixHeight": 14,
+    "scaleDenominator": 120952.380952,
+    "identifier": "1",
+    "tileWidth": 512,
+    "tileHeight": 512,
+    "matrixWidth": 25
+  },
+  {
+    "matrixHeight": 28,
+    "scaleDenominator": 60476.1904761,
     "identifier": "2",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 3470
+    "matrixWidth": 49
   },
   {
-    "matrixHeight": 7053,
-    "scaleDenominator": 30238.155714402867,
+    "matrixHeight": 56,
+    "scaleDenominator": 30238.0952382,
     "identifier": "3",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 6939
+    "matrixWidth": 97
   },
   {
-    "matrixHeight": 14106,
-    "scaleDenominator": 15119.077857201433,
+    "matrixHeight": 111,
+    "scaleDenominator": 15119.0476189,
     "identifier": "4",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 13877
+    "matrixWidth": 194
   },
   {
-    "matrixHeight": 28211,
-    "scaleDenominator": 7559.538928600717,
+    "matrixHeight": 222,
+    "scaleDenominator": 7559.52380964,
     "identifier": "5",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 27753
+    "matrixWidth": 388
   },
   {
-    "matrixHeight": 56422,
-    "scaleDenominator": 3779.7694643003583,
+    "matrixHeight": 443,
+    "scaleDenominator": 3779.76190464,
     "identifier": "6",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 55505
+    "matrixWidth": 776
   },
   {
-    "matrixHeight": 112844,
-    "scaleDenominator": 1889.8847321501792,
+    "matrixHeight": 886,
+    "scaleDenominator": 1889.8809525,
     "identifier": "7",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 111010
+    "matrixWidth": 1551
   },
   {
-    "matrixHeight": 225687,
-    "scaleDenominator": 944.9423660750896,
+    "matrixHeight": 1772,
+    "scaleDenominator": 944.940476071,
     "identifier": "8",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 222020
+    "matrixWidth": 3101
   },
   {
-    "matrixHeight": 451374,
-    "scaleDenominator": 472.4711830375448,
+    "matrixHeight": 3544,
+    "scaleDenominator": 472.470238214,
     "identifier": "9",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 444039
+    "matrixWidth": 6201
   },
   {
-    "matrixHeight": 902748,
-    "scaleDenominator": 236.2355915187724,
+    "matrixHeight": 7087,
+    "scaleDenominator": 236.235118929,
     "identifier": "10",
     "tileWidth": 512,
-    "supportedCRS": "urn:ogc:def:crs:EPSG::2056",
     "tileHeight": 512,
-    "matrixWidth": 888078
+    "matrixWidth": 12402
   }
 ];
 
@@ -140,7 +127,7 @@ fixmystreet.maps.matrix_ids = [
 
 })();
 
-/* 
+/*
  * maps.config() is called on dom ready in map-OpenLayers.js
  * to setup the way the map should operate.
  */
@@ -165,7 +152,8 @@ fixmystreet.maps.config = function() {
     fixmystreet.area_format = { fillColor: 'none', strokeWidth: 4, strokeColor: 'black' };
 };
 
-fixmystreet.maps.marker_size_for_zoom = function(zoom) {
+fixmystreet.maps.marker_size = function() {
+    var zoom = fixmystreet.map.getZoom() + fixmystreet.zoomOffset;
     if (zoom >= 6) {
         return 'normal';
     } else if (zoom >= 3) {

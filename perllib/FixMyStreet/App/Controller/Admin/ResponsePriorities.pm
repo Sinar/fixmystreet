@@ -5,12 +5,6 @@ use namespace::autoclean;
 BEGIN { extends 'Catalyst::Controller'; }
 
 
-sub begin : Private {
-    my ( $self, $c ) = @_;
-
-    $c->forward('/admin/begin');
-}
-
 sub index : Path : Args(0) {
     my ( $self, $c ) = @_;
 
@@ -70,6 +64,8 @@ sub edit : Path : Args(2) {
         $priority->deleted( $c->get_param('deleted') ? 1 : 0 );
         $priority->name( $c->get_param('name') );
         $priority->description( $c->get_param('description') );
+        $priority->external_id( $c->get_param('external_id') );
+        $priority->is_default( $c->get_param('is_default') ? 1 : 0 );
         $priority->update_or_insert;
 
         my @live_contact_ids = map { $_->id } @live_contacts;
@@ -92,10 +88,9 @@ sub edit : Path : Args(2) {
 sub load_user_body : Private {
     my ($self, $c, $body_id) = @_;
 
-    my $has_permission = $c->user->has_body_permission_to('responsepriority_edit') &&
-                         $c->user->from_body->id eq $body_id;
+    my $has_permission = $c->user->has_body_permission_to('responsepriority_edit', $body_id);
 
-    unless ( $c->user->is_superuser || $has_permission ) {
+    unless ( $has_permission ) {
         $c->detach( '/page_error_404_not_found' );
     }
 

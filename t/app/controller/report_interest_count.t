@@ -1,6 +1,3 @@
-use strict;
-use warnings;
-
 package FixMyStreet::Cobrand::Tester;
 
 use parent 'FixMyStreet::Cobrand::Default';
@@ -11,8 +8,6 @@ sub can_support_problems {
 
 package main;
 
-use Test::More;
-
 use FixMyStreet::TestMech;
 use Web::Scraper;
 use Path::Class;
@@ -20,8 +15,6 @@ use DateTime;
 
 my $mech = FixMyStreet::TestMech->new;
 
-# create a test user and report
-$mech->delete_user('test@example.com');
 my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
 my $dt = DateTime->new(
@@ -133,6 +126,5 @@ subtest 'check support details not shown if not enabled in cobrand' => sub {
 };
 
 END {
-    $mech->delete_user('test@example.com');
     done_testing();
 }

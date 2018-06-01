@@ -1,7 +1,10 @@
-use strict;
-use warnings;
-use Test::More;
-use utf8;
+package FixMyStreet::Cobrand::Tester;
+
+use parent 'FixMyStreet::Cobrand::Default';
+
+sub send_moderation_notifications { 0 }
+
+package main;
 
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
@@ -16,9 +19,6 @@ my $body = $mech->create_body_ok( $BROMLEY_ID, 'Bromley Council' );
 my $dt = DateTime->now;
 
 my $user = $mech->create_user_ok('test-moderation@example.com', name => 'Test User');
-$user->user_body_permissions->delete_all;
-$user->discard_changes;
-
 my $user2 = $mech->create_user_ok('test-moderation2@example.com', name => 'Test User 2');
 
 sub create_report {
@@ -67,7 +67,8 @@ subtest 'Auth' => sub {
         $mech->get_ok($REPORT_URL);
         $mech->content_lacks('Moderat');
 
-        $mech->get_ok('/contact?m=1&id=' . $report->id);
+        $mech->get('/contact?m=1&id=' . $report->id);
+        is $mech->res->code, 400;
         $mech->content_lacks('Good bad bad bad');
     };
 
@@ -100,10 +101,11 @@ subtest 'Problem moderation' => sub {
             problem_detail => 'Good good improved',
         }});
         $mech->base_like( qr{\Q$REPORT_URL\E} );
+        $mech->content_like(qr/Moderated by Bromley Council/);
 
         $report->discard_changes;
-        is $report->title, 'Good [...] good';
-        is $report->detail, 'Good [...] good [...]improved';
+        is $report->title, 'Good good';
+        is $report->detail, 'Good good improved';
     };
 
     subtest 'Revert title and text' => sub {
@@ -182,6 +184,30 @@ subtest 'Problem moderation' => sub {
         # reset
         $report->update({ state => 'confirmed' });
     };
+
+    subtest 'Hide report without sending email' => sub {
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ { 'tester' => '.' } ]
+        }, sub {
+
+            $mech->clear_emails_ok;
+
+            $mech->get_ok($REPORT_URL);
+            $mech->submit_form_ok({ with_fields => {
+                %problem_prepopulated,
+                problem_hide => 1,
+            }});
+            $mech->base_unlike( qr{/report/}, 'redirected to front page' );
+
+            $report->discard_changes;
+            is $report->state, 'hidden', 'Is hidden';
+
+            ok $mech->email_count_is(0), "Email wasn't sent";
+
+            # reset
+            $report->update({ state => 'confirmed' });
+        }
+    };
 };
 
 $mech->content_lacks('Posted anonymously', 'sanity check');
@@ -197,8 +223,8 @@ subtest 'Problem 2' => sub {
     $mech->base_like( qr{\Q$REPORT2_URL\E} );
 
     $report2->discard_changes;
-    is $report2->title, 'Good [...] good';
-    is $report2->detail, 'Good [...] good [...]improved';
+    is $report2->title, 'Good good';
+    is $report2->detail, 'Good good improved';
 
     $mech->submit_form_ok({ with_fields => {
         %problem_prepopulated,
@@ -242,7 +268,7 @@ subtest 'updates' => sub {
         $mech->base_like( qr{\Q$REPORT_URL\E} );
 
         $update->discard_changes;
-        is $update->text, 'update good good [...] good',
+        is $update->text, 'update good good good',
     };
 
     subtest 'Revert text' => sub {
@@ -326,14 +352,24 @@ subtest 'Update 2' => sub {
     }}) or die $mech->content;
 
     $update2->discard_changes;
-    is $update2->text, 'update good good [...] good',
+    is $update2->text, 'update good good good',
 };
 
-$update->delete;
-$update2->delete;
-$report->moderation_original_data->delete;
-$report->delete;
-$report2->delete;
-$mech->delete_user($user);
+subtest 'Now stop being a staff user' => sub {
+    $user->update({ from_body => undef });
+    $mech->get_ok($REPORT_URL);
+    $mech->content_contains('Moderated by Bromley Council');
+};
+
+subtest 'And do it as a superuser' => sub {
+    $user->update({ is_superuser => 1 });
+    $mech->get_ok($REPORT_URL);
+    $mech->submit_form_ok({ with_fields => {
+        %problem_prepopulated,
+        problem_title  => 'Good good',
+        problem_detail => 'Good good improved',
+    }});
+    $mech->content_contains('Moderated by an administrator');
+};
 
 done_testing();

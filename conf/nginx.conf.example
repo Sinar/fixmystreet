@@ -3,7 +3,7 @@
 # An example sysvinit script to help with this is shown given in the file
 # sysvinit-catalyst-fastcgi.example in this directory.
 #
-# See our installation help at http://fixmystreet.org/
+# See our installation help at https://fixmystreet.org/
 
 server {
 
@@ -47,7 +47,7 @@ server {
     rewrite ^/alerts/?$              /alert          permanent;
 
     location /mapit {
-        proxy_pass http://mapit.mysociety.org/;
+        proxy_pass https://mapit.mysociety.org/;
         proxy_set_header X-Real-IP $remote_addr;
     }
 

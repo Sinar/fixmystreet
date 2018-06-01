@@ -1,9 +1,13 @@
 [% allow_creation = !c.cobrand.only_authed_can_create || (c.user && c.user.from_body) %]
-[% RETURN IF NOT allow_creation %]
+[% RETURN IF NOT allow_creation OR problem.extra.closed_updates %]
 
 <div id="update_form">
   [% IF NOT login_success AND NOT oauth_need_email %]
-    <h2>[% loc( 'Provide an update') %]</h2>
+    [% TRY %]
+      [% INCLUDE 'report/_update-form-heading.html' %]
+    [% CATCH file %]
+      <h2[% IF two_column_sidebar %] class="hidden-js"[% END %]>[% loc( 'Provide an update') %]</h2>
+    [% END %]
 
     [% IF c.cobrand.moniker != 'stevenage' %]
     <div class="general-notes">

@@ -40,19 +40,13 @@ BEGIN {
 }
 
 use FixMyStreet;
-use mySociety::DBHandle qw(dbh);
+use FixMyStreet::Cobrand;
+use FixMyStreet::DB;
 use mySociety::MaPit;
 use Getopt::Long;
 use Pod::Usage;
 
-my %args = (
-    Name => FixMyStreet->config('FMS_DB_NAME'),
-    User => FixMyStreet->config('FMS_DB_USER'),
-    Password => FixMyStreet->config('FMS_DB_PASS'),
-);
-$args{Host} = FixMyStreet->config('FMS_DB_HOST', undef) if FixMyStreet->config('FMS_DB_HOST');
-$args{Port} = FixMyStreet->config('FMS_DB_PORT', undef) if FixMyStreet->config('FMS_DB_PORT');
-mySociety::DBHandle::configure( %args );
+my $db = FixMyStreet::DB->schema->storage;
 
 my ($commit, $version, $downgrade, $help);
 
@@ -108,13 +102,20 @@ sub get_statements {
 sub run_statements {
     foreach my $st (@_) {
         print ".";
-        dbh()->do($st);
+        $db->dbh->do($st);
     }
-    dbh()->do('COMMIT');
     print "\n";
 }
 
-if ($upgrade) {
+if ($upgrade && $current_version eq 'EMPTY') {
+    print "* Database empty, loading in whole schema\n";
+    $nothing = 0;
+    if ($commit) {
+        run_statements(get_statements("$bin_dir/../db/schema.sql"));
+        run_statements(get_statements("$bin_dir/../db/generate_secret.sql"));
+        run_statements(get_statements("$bin_dir/../db/fixture.sql"));
+    }
+} elsif ($upgrade) {
     if ($version) {
         die "Not currently implemented";
     }
@@ -136,14 +137,30 @@ if ($upgrade) {
     if ( $commit && $current_version lt '0028' ) {
         $nothing = 0;
         print "Bodies created, fetching names from mapit\n";
-        my $area_ids = dbh()->selectcol_arrayref('SELECT area_id FROM body_areas');
+        my $area_ids = $db->dbh->selectcol_arrayref('SELECT area_id FROM body_areas');
         if ( @$area_ids ) {
             my $areas = mySociety::MaPit::call('areas', $area_ids);
+            $db->txn_begin;
             foreach (values %$areas) {
-                dbh()->do('UPDATE body SET name=? WHERE id=?', {}, $_->{name}, $_->{id});
+                $db->dbh->do('UPDATE body SET name=? WHERE id=?', {}, $_->{name}, $_->{id});
             }
-            dbh()->do('COMMIT');
+            $db->txn_commit;
         }
+    }
+
+    if ( $commit && $current_version lt '0054' ) {
+        $nothing = 0;
+        print "States created, importing names\n";
+        my @avail = FixMyStreet::Cobrand->available_cobrand_classes;
+        # Pick first available cobrand and language for database name import
+        my $cobrand = $avail[0] ? FixMyStreet::Cobrand::class($avail[0]) : 'FixMyStreet::Cobrand::Default';
+        my $lang = $cobrand->new->set_lang_and_domain(undef, 1, FixMyStreet->path_to('locale')->stringify);
+        my $names = $db->dbh->selectcol_arrayref('SELECT name FROM state');
+        $db->txn_begin;
+        foreach (@$names) {
+            $db->dbh->do('UPDATE state SET name=? WHERE name=?', {}, _($_), $_);
+        }
+        $db->txn_commit;
     }
 }
 
@@ -194,6 +211,22 @@ else {
 # By querying the database schema, we can see where we're currently at
 # (assuming schema change files are never half-applied, which should be the case)
 sub get_db_version {
+    return 'EMPTY' if ! table_exists('problem');
+    return '0062' if column_exists('users', 'created');
+    return '0061' if column_exists('body', 'extra');
+    return '0060' if column_exists('body', 'convert_latlong');
+    return '0059' if column_exists('response_templates', 'external_status_code');
+    return '0058' if column_exists('body', 'blank_updates_permitted');
+    return '0057' if column_exists('body', 'fetch_problems');
+    return '0056' if column_exists('users', 'email_verified');
+    return '0055' if column_exists('response_priorities', 'is_default');
+    return '0054' if table_exists('state');
+    return '0053' if table_exists('report_extra_fields');
+    return '0052' if table_exists('translation');
+    return '0051' if column_exists('contacts', 'state');
+    return '0050' if table_exists('defect_types');
+    return '0049' if column_exists('response_priorities', 'external_id');
+    return '0048' if column_exists('response_templates', 'state');
     return '0047' if column_exists('response_priorities', 'description');
     return '0046' if column_exists('users', 'extra');
     return '0045' if table_exists('response_priorities');
@@ -241,42 +274,48 @@ sub get_db_version {
     return '0006' if 0;
     return '0005-add_council_user_flag' if column_exists('users', 'from_council');
     return '0005-add_abuse_flags_to_users_and_reports' if column_exists('problem', 'flagged');
-    return '0000';
+    return '0004' if column_exists('comment', 'user_id');
+    return '0003' if column_exists('alert', 'user_id');
+    return '0002' if column_exists('problem', 'user_id');
+    return '0001' if table_exists('sessions');
+    return '0000' if table_exists('problem');
+    die "Database schema issue!";
 }
 
 # Returns true if a table exists
 sub table_exists {
     my $table = shift;
-    return dbh()->selectrow_array('select count(*) from pg_tables where tablename = ?', {}, $table);
+    return $db->dbh->selectrow_array('select count(*) from pg_tables where tablename = ?', {}, $table);
 }
 
 # Returns true if a column of table exists
 sub column_exists {
     my ( $table, $column ) = @_;
-    return dbh()->selectrow_array('select count(*) from pg_class, pg_attribute WHERE pg_class.relname=? AND pg_attribute.attname=? AND pg_class.oid=pg_attribute.attrelid AND pg_attribute.attnum > 0', {}, $table, $column);
+    return $db->dbh->selectrow_array('select count(*) from pg_class, pg_attribute WHERE pg_class.relname=? AND pg_attribute.attname=? AND pg_class.oid=pg_attribute.attrelid AND pg_attribute.attnum > 0', {}, $table, $column);
 }
 
 # Returns true if a column of a row in a table contains some text
 sub column_like {
     my ( $table, $where, $column, $contents ) = @_;
-    return dbh()->selectrow_array("select count(*) from $table WHERE $where AND $column LIKE ?", {}, "%$contents%");
+    return $db->dbh->selectrow_array("select count(*) from $table WHERE $where AND $column LIKE ?", {}, "%$contents%");
 }
 
 # Returns true if a check constraint on a table exists
 sub constraint_exists {
     my ( $constraint ) = @_;
-    return dbh()->selectrow_array('select count(*) from pg_constraint where conname = ?', {}, $constraint);
+    return $db->dbh->selectrow_array('select count(*) from pg_constraint where conname = ?', {}, $constraint);
 }
 
 # Returns true if a check constraint contains a certain string
 sub constraint_contains {
     my ( $constraint, $check ) = @_;
-    my ($consrc) = dbh()->selectrow_array('select consrc from pg_constraint where conname = ?', {}, $constraint);
+    my ($consrc) = $db->dbh->selectrow_array('select consrc from pg_constraint where conname = ?', {}, $constraint);
+    return unless $consrc;
     return $consrc =~ /$check/;
 }
 
 # Returns true if a function exists
 sub function_exists {
     my $fn = shift;
-    return dbh()->selectrow_array('select count(*) from pg_proc where proname = ?', {}, $fn);
+    return $db->dbh->selectrow_array('select count(*) from pg_proc where proname = ?', {}, $fn);
 }

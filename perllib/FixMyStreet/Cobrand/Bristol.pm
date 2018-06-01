@@ -4,7 +4,7 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2561; }
+sub council_area_id { return 2561; }
 sub council_area { return 'Bristol'; }
 sub council_name { return 'Bristol County Council'; }
 sub council_url { return 'bristol'; }
@@ -40,6 +40,10 @@ sub disambiguate_location {
     };
 }
 
+sub get_geocoder {
+    return 'OSM'; # use OSM geocoder
+}
+
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
     return 'grey' if $p->state eq 'not responsible';
@@ -64,7 +68,13 @@ sub categories_restriction {
     # cobrand, not the email categories from FMS.com. We've set up the
     # Email categories with a devolved send_method, so can identify Open311
     # categories as those which have a blank send_method.
-    return $rs->search( { send_method => undef } );
+    return $rs->search( { 'me.send_method' => undef } );
+}
+
+sub open311_config {
+    my ($self, $row, $h, $params) = @_;
+
+    $params->{always_send_email} = 1;
 }
 
 1;

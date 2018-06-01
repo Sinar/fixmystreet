@@ -1,15 +1,17 @@
 <div id="front-main">
     <div id="front-main-container">
-        [% INCLUDE 'around/intro.html' %]
+        [% UNLESS possible_location_matches %]
+            [% INCLUDE 'around/intro.html' %]
+        [% END %]
 
         [%
             question = c.cobrand.enter_postcode_text || loc('Enter a nearby street name and area');
         %]
 
-        <form action="[% c.uri_for('/around') %]" method="get" name="postcodeForm" id="postcodeForm">
+        <form action="[% c.uri_for('/around') %]" method="get" name="postcodeForm" id="postcodeForm" class="js-geolocate">
             <label for="pc">[% question %]:</label>
             <div>
-                <input type="text" name="pc" value="[% pc | html %]" id="pc" size="10" maxlength="200" placeholder="[% tprintf(loc('e.g. ‘%s’ or ‘%s’'), c.cobrand.example_places) %]">
+                <input type="text" name="pc" value="[% pc | html %]" id="pc" size="10" maxlength="200" placeholder="[% tprintf(loc('e.g. ‘%s’ or ‘%s’'), c.cobrand.example_places) %]" required>
                 <input type="submit" value="[% loc('Go') %]" id="sub">
             </div>
 
@@ -21,5 +23,10 @@
               <input type="hidden" name="filter_category" value="[% c.user.categories.join(",") | html %]">
             [% END %]
         </form>
+        <a href="[% c.uri_for('/around') %]" id="geolocate_link">&hellip; [% loc('or locate me automatically') %]</a>
+
+        [% UNLESS possible_location_matches %]
+            [% INCLUDE 'around/_postcode_form_post.html' %]
+        [% END %]
     </div>
 </div>

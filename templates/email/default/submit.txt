@@ -1,4 +1,4 @@
-Subject: Problem Report: [% title %]
+Subject: Problem Report: [% report.title %]
 
 Dear [% bodies_name %],
 
@@ -13,17 +13,21 @@ please visit the following link:
 
 [% has_photo %]----------
 
-Name: [% name %]
+Name: [% report.name %]
 
-Email: [% email %]
+Email: [% report.user.email OR "None provided" %]
 
-[% phone_line %][% category_line %]Subject: [% title %]
+Phone: [% report.user.phone OR "None provided" %]
 
-Details: [% detail %]
+Category: [% report.category %]
 
-Latitude: [% latitude %]
+Subject: [% report.title %]
 
-Longitude: [% longitude %]
+Details: [% report.detail %]
+
+Latitude: [% report.latitude %]
+
+Longitude: [% report.longitude %]
 
 View OpenStreetMap of this location: [% osm_url %]
 

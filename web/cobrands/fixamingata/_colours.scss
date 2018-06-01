@@ -1,6 +1,5 @@
 /* COLOURS */
 
-$image-sprite: 'images/sprite.png';
 $menu-image: 'menu-black';
 
 $primary: #00b1da;
@@ -13,6 +12,8 @@ $base_fg: $primary_text;
 $map_nav_bg: #eee;
 $nav_fg: $primary_text;
 $nav_fg_hover: #444;
+
+$header-top-border: false;
 
 $col_click_map: #00BD08;
 $col_fixed_label: #00BD08;

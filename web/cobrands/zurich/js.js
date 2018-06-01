@@ -70,14 +70,14 @@ $(function() {
         // same or different state to the one we started on
         if (state === $(this).data('pstate')) {
             $('input[name=publish_response]').show();
-            $('.response_templates_select').show();
+            $('.js-template-name').show();
             $('#status_update_container').show();
 
             if (state === 'confirmed') {
                 $('#assignation__category').show();
                 $('#assignation__subdivision').show();
             }
-            if ((state === 'closed') || (state === 'investigating')) {
+            if ((state === 'external') || (state === 'wish')) {
                 $('#assignation__external').show();
             } else {
                 $('#assignation__external').hide();
@@ -85,7 +85,7 @@ $(function() {
         }
         else {
             $('input[name=publish_response]').hide();
-            $('.response_templates_select').hide();
+            $('.js-template-name').hide();
             $('#status_update_container').hide();
 
             $('#assignation__category').hide();

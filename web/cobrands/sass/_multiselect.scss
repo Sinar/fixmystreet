@@ -1,14 +1,15 @@
 .multi-select-container {
     position: relative;
+    display: inline-block; // shrink to width of .multi-select-button
 }
 
 .multi-select-menu {
     position: absolute;
-    left: 0;
+    #{$left}: 0;
     top: 0.8em;
-    z-index: 1;
-    float: left;
-    min-width: 100%;
+    z-index: 2; // stack above mysoc-footer
+    float: #{$left}; // shrink to width of child elements
+    min-width: 100%; // always at least as wide as its .multi-select-button sibling
     background: #fff;
     margin: 1em 0;
     border: 1px solid #aaa;
@@ -19,7 +20,8 @@
 .multi-select-menuitem {
     display: block;
     font-size: 0.875em;
-    padding: 0.6em 1em 0.6em 30px;
+    padding: flip(0.6em 1em 0.6em 30px, 0.6em 30px 0.6em 1em);
+    margin: 0;
     white-space: nowrap;
 
     & + & {
@@ -29,7 +31,7 @@
     input {
         position: absolute;
         margin-top: 0.25em;
-        margin-left: -20px;
+        margin-#{$left}: -20px;
     }
 }
 
@@ -40,7 +42,7 @@
 .multi-select-button {
     display: inline-block;
     font-size: 0.875em;
-    padding: 0.2em 1.5em 0.2em 0.6em;
+    padding: flip(0.2em 1.5em 0.2em 0.6em, 0.2em 0.6em 0.2em 1.5em);
     max-width: 20em;
     white-space: nowrap;
     overflow: hidden;
@@ -63,7 +65,7 @@
         border-color: #999 transparent transparent transparent;
 
         position: absolute;
-        right: 0.5em;
+        #{$right}: 0.5em;
         top: 50%;
         margin: -0.2em 0 0 0;
     }

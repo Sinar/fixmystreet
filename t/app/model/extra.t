@@ -1,14 +1,8 @@
-use strict;
-use warnings;
-use Test::More;
-use utf8;
+use FixMyStreet::Test;
 
-use FixMyStreet::DB;
-use Data::Dumper;
 use DateTime;
 
-my $db = FixMyStreet::DB->connect;
-$db->txn_begin;
+my $db = FixMyStreet::DB->schema;
 
 my $body = $db->resultset('Body')->create({ name => 'ExtraTestingBody' });
 
@@ -19,8 +13,7 @@ sub get_test_contact {
         category => "Testing ${serial}",
         body => $body,
         email => 'test@example.com',
-        confirmed => 1,
-        deleted => 0,
+        state => 'confirmed',
         editor => 'test script',
         note => 'test script',
         whenedited => DateTime->now(),
@@ -105,5 +98,47 @@ subtest 'Default hash layout' => sub {
     };
 };
 
-$db->txn_rollback;
+subtest 'Get named field values' => sub {
+    my $user = $db->resultset('User')->create({
+        email => 'test-moderation@example.com',
+        email_verified => 1,
+        name => 'Test User'
+    });
+    my $report = $db->resultset('Problem')->create(
+    {
+        postcode           => 'BR1 3SB',
+        bodies_str         => "",
+        areas              => "",
+        category           => 'Other',
+        title              => 'Good bad good',
+        detail             => 'Good bad bad bad good bad',
+        used_map           => 't',
+        name               => 'Test User 2',
+        anonymous          => 'f',
+        state              => 'confirmed',
+        lang               => 'en-gb',
+        service            => '',
+        cobrand            => 'default',
+        latitude           => '51.4129',
+        longitude          => '0.007831',
+        user_id            => $user->id,
+    });
+
+    $report->push_extra_fields(
+        {
+            name => "field1",
+            description => "This is a test field",
+            value => "value 1",
+        },
+        {
+            name => "field 2",
+            description => "Another test",
+            value => "this is a test value",
+        }
+    );
+
+    is $report->get_extra_field_value("field1"), "value 1", "field1 has correct value";
+    is $report->get_extra_field_value("field 2"), "this is a test value", "field 2 has correct value";
+};
+
 done_testing();

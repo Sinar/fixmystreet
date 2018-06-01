@@ -6,8 +6,9 @@
   </div>
 [% ELSE %]
   [% can_contribute_as_another_user = c.user.has_permission_to("contribute_as_another_user", bodies.keys) %]
+  [% can_contribute_as_anonymous_user = c.user.has_permission_to("contribute_as_anonymous_user", bodies.keys) %]
   [% can_contribute_as_body = c.user.from_body AND c.user.has_permission_to("contribute_as_body", bodies.keys) %]
-  [% IF can_contribute_as_another_user OR can_contribute_as_body %]
+  [% IF can_contribute_as_another_user OR can_contribute_as_anonymous_user OR can_contribute_as_body %]
     [% INCLUDE form_as %]
   [% END %]
 [% END %]
@@ -15,47 +16,53 @@
 [% BLOCK form_as %]
     <label for="form_as">[% loc('Report as') %]</label>
     <select id="form_as" class="form-control js-contribute-as" name="form_as">
-        <option value="myself" selected>[% loc('Yourself') %]</option>
+        <option value="myself" [% c.user.has_body_permission_to('planned_reports') ? '' : 'selected'  %]>[% loc('Yourself') %]</option>
+      [% IF js || can_contribute_as_anonymous_user %]
+        <option value="anonymous_user">[% loc('Anonymous user') %]</option>
+      [% END %]
       [% IF js || can_contribute_as_another_user %]
         <option value="another_user">[% loc('Another user') %]</option>
       [% END %]
       [% IF js || can_contribute_as_body %]
-        <option value="body">[% c.user.from_body.name %]</option>
+        <option value="body" [% c.user.has_body_permission_to('planned_reports') ? 'selected' : ''  %]>[% c.user.from_body.name %]</option>
       [% END %]
     </select>
 [% END %]
 
-    <label for="form_email">[% loc('Email address') %]</label>
-    <input class="form-control" id="form_email"
-    [%- IF js OR can_contribute_as_another_user OR can_contribute_as_body -%]
-    name="email"
-    [%- ELSE -%]
+[% IF c.user.phone_verified AND NOT c.cobrand.call_hook('disable_phone_number_entry') %]
+    <label for="form_phone">[% loc('Phone number') %]</label>
+    <input class="form-control" id="form_phone" name="phone" disabled type="text" value="[% c.user.phone_display | html %]">
+[% END %]
+
+[% IF c.user.email_verified %]
+    <label for="form_username">[% loc('Email address') %]<span class="hidden"> [% loc('(optional)') %]</span></label>
+    <input class="form-control" id="form_username" name="username"
+    [%- IF NOT can_contribute_as_another_user -%]
     disabled
     [%- END -%]
     type="text" value="[% c.user.email | html %]">
+[% END %]
 
     [% INCLUDE 'report/new/extra_name.html' %]
     [% PROCESS 'user/_anonymity.html' anonymous = report.anonymous %]
+    [% INCLUDE 'report/new/form_user_name.html' %]
+    [% INCLUDE 'report/_show_name_label.html' %]
 
-    <label for="form_name">[% loc('Name') %]
-    [% TRY %]
-        [% INCLUDE 'report/new/after_name.html' %]
-        [% CATCH file %]
-    [% END %]
-    </label>
-    [% IF field_errors.name %]
-        <p class='form-error'>[% field_errors.name %]</p>
-    [% END %]
-    <input type="text" class="form-control validName js-form-name" value="[% report.name | html %]" name="name" id="form_name">
-
-    [%# if there is nothing in the name field then set check box as default on form %]
-    <div class="checkbox-group">
-        <input type="checkbox" name="may_show_name" id="form_may_show_name" value="1"[% ' checked' IF name_public %]>
-        <label class="inline" for="form_may_show_name">[% loc('Show my name publicly') %] </label>
-    </div>
-
+[% IF NOT c.user.phone_verified AND NOT c.cobrand.call_hook('disable_phone_number_entry') %]
     <label for="form_phone">[% loc('Phone number (optional)') %]</label>
-    <input class="form-control" type="text" value="[% report.user.phone | html %]" name="phone" id="form_phone">
+    <input class="form-control" type="text" value="[% report.user.phone_display | html %]" name="phone" id="form_phone">
+[% END %]
+[% IF NOT c.user.email_verified %]
+    <label for="form_username">[% loc('Email address (optional)') %]</label>
+    <input class="form-control" type="text" value="[% report.user.email | html %]" name="email" id="form_email">
+[% END %]
+
+[% IF c.user.has_permission_to("report_inspect", bodies.keys) %]
+    <div class="checkbox-group">
+        <input type="checkbox" name="non_public" id="form_non_public" value="1"[% ' checked' IF report.non_public %]>
+        <label class="inline" for="form_non_public">[% loc('Private') %] </label>
+    </div>
+[% END %]
 
     <div class="form-txt-submit-box">
         <input class="green-btn js-submit_register" type="submit" name="submit_register" value="[% loc('Submit') %]">

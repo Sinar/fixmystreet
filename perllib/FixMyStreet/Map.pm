@@ -67,6 +67,10 @@ sub display_map {
     return $map_class->display_map(@_);
 }
 
+sub map_javascript {
+    $map_class->map_javascript;
+}
+
 sub map_features {
     my ( $c, %p ) = @_;
 
@@ -79,32 +83,32 @@ sub map_features {
         # use deltas that are roughly 500m in the UK - so we get a 1 sq km search box
         my $lat_delta = 0.00438;
         my $lon_delta = 0.00736;
-        $p{min_lon} = $p{longitude} - $lon_delta;
-        $p{min_lat} = $p{latitude} - $lat_delta;
-        $p{max_lon} = $p{longitude} + $lon_delta;
-        $p{max_lat} = $p{latitude} + $lat_delta;
+        $p{min_lon} = Utils::truncate_coordinate($p{longitude} - $lon_delta);
+        $p{min_lat} = Utils::truncate_coordinate($p{latitude} - $lat_delta);
+        $p{max_lon} = Utils::truncate_coordinate($p{longitude} + $lon_delta);
+        $p{max_lat} = Utils::truncate_coordinate($p{latitude} + $lat_delta);
     } else {
-        $p{longitude} = ($p{max_lon} + $p{min_lon} ) / 2;
-        $p{latitude} = ($p{max_lat} + $p{min_lat} ) / 2;
+        $p{longitude} = Utils::truncate_coordinate(($p{max_lon} + $p{min_lon} ) / 2);
+        $p{latitude} = Utils::truncate_coordinate(($p{max_lat} + $p{min_lat} ) / 2);
     }
 
-    # list of problems around map can be limited, but should show all pins
-    my $around_limit = $c->cobrand->on_map_list_limit || undef;
-
-    my $on_map_all = $c->cobrand->problems_on_map->around_map( undef, %p );
-    my $on_map_list = $around_limit
-        ? $c->cobrand->problems_on_map->around_map( $around_limit, %p )
-        : $on_map_all;
+    $p{page} = $c->get_param('p') || 1;
+    my $on_map = $c->cobrand->problems_on_map->around_map( $c, %p );
+    my $pager = $c->stash->{pager} = $on_map->pager;
+    $on_map = [ $on_map->all ];
 
     my $dist = FixMyStreet::Gaze::get_radius_containing_population( $p{latitude}, $p{longitude} );
 
-    my $limit  = 20;
-    my @ids    = map { $_->id } @$on_map_list;
-    my $nearby = $c->model('DB::Nearby')->nearby(
-        $c, $dist, \@ids, $limit, @p{"latitude", "longitude", "interval", "categories", "states"}
-    );
+    my $nearby;
+    if (@$on_map < $pager->entries_per_page && $pager->current_page == 1) {
+        my $limit = 20;
+        my @ids = map { $_->id } @$on_map;
+        $nearby = $c->model('DB::Nearby')->nearby(
+            $c, $dist, \@ids, $limit, @p{"latitude", "longitude", "categories", "states", "extra"}
+        );
+    }
 
-    return ( $on_map_all, $on_map_list, $nearby, $dist );
+    return ( $on_map, $nearby, $dist );
 }
 
 sub click_to_wgs84 {

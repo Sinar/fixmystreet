@@ -10,23 +10,25 @@ sub to_body {
 }
 
 sub nearby {
-    my ( $rs, $c, $dist, $ids, $limit, $mid_lat, $mid_lon, $interval, $categories, $states ) = @_;
+    my ( $rs, $c, $dist, $ids, $limit, $mid_lat, $mid_lon, $categories, $states, $extra_params ) = @_;
 
     unless ( $states ) {
         $states = FixMyStreet::DB::Result::Problem->visible_states();
     }
 
     my $params = {
-        non_public => 0,
         state => [ keys %$states ],
     };
-    $params->{'current_timestamp-lastupdate'} = { '<', \"'$interval'::interval" }
-        if $interval;
     $params->{id} = { -not_in => $ids }
         if $ids;
     $params->{category} = $categories if $categories && @$categories;
 
+    FixMyStreet::DB::ResultSet::Problem->non_public_if_possible($params, $c);
+
     $rs = $c->cobrand->problems_restriction($rs);
+
+    # Add in any optional extra query parameters
+    $params = { %$params, %$extra_params } if $extra_params;
 
     my $attrs = {
         prefetch => 'problem',

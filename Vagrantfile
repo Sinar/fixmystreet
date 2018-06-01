@@ -1,9 +1,6 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-BOX_NAME = ENV['BOX_NAME'] || "precise64"
-BOX_URI = ENV['BOX_URI'] || "http://files.vagrantup.com/precise64.box"
-
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
@@ -13,16 +10,14 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # please see the online documentation at vagrantup.com.
 
   # Every Vagrant virtual environment requires a box to build off of.
-  config.vm.box = BOX_NAME
-
-  # The url from where the 'config.vm.box' box will be fetched if it
-  # doesn't already exist on the user's system.
-  config.vm.box_url = BOX_URI
+  config.vm.box = "ubuntu/xenial64"
 
   # Create a forwarded port mapping which allows access to a specific port
   # within the machine from a port on the host machine. In the example below,
   # accessing "localhost:8080" will access port 80 on the guest machine.
   config.vm.network :forwarded_port, guest: 3000, host: 3000
+  # And 3001 for the Cypress test server
+  config.vm.network :forwarded_port, guest: 3001, host: 3001
 
   config.vm.synced_folder ".", "/home/vagrant/fixmystreet", :owner => "vagrant", :group => "vagrant"
 
@@ -30,16 +25,14 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     # To prevent "dpkg-preconfigure: unable to re-open stdin: No such file or directory" warnings
     export DEBIAN_FRONTEND=noninteractive
     # Make sure git submodules are checked out!
-    if [ ! -e fixmystreet/commonlib/.git ]; then
-      echo "Checking out submodules"
-      apt-get -qq install -y git >/dev/null
-      cd fixmystreet
-      git submodule --quiet update --init --recursive
-      cd commonlib
-      git config core.worktree "../../../commonlib"
-      echo "gitdir: ../.git/modules/commonlib" > .git
-      cd ../..
-    fi
+    echo "Checking submodules exist/up to date"
+    apt-get -qq install -y git >/dev/null
+    cd fixmystreet
+    git submodule --quiet update --init --recursive --rebase
+    cd commonlib
+    git config core.worktree "../../../commonlib"
+    echo "gitdir: ../.git/modules/commonlib" > .git
+    cd ../..
     # Fetch and run install script
     wget -O install-site.sh --no-verbose https://github.com/mysociety/commonlib/raw/master/bin/install-site.sh
     sh install-site.sh --dev fixmystreet vagrant 127.0.0.1.xip.io
@@ -56,7 +49,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         echo "****************"
         echo "You can now ssh into your vagrant box: vagrant ssh"
         echo "The website code is found in: ~/fixmystreet"
-        echo "You can run the dev server with: script/fixmystreet_app_server.pl [-d] [-r] [--fork]"
+        echo "You can run the dev server with: script/server"
         echo "Access the admin with username: superuser@example.org and password: password"
     else
         echo "Unfortunately, something appears to have gone wrong with the installation."

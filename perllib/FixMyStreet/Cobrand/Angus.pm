@@ -4,7 +4,7 @@ use parent 'FixMyStreet::Cobrand::UKCouncils';
 use strict;
 use warnings;
 
-sub council_id { return 2550; }
+sub council_area_id { return 2550; }
 sub council_area { return 'Angus'; }
 sub council_name { return 'Angus Council'; }
 sub council_url { return 'angus'; }
@@ -23,6 +23,8 @@ sub enter_postcode_text {
 sub example_places {
     return ( 'DD8 3AP', "Canmore Street" );
 }
+
+sub map_type { 'Angus' }
 
 sub default_show_name { 0 }
 
@@ -70,13 +72,15 @@ sub temp_update_contacts {
 
     my $contact_rs = $self->{c}->model('DB::Contact');
 
+    my $body = FixMyStreet::DB->resultset('Body')->for_areas($self->council_area_id)->first;
+
     my $_update = sub {
         my ($category, $field, $category_details) = @_;
         # NB: we're accepting just 1 field, but supply as array [ $field ]
 
         my $contact = $contact_rs->find_or_create(
             {
-                body_id => $self->council_id,
+                body => $body,
                 category => $category,
                 %{ $category_details || {} },
             },

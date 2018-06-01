@@ -6,7 +6,6 @@ use warnings;
 use DateTime::Format::Pg;
 use IO::String;
 
-use mySociety::DBHandle qw(dbh);
 use FixMyStreet::Gaze;
 use mySociety::Locale;
 use mySociety::MaPit;
@@ -17,8 +16,6 @@ use FixMyStreet::DB;
 use FixMyStreet::Email;
 use FixMyStreet::Map;
 use FixMyStreet::App::Model::PhotoSet;
-
-FixMyStreet->configure_mysociety_dbhandle;
 
 my $parser = DateTime::Format::Pg->new();
 
@@ -42,6 +39,7 @@ sub send() {
                    $item_table.name as item_name, $item_table.anonymous as item_anonymous,
                    $item_table.confirmed as item_confirmed,
                    $item_table.photo as item_photo,
+                   $item_table.problem_state as item_problem_state,
                    $head_table.*
             from alert, $item_table, $head_table
                 where alert.parameter::integer = $head_table.id
@@ -65,9 +63,10 @@ sub send() {
         $query =~ s/\?/alert.parameter/ if ($query =~ /\?/);
         $query =~ s/\?/alert.parameter2/ if ($query =~ /\?/);
 
-        $query = dbh()->prepare($query);
+        $query = FixMyStreet::DB->schema->storage->dbh->prepare($query);
         $query->execute();
         my $last_alert_id;
+        my $last_problem_state = '';
         my %data = ( template => $alert_type->template, data => [], schema => $schema );
         while (my $row = $query->fetchrow_hashref) {
 
@@ -89,7 +88,26 @@ sub send() {
                 alert_id  => $row->{alert_id},
                 parameter => $row->{item_id},
             } );
+
+            # this is currently only for new_updates
+            if (defined($row->{item_text})) {
+                # this might throw up the odd false positive but only in cases where the
+                # state has changed and there was already update text
+                if ($row->{item_problem_state} &&
+                    !( $last_problem_state eq '' && $row->{item_problem_state} eq 'confirmed' ) &&
+                    $last_problem_state ne $row->{item_problem_state}
+                ) {
+                    my $state = FixMyStreet::DB->resultset("State")->display($row->{item_problem_state}, 1, $cobrand);
+
+                    my $update = _('State changed to:') . ' ' . $state;
+                    $row->{item_text} = $row->{item_text} ? $row->{item_text} . "\n\n" . $update :
+                                                            $update;
+                }
+                next unless $row->{item_text};
+            }
+
             if ($last_alert_id && $last_alert_id != $row->{alert_id}) {
+                $last_problem_state = '';
                 _send_aggregated_alert_email(%data);
                 %data = ( template => $alert_type->template, data => [], schema => $schema );
             }
@@ -105,14 +123,14 @@ sub send() {
 
             my $url = $cobrand->base_url_for_report($row);
             # this is currently only for new_updates
-            if ($row->{item_text}) {
+            if (defined($row->{item_text})) {
                 if ( $cobrand->moniker ne 'zurich' && $row->{alert_user_id} == $row->{user_id} ) {
                     # This is an alert to the same user who made the report - make this a login link
                     # Don't bother with Zurich which has no accounts
                     my $user = $schema->resultset('User')->find( {
                         id => $row->{alert_user_id}
                     } );
-                    $data{alert_email} = $user->email;
+                    $data{alert_user} = $user;
                     my $token_obj = $schema->resultset('Token')->create( {
                         scope => 'alert_to_reporter',
                         data  => {
@@ -143,7 +161,7 @@ sub send() {
             # this is ward and council problems
             } else {
                 if ( exists $row->{geocode} && $row->{geocode} && $ref =~ /ward|council/ ) {
-                    my $nearest_st = _get_address_from_gecode( $row->{geocode} );
+                    my $nearest_st = _get_address_from_geocode( $row->{geocode} );
                     $row->{nearest} = $nearest_st;
                 }
 
@@ -212,7 +230,7 @@ sub send() {
             template => $template,
             data => [],
             alert_id => $alert->id,
-            alert_email => $alert->user->email,
+            alert_user => $alert->user,
             lang => $alert->lang,
             cobrand => $cobrand,
             cobrand_data => $alert->cobrand_data,
@@ -228,7 +246,7 @@ sub send() {
             and (select whenqueued from alert_sent where alert_sent.alert_id = ? and alert_sent.parameter::integer = problem.id) is null
             and users.email <> ?
             order by confirmed desc";
-        $q = dbh()->prepare($q);
+        $q = FixMyStreet::DB->schema->storage->dbh->prepare($q);
         $q->execute($latitude, $longitude, $d, $alert->whensubscribed, $alert->id, $alert->user->email);
         while (my $row = $q->fetchrow_hashref) {
             $schema->resultset('AlertSent')->create( {
@@ -236,7 +254,7 @@ sub send() {
                 parameter => $row->{id},
             } );
             if ( exists $row->{geocode} && $row->{geocode} ) {
-                my $nearest_st = _get_address_from_gecode( $row->{geocode} );
+                my $nearest_st = _get_address_from_geocode( $row->{geocode} );
                 $row->{nearest} = $nearest_st;
             }
             my $dt = $parser->parse_timestamp( $row->{confirmed} );
@@ -261,16 +279,20 @@ sub _send_aggregated_alert_email(%) {
     $cobrand->set_lang_and_domain( $data{lang}, 1, FixMyStreet->path_to('locale')->stringify );
     FixMyStreet::Map::set_map_class($cobrand->map_type);
 
-    if (!$data{alert_email}) {
+    if (!$data{alert_user}) {
         my $user = $data{schema}->resultset('User')->find( {
             id => $data{alert_user_id}
         } );
-        $data{alert_email} = $user->email;
+        $data{alert_user} = $user;
     }
 
-    my ($domain) = $data{alert_email} =~ m{ @ (.*) \z }x;
+    # Ignore phone-only users
+    return unless $data{alert_user}->email_verified;
+
+    my $email = $data{alert_user}->email;
+    my ($domain) = $email =~ m{ @ (.*) \z }x;
     return if $data{schema}->resultset('Abuse')->search( {
-        email => [ $data{alert_email}, $domain ]
+        email => [ $email, $domain ]
     } )->first;
 
     my $token = $data{schema}->resultset("Token")->new_result( {
@@ -278,22 +300,18 @@ sub _send_aggregated_alert_email(%) {
         data  => {
             id => $data{alert_id},
             type => 'unsubscribe',
-            email => $data{alert_email},
+            email => $email,
         }
     } );
     $data{unsubscribe_url} = $cobrand->base_url( $data{cobrand_data} ) . '/A/' . $token->token;
 
-    my $sender = sprintf('<fms-%s@%s>',
-        FixMyStreet::Email::generate_verp_token('alert', $data{alert_id}),
-        FixMyStreet->config('EMAIL_DOMAIN')
-    );
-
+    my $sender = FixMyStreet::Email::unique_verp_id('alert', $data{alert_id});
     my $result = FixMyStreet::Email::send_cron(
         $data{schema},
         "$data{template}.txt",
         \%data,
         {
-            To => $data{alert_email},
+            To => $email,
         },
         $sender,
         0,
@@ -308,7 +326,7 @@ sub _send_aggregated_alert_email(%) {
     }
 }
 
-sub _get_address_from_gecode {
+sub _get_address_from_geocode {
     my $geocode = shift;
 
     return '' unless defined $geocode;

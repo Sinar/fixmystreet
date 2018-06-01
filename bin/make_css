@@ -14,12 +14,12 @@ BEGIN {
 use CSS::Sass;
 use File::ChangeNotify;
 use File::Find::Rule;
-use File::Slurp;
 use Getopt::Long;
 use MIME::Base64;
 use MIME::Types;
 use Path::Tiny;
 use Pod::Usage;
+use Try::Tiny;
 
 # Store ARGV in case we need to restart later.
 my @ARGVorig = @ARGV;
@@ -35,6 +35,8 @@ GetOptions(
     'style|t=s' => sub { die "Unknown style\n" unless $_[1] =~ /nested|expanded|compact|compressed/; $style = $_[1]; },
     'verbose' => \my $verbose,
     'watch' => \my $watch,
+    'script=s'=> \my $watch_script,
+    'script-param=s'=> \my $watch_script_param,
     'help|?' => \my $help,
 ) or pod2usage(2);
 pod2usage(1) if $help;
@@ -93,6 +95,7 @@ while ( my @events = $watcher->wait_for_events() ) {
             }
         }
     }
+    system($watch_script, $watch_script_param) if $watch_script;
 }
 
 # Given a SCSS file, compile it and generate a .map file,
@@ -122,9 +125,15 @@ sub compile {
 # Write a file, only if it has changed.
 sub write_if_different {
     my ($fn, $data) = @_;
-    my $current = File::Slurp::read_file($fn, { binmode => ':utf8', err_mode => 'quiet' });
+    $fn = path($fn);
+    my $current = try {
+        $fn->slurp_utf8;
+    } catch {
+        return if $_->{err} eq 'No such file or directory';
+        die $_;
+    };
     if (!$current || $current ne $data) {
-        File::Slurp::write_file($fn, { binmode => ':utf8' }, $data);
+        $fn->spew_utf8($data);
         return 1;
     }
     return 0;
@@ -150,6 +159,8 @@ make_css [options] [dirs ...]
  Options:
    --verbose        display more information
    --watch          wait for file updates and compile automatically
+   --script         script to run after recompilation in watch mode
+   --script-param   param to pass to --script when executing
    --style, -t      CSS output style (one of nested, expanded, compact, compressed)
    --help           this help message
 

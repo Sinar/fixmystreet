@@ -3,29 +3,19 @@
 @import "../sass/mixins";
 
 @import "../sass/base";
-
-#site-header {
-  background: none;
-  background-color: $oxfordshire_dk_green;
-  height: 60px;
-}
+@import "../sass/report_list_pins";
 
 #site-logo {
-  margin-top:4px;
-  background-image: url('images/logo.jpg');
-  background-repeat: no-repeat;
-  background-position: 0px 0px;
-  border: 4px solid $oxfordshire_dk_green;
+  background: transparent url('images/logo.jpg') 0 50% no-repeat;
   width: 173px;
   height: 38px;
-}
-
-#nav-link {
-  height: 60px; // to match #site-header
+  padding: 0.5em 0;
 }
 
 #mysoc-logo {
   background-image: none;
+  background-color: $primary;
+  color: #fff;
   text-indent: 0;
   img {
     display: inline;
@@ -42,11 +32,6 @@
 
 dd, p {
   line-height: 1.4em;
-}
-
-// TODO: Should this be applied to the base base stylesheet, to prevent possible similar issues in other cobrands?
-#sub_map_links {
-  line-height: 1em;
 }
 
 .council_info_box {
@@ -75,6 +60,10 @@ dd, p {
   }
 }
 
+#side-inspect {
+  background-color: mix(#fff, $primary, 85%);
+}
+
 .btn-primary {
     @include button-reset(
         $oxfordshire_button_top,
@@ -86,4 +75,29 @@ dd, p {
         $oxfordshire_button_border,
         #fff
     );
+}
+
+.box-warning {
+    background-color: mix(#fff, $primary, 85%);
+}
+
+.extra-text {
+  padding: 1em;
+  margin: 0 -1em;
+  border-bottom: 1px solid $oxfordshire_mid_grey_green;
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@media print {
+    body {
+        background-color: #fff !important;
+    }
+
+    .mappage #oxford-header,
+    .mappage #side > .extra-text {
+        display: none !important;
+    }
 }

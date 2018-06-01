@@ -1,11 +1,7 @@
-use strict;
-use warnings;
-use Test::More;
+use FixMyStreet::Test;
 use Test::Exception;
-use utf8;
 
 use FixMyStreet::DB;
-use Data::Dumper;
 use DateTime;
 
 my $dt = DateTime->now;

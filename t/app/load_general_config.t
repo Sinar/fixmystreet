@@ -1,10 +1,9 @@
-use strict;
-use warnings;
+use FixMyStreet::Test;
 
-use Test::More tests => 2;
+use_ok 'FixMyStreet';
 
-use_ok 'FixMyStreet::App';
-
-is FixMyStreet::App->config->{GAZE_URL},
+is(FixMyStreet->config('GAZE_URL'),
   'https://gaze.mysociety.org/gaze',
-  "check that known config param is loaded";
+  "check that known config param is loaded");
+
+done_testing();

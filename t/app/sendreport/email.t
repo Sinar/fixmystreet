@@ -1,13 +1,7 @@
-use strict;
-use warnings;
-
-use Test::More;
-
 use FixMyStreet;
 use FixMyStreet::DB;
 use FixMyStreet::SendReport::Email;
 use FixMyStreet::TestMech;
-use mySociety::Locale;
 
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
 
@@ -61,7 +55,7 @@ foreach my $test ( {
 ) {
     subtest $test->{desc} => sub {
         my $e = FixMyStreet::SendReport::Email->new;
-        $contact->update( { confirmed => 0 } ) if $test->{unconfirmed};
+        $contact->update( { state => 'unconfirmed' } ) if $test->{unconfirmed};
         $contact->update( { note => $test->{note} } ) if $test->{note};
         $e->add_body( $body ) if $test->{add_council};
         is $e->build_recipient_list( $row, {} ), $test->{count}, 'correct recipient list count';
@@ -74,7 +68,3 @@ foreach my $test ( {
 }
 
 done_testing();
-
-END {
-    $mech->delete_body($body);
-}

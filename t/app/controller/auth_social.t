@@ -1,13 +1,10 @@
-use strict;
-use warnings;
-use Test::More;
+use Test::MockModule;
 use LWP::Protocol::PSGI;
 use LWP::Simple;
 use JSON::MaybeXS;
 
 use t::Mock::Facebook;
 use t::Mock::Twitter;
-use t::Mock::MapIt;
 
 use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
@@ -18,8 +15,6 @@ END { FixMyStreet::App->log->enable('info'); }
 
 my ($report) = $mech->create_problems_for_body(1, '2345', 'Test');
 
-LWP::Protocol::PSGI->register(t::Mock::MapIt->to_psgi_app, host => 'mapit.uk');
-
 FixMyStreet::override_config {
     FACEBOOK_APP_ID => 'facebook-app-id',
     TWITTER_KEY => 'twitter-key',
@@ -29,6 +24,9 @@ FixMyStreet::override_config {
 
 my $fb_email = 'facebook@example.org';
 my $fb_uid = 123456789;
+
+my $resolver = Test::MockModule->new('Email::Valid');
+$resolver->mock('address', sub { 'facebook@example.org' });
 
 for my $fb_state ( 'refused', 'no email', 'existing UID', 'okay' ) {
     for my $page ( 'my', 'report', 'update' ) {
@@ -104,11 +102,7 @@ for my $fb_state ( 'refused', 'no email', 'existing UID', 'okay' ) {
                 $mech->content_contains('We need your email address, please give it below.');
                 # We don't have an email, so check that we can still submit it,
                 # and the ID carries through the confirmation
-                if ($page eq 'update') {
-                    $fields->{rznvy} = $fb_email;
-                } else {
-                    $fields->{email} = $fb_email;
-                }
+                $fields->{username} = $fb_email;
                 $fields->{name} = 'Ffion Tester';
                 $mech->submit_form(with_fields => $fields);
                 $mech->content_contains('Nearly done! Now check your email');
@@ -137,6 +131,8 @@ for my $fb_state ( 'refused', 'no email', 'existing UID', 'okay' ) {
         }
     }
 }
+
+$resolver->mock('address', sub { 'twitter@example.org' });
 
 my $tw_email = 'twitter@example.org';
 my $tw_uid = 987654321;
@@ -214,11 +210,7 @@ for my $tw_state ( 'refused', 'existing UID', 'no email' ) {
                 $mech->content_contains('We need your email address, please give it below.');
                 # We don't have an email, so check that we can still submit it,
                 # and the ID carries through the confirmation
-                if ($page eq 'update') {
-                    $fields->{rznvy} = $tw_email;
-                } else {
-                    $fields->{email} = $tw_email;
-                }
+                $fields->{username} = $tw_email;
                 $fields->{name} = 'Ffion Tester';
                 $mech->submit_form(with_fields => $fields);
                 $mech->content_contains('Nearly done! Now check your email');
@@ -251,6 +243,5 @@ for my $tw_state ( 'refused', 'existing UID', 'no email' ) {
 };
 
 END {
-    $mech->delete_problems_for_body('2345');
     done_testing();
 }

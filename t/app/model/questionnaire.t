@@ -1,8 +1,3 @@
-use strict;
-use warnings;
-
-use Test::More;
-
 use FixMyStreet;
 use FixMyStreet::TestMech;
 
@@ -112,7 +107,5 @@ for my $test (
         $mech->clear_emails_ok();
     }
 }
-
-$mech->delete_user( $user );
 
 done_testing();

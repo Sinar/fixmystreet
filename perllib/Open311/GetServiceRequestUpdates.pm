@@ -11,7 +11,8 @@ has start_date => ( is => 'ro', default => sub { undef } );
 has end_date => ( is => 'ro', default => sub { undef } );
 has suppress_alerts => ( is => 'rw', default => 0 );
 has verbose => ( is => 'ro', default => 0 );
-has schema => ( is =>'ro', lazy => 1, default => sub { FixMyStreet::DB->connect } );
+has schema => ( is =>'ro', lazy => 1, default => sub { FixMyStreet::DB->schema->connect } );
+has blank_updates_permitted => ( is => 'rw', default => 0 );
 
 Readonly::Scalar my $AREA_ID_BROMLEY     => 2482;
 Readonly::Scalar my $AREA_ID_OXFORDSHIRE => 2237;
@@ -49,6 +50,7 @@ sub fetch {
         }
 
         $self->suppress_alerts( $body->suppress_alerts );
+        $self->blank_updates_permitted( $body->blank_updates_permitted );
         $self->system_user( $body->comment_user );
         $self->update_comments( $o, $body );
     }
@@ -103,16 +105,23 @@ sub update_comments {
         $problem = $self->schema->resultset('Problem')->to_body($body)->search( $criteria );
 
         if (my $p = $problem->first) {
-            next unless defined $request->{update_id} && defined $request->{description};
+            next unless defined $request->{update_id};
             my $c = $p->comments->search( { external_id => $request->{update_id} } );
 
             if ( !$c->first ) {
+                my $state = $open311->map_state( $request->{status} );
+                my $old_state = $p->state;
+                my $external_status_code = $request->{external_status_code} || '';
+                my $old_external_status_code = $p->get_extra_metadata('external_status_code') || '';
                 my $comment = $self->schema->resultset('Comment')->new(
                     {
                         problem => $p,
                         user => $self->system_user,
                         external_id => $request->{update_id},
-                        text => $request->{description},
+                        text => $self->comment_text_for_request(
+                            $request, $p, $state, $old_state,
+                            $external_status_code, $old_external_status_code
+                        ),
                         mark_fixed => 0,
                         mark_open => 0,
                         anonymous => 0,
@@ -123,33 +132,39 @@ sub update_comments {
                     }
                 );
 
-                if ($request->{media_url}) {
-                    my $ua = LWP::UserAgent->new;
-                    my $res = $ua->get($request->{media_url});
-                    if ( $res->is_success && $res->content_type eq 'image/jpeg' ) {
-                        my $photoset = FixMyStreet::App::Model::PhotoSet->new({
-                            data_items => [ $res->decoded_content ],
-                        });
-                        $comment->photo($photoset->data);
+                # Some Open311 services, e.g. Confirm via open311-adapter, provide
+                # a more fine-grained status code that we use within FMS for
+                # response templates.
+                if ( $external_status_code ) {
+                    $comment->set_extra_metadata(external_status_code => $external_status_code);
+                    $p->set_extra_metadata(external_status_code => $external_status_code);
+                }
+
+                $open311->add_media($request->{media_url}, $comment)
+                    if $request->{media_url};
+
+                # don't update state unless it's an allowed state
+                if ( FixMyStreet::DB::Result::Problem->visible_states()->{$state} &&
+                    # For Oxfordshire, don't allow changes back to Open from other open states
+                    !( $body->areas->{$AREA_ID_OXFORDSHIRE} && $state eq 'confirmed' && $p->is_open ) &&
+                    # Don't let it change between the (same in the front end) fixed states
+                    !( $p->is_fixed && FixMyStreet::DB::Result::Problem->fixed_states()->{$state} ) ) {
+
+                    $comment->problem_state($state);
+
+                    # if the comment is older than the last update do not
+                    # change the status of the problem as it's tricky to
+                    # determine the right thing to do. Allow the same time in
+                    # case report/update created at same time (in external
+                    # system). Only do this if the report is currently visible.
+                    if ( $comment->created >= $p->lastupdate && $p->state ne $state && $p->is_visible ) {
+                        $p->state($state);
                     }
                 }
 
-                # if the comment is older than the last update
-                # do not change the status of the problem as it's
-                # tricky to determine the right thing to do.
-                if ( $comment->created > $p->lastupdate ) {
-                    my $state = $self->map_state( $request->{status} );
-
-                    # don't update state unless it's an allowed state and it's
-                    # actually changing the state of the problem
-                    if ( FixMyStreet::DB::Result::Problem->council_states()->{$state} && $p->state ne $state &&
-                        !( $p->is_fixed && FixMyStreet::DB::Result::Problem->fixed_states()->{$state} ) ) {
-                        if ($p->is_visible) {
-                            $p->state($state);
-                        }
-                        $comment->problem_state($state);
-                    }
-                }
+                # If nothing to show (no text, photo, or state change), don't show this update
+                $comment->state('hidden') unless $comment->text || $comment->photo
+                    || ($comment->problem_state && $state ne $old_state);
 
                 $p->lastupdate( $comment->created );
                 $p->update;
@@ -177,22 +192,35 @@ sub update_comments {
     return 1;
 }
 
-sub map_state {
-    my $self           = shift;
-    my $incoming_state = shift;
+sub comment_text_for_request {
+    my ($self, $request, $problem, $state, $old_state,
+        $ext_code, $old_ext_code) = @_;
 
-    $incoming_state = lc($incoming_state);
-    $incoming_state =~ s/_/ /g;
+    return $request->{description} if $request->{description};
 
-    my %state_map = (
-        fixed                         => 'fixed - council',
-        'not councils responsibility' => 'not responsible',
-        'no further action'           => 'unable to fix',
-        open                          => 'confirmed',
-        closed                        => 'fixed - council'
-    );
+    # Response templates are only triggered if the state/external status has changed
+    my $state_changed = $state ne $old_state;
+    my $ext_code_changed = $ext_code ne $old_ext_code;
+    if ($state_changed || $ext_code_changed) {
+        my $state_params = {
+            'me.state' => $state
+        };
+        if ($ext_code) {
+            $state_params->{'me.external_status_code'} = $ext_code;
+        };
 
-    return $state_map{$incoming_state} || $incoming_state;
+        if (my $template = $problem->response_templates->search({
+            auto_response => 1,
+            -or => $state_params,
+        })->first) {
+            return $template->text;
+        }
+    }
+
+    return "" if $self->blank_updates_permitted;
+
+    print STDERR "Couldn't determine update text for $request->{update_id} (report " . $problem->id . ")\n";
+    return "";
 }
 
 1;

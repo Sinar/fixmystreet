@@ -21,10 +21,7 @@ data to change.
 (Authentication requires:
 
   - user to be from_body
-  - user to have a "moderate" record in user_body_permissions (there is
-        currently no admin interface for this.  Should be added, but
-        while we're trialing this, it's a simple case of adding a DB record
-        manually)
+  - user to have a "moderate" record in user_body_permissions
 
 The original data of the report is stored in moderation_original_data, so
 that it can be reverted/consulted if required.  All moderation events are
@@ -83,6 +80,11 @@ sub moderate_report : Chained('report') : PathPart('') : Args(0) {
     $c->detach( 'report_moderate_audit', \@types )
 }
 
+sub moderating_user_name {
+    my $user = shift;
+    return $user->from_body ? $user->from_body->name : _('an administrator');
+}
+
 sub report_moderate_audit : Private {
     my ($self, $c, @types) = @_;
 
@@ -95,25 +97,27 @@ sub report_moderate_audit : Private {
     $c->model('DB::AdminLog')->create({
         action => 'moderation',
         user => $user,
-        admin_user => $user->name,
+        admin_user => moderating_user_name($user),
         object_id => $problem->id,
         object_type => 'problem',
         reason => (sprintf '%s (%s)', $reason, $types_csv),
     });
 
-    my $token = $c->model("DB::Token")->create({
-        scope => 'moderation',
-        data => { id => $problem->id }
-    });
+    if ($problem->user->email_verified && $c->cobrand->send_moderation_notifications) {
+        my $token = $c->model("DB::Token")->create({
+            scope => 'moderation',
+            data => { id => $problem->id }
+        });
 
-    $c->send_email( 'problem-moderated.txt', {
-        to => [ [ $problem->user->email, $problem->name ] ],
-        types => $types_csv,
-        user => $problem->user,
-        problem => $problem,
-        report_uri => $c->stash->{report_uri},
-        report_complain_uri => $c->stash->{cobrand_base} . '/contact?m=' . $token->token,
-    });
+        $c->send_email( 'problem-moderated.txt', {
+            to => [ [ $problem->user->email, $problem->name ] ],
+            types => $types_csv,
+            user => $problem->user,
+            problem => $problem,
+            report_uri => $c->stash->{report_uri},
+            report_complain_uri => $c->stash->{cobrand_base} . '/contact?m=' . $token->token,
+        });
+    }
 }
 
 sub report_moderate_hide : Private {
@@ -124,6 +128,7 @@ sub report_moderate_hide : Private {
     if ($c->get_param('problem_hide')) {
 
         $problem->update({ state => 'hidden' });
+        $problem->get_photoset->delete_cached;
 
         $c->res->redirect( '/' ); # Go directly to front-page
         $c->detach( 'report_moderate_audit', ['hide'] ); # break chain here.
@@ -141,7 +146,7 @@ sub report_moderate_title : Private {
 
     my $title = $c->get_param('problem_revert_title') ?
         $original_title
-        : $self->diff($original_title, $c->get_param('problem_title'));
+        : $c->get_param('problem_title');
 
     if ($title ne $old_title) {
         $original->insert unless $original->in_storage;
@@ -162,7 +167,7 @@ sub report_moderate_detail : Private {
     my $original_detail = $original->detail;
     my $detail = $c->get_param('problem_revert_detail') ?
         $original_detail
-        : $self->diff($original_detail, $c->get_param('problem_detail'));
+        : $c->get_param('problem_detail');
 
     if ($detail ne $old_detail) {
         $original->insert unless $original->in_storage;
@@ -249,7 +254,7 @@ sub update_moderate_audit : Private {
     $c->model('DB::AdminLog')->create({
         action => 'moderation',
         user => $user,
-        admin_user => $user->name,
+        admin_user => moderating_user_name($user),
         object_id => $comment->id,
         object_type => 'update',
         reason => (sprintf '%s (%s)', $reason, $types_csv),
@@ -263,7 +268,7 @@ sub update_moderate_hide : Private {
     my $comment = $c->stash->{comment} or die;
 
     if ($c->get_param('update_hide')) {
-        $comment->update({ state => 'hidden' });
+        $comment->hide;
         $c->detach( 'update_moderate_audit', ['hide'] ); # break chain here.
     }
     return;
@@ -280,7 +285,7 @@ sub update_moderate_detail : Private {
     my $original_detail = $original->detail;
     my $detail = $c->get_param('update_revert_detail') ?
         $original_detail
-        : $self->diff($original_detail, $c->get_param('update_detail'));
+        : $c->get_param('update_detail');
 
     if ($detail ne $old_detail) {
         $original->insert unless $original->in_storage;
@@ -334,29 +339,6 @@ sub return_text : Private {
     $c->res->content_type('text/plain; charset=utf-8');
     $c->res->body( $text // '' );
 }
-
-sub diff {
-    my ($self, $old, $new) = @_;
-
-    $new =~s/\[\.{3}\]//g;
-
-    my $diff = Algorithm::Diff->new( [ split //, $old ], [ split //, $new ] );
-    my $string;
-    while ($diff->Next) {
-        my $d = $diff->Diff;
-        if ($d & 1) {
-            my $deleted = join '', $diff->Items(1);
-            unless ($deleted =~/^\s*$/) {
-                $string .= ' ' if $deleted =~/^ /;
-                $string .= '[...]';
-                $string .= ' ' if $deleted =~/ $/;
-            }
-        }
-        $string .= join '', $diff->Items(2);
-    }
-    return $string;
-}
-
 
 __PACKAGE__->meta->make_immutable;
 

@@ -9,13 +9,13 @@ use base 'FixMyStreet::Map::OSM';
 
 use strict;
 
-sub map_type {
-    return '""';
-}
+sub map_type { '' }
 
-sub map_template {
-    return 'osm-streetview';
-}
+sub map_javascript { [
+    '/vendor/OpenLayers/OpenLayers.fixmystreet.js',
+    '/js/map-OpenLayers.js',
+    '/js/map-streetview.js',
+] }
 
 sub base_tile_url {
     return 'os.openstreetmap.org/sv';

@@ -1,15 +1,16 @@
 # TODO
 # Overdue alerts
 
-use strict;
-use warnings;
 use DateTime;
 use Email::MIME;
+use File::Temp;
 use LWP::Protocol::PSGI;
-use Test::More;
 use Test::LongString;
 use Path::Tiny;
 use t::Mock::MapItZurich;
+use FixMyStreet::Script::Reports;
+use FixMyStreet::TestMech;
+my $mech = FixMyStreet::TestMech->new;
 
 # Check that you have the required locale installed - the following
 # should return a line with de_CH.utf8 in. If not install that locale.
@@ -22,22 +23,22 @@ use t::Mock::MapItZurich;
 
 use FixMyStreet;
 my $cobrand = FixMyStreet::Cobrand::Zurich->new();
+$cobrand->db_state_migration;
 
 my $sample_file = path(__FILE__)->parent->parent->child("app/controller/sample.jpg");
 ok $sample_file->exists, "sample file $sample_file exists";
-my $sample_photo = $sample_file->slurp_raw;
 
 # This is a helper method that will send the reports but with the config
-# correctly set - notably SEND_REPORTS_ON_STAGING needs to be true, and
+# correctly set - notably STAGING_FLAGS send_reports needs to be true, and
 # zurich must be allowed cobrand if we want to be able to call cobrand
 # methods on it.
 sub send_reports_for_zurich {
     FixMyStreet::override_config {
-        SEND_REPORTS_ON_STAGING => 1,
+        STAGING_FLAGS => { send_reports => 1 },
         ALLOWED_COBRANDS => ['zurich']
     }, sub {
         # Actually send the report
-        FixMyStreet::DB->resultset('Problem')->send_reports('zurich');
+        FixMyStreet::Script::Reports::send('zurich');
     };
 }
 sub reset_report_state {
@@ -48,13 +49,10 @@ sub reset_report_state {
     $report->unset_extra_metadata('closed_overdue');
     $report->unset_extra_metadata('closure_status');
     $report->whensent(undef);
-    $report->state('unconfirmed');
+    $report->state('submitted');
     $report->created($created) if $created;
     $report->update;
 }
-
-use FixMyStreet::TestMech;
-my $mech = FixMyStreet::TestMech->new;
 
 # Front page test
 ok $mech->host("zurich.example.com"), "change host to Zurich";
@@ -82,7 +80,7 @@ $subdivision->endpoint( 'subdivision@example.org' );
 $subdivision->update;
 my $external_body = $mech->create_body_ok( 4, 'External Body' );
 $external_body->send_method( 'Zurich' );
-$external_body->endpoint( 'external_body@example.org' );
+$external_body->endpoint( 'external_body@example.net' );
 $external_body->update;
 
 sub get_export_rows_count {
@@ -102,19 +100,19 @@ sub get_export_rows_count {
 
 my $EXISTING_REPORT_COUNT = 0;
 
+my $superuser;
 subtest "set up superuser" => sub {
-    my $superuser = $mech->log_in_ok( 'super@example.org' );
+    $superuser = $mech->log_in_ok( 'super@example.org' );
     # a user from body $zurich is a superuser, as $zurich has no parent id!
-    $superuser->update({ from_body => $zurich->id }); 
+    $superuser->update({ from_body => $zurich->id });
     $EXISTING_REPORT_COUNT = get_export_rows_count($mech);
     $mech->log_out_ok;
 };
 
 my @reports = $mech->create_problems_for_body( 1, $division->id, 'Test', {
-    state              => 'unconfirmed',
+    state              => 'submitted',
     confirmed          => undef,
     cobrand            => 'zurich',
-    photo         => $sample_photo,
     areas => ',423017,',
 });
 my $report = $reports[0];
@@ -127,6 +125,89 @@ FixMyStreet::override_config {
 };
 $mech->content_contains('&Uuml;berpr&uuml;fung ausstehend')
     or die $mech->content;
+
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ 'zurich' ],
+    MAP_TYPE => 'Zurich,OSM',
+}, sub {
+    my $json = $mech->get_ok_json( '/report/ajax/' . $report->id );
+    is $json->{report}->{title}, "&Uuml;berpr&uuml;fung ausstehend", "correct title";
+    is $json->{report}->{state}, "submitted", "correct state";
+};
+
+subtest "Banners are displayed correctly" => sub {
+  FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ 'zurich' ],
+    MAP_TYPE => 'Zurich,OSM',
+  }, sub {
+    for my $test (
+        {
+            description => 'new report',
+            state => 'submitted',
+            banner_id => 'closed',
+            banner_text => 'Erfasst'
+        },
+        {
+            description => 'confirmed report',
+            state => 'confirmed',
+            banner_id => 'closed',
+            banner_text => 'Aufgenommen',
+        },
+        {
+            description => 'fixed report',
+            state => 'fixed - council',
+            banner_id => 'fixed',
+            banner_text => 'Beantwortet',
+        },
+        {
+            description => 'closed report',
+            state => 'external',
+            banner_id => 'closed',
+            banner_text => 'Extern',
+        },
+        {
+            description => 'in progress report',
+            state => 'in progress',
+            banner_id => 'progress',
+            banner_text => 'In Bearbeitung',
+        },
+        {
+            description => 'planned report',
+            state => 'feedback pending',
+            banner_id => 'progress',
+            banner_text => 'In Bearbeitung',
+        },
+        {
+            description => 'jurisdiction unknown',
+            state => 'jurisdiction unknown',
+            banner_id => 'fixed',
+            banner_text => 'Zust\x{e4}ndigkeit unbekannt',
+        },
+    ) {
+        subtest "banner for $test->{description}" => sub {
+            $report->state( $test->{state} );
+            $report->update;
+
+            $mech->get_ok("/report/" . $report->id);
+            is $mech->uri->path, "/report/" . $report->id, "at /report/" . $report->id;
+            my $banner = $mech->extract_problem_banner;
+            if ( $banner->{text} ) {
+                $banner->{text} =~ s/^ //g;
+                $banner->{text} =~ s/ $//g;
+            }
+
+            is $banner->{id}, $test->{banner_id}, 'banner id';
+            if ($test->{banner_text}) {
+                like_string( $banner->{text}, qr/$test->{banner_text}/i, 'banner text is ' . $test->{banner_text} );
+            } else {
+                is $banner->{text}, $test->{banner_text}, 'banner text';
+            }
+
+        };
+    }
+    $report->update({ state => 'submitted' });
+  };
+};
 
 # Check logging in to deal with this report
 FixMyStreet::override_config {
@@ -161,7 +242,7 @@ subtest "changing of categories" => sub {
         );
     }
 
-    # full Categories dropdown is hidden for unconfirmed reports
+    # full Categories dropdown is hidden for submitted reports
     $report->update({ state => 'confirmed' });
 
     # put report into known category
@@ -272,17 +353,18 @@ subtest "report_edit" => sub {
 
         $mech->get_ok( '/admin/report_edit/' . $report->id );
         $mech->submit_form_ok( { with_fields => { state => 'hidden' } } );
-        $mech->get_ok( '/admin/report_edit/' . $report->id );
+        $mech->get_ok( '/report/' . $report->id, 'still visible as response not published yet' );
 
         $report->discard_changes;
         is ( $report->get_extra_metadata('moderated_overdue'), 0, 'Still marked moderated_overdue' );
         is ( $report->get_extra_metadata('closed_overdue'),    undef, "Marking hidden doesn't set closed_overdue..." );
-        is ( $report->state, 'planned', 'Marking hidden actually sets state to planned');
+        is ( $report->state, 'feedback pending', 'Marking hidden actually sets state to feedback pending');
         is ( $report->get_extra_metadata('closure_status'), 'hidden', 'Marking hidden sets closure_status to hidden');
         is get_moderated_count(), 1, 'Check still counted moderated'
             or diag $report->get_column('extra');
 
         # publishing actually sets hidden
+        $mech->get_ok( '/admin/report_edit/' . $report->id );
         $mech->form_with_fields( 'status_update' );
         $mech->submit_form_ok( { button => 'publish_response' } );
         $mech->get_ok( '/admin/report_edit/' . $report->id );
@@ -292,6 +374,12 @@ subtest "report_edit" => sub {
         is ( $report->state, 'hidden', 'Closing as hidden sets state to hidden');
         is ( $report->get_extra_metadata('closure_status'), undef, 'Closing as hidden unsets closure_status');
 
+        $mech->submit_form_ok( { with_fields => { new_internal_note => 'Initial internal note.' } } );
+        $report->discard_changes;
+        is ( $report->state, 'hidden', 'Another internal note does not reopen');
+
+        $mech->get( '/report/' . $report->id);
+        is $mech->res->code, 410;
 
         reset_report_state($report);
         is ( $report->get_extra_metadata('moderated_overdue'), undef, 'Sanity check' );
@@ -317,15 +405,30 @@ subtest "report_edit" => sub {
     }
 };
 
+# Give the report three photos
+my $UPLOAD_DIR = File::Temp->newdir();
+my @files = map { $_ x 40 . ".jpeg" } (1..3);
+$sample_file->copy(path($UPLOAD_DIR, $_)) for @files;
+$report->photo(join(',', @files));
+$report->update;
+
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'zurich' ],
+    MAPIT_URL => 'http://mapit.zurich/',
     MAP_TYPE => 'Zurich,OSM',
+    UPLOAD_DIR => $UPLOAD_DIR,
 }, sub {
     # Photo publishing
     $mech->get_ok( '/admin/report_edit/' . $report->id );
-    $mech->submit_form_ok( { with_fields => { state => 'confirmed', publish_photo => 1 } } );
+    $mech->submit_form_ok( { with_fields => { state => 'confirmed', publish_photo_1 => 1 } } );
+    $mech->get_ok( '/around?lat=' . $report->latitude . ';lon=' . $report->longitude);
+    $mech->content_lacks('photo/' . $report->id . '.0.fp.jpeg');
+    $mech->content_contains('photo/' . $report->id . '.1.fp.jpeg');
+    $mech->content_lacks('photo/' . $report->id . '.2.fp.jpeg');
     $mech->get_ok( '/report/' . $report->id );
-    $mech->content_contains('photo/' . $report->id . '.0.jpeg');
+    $mech->content_lacks('photo/' . $report->id . '.0.jpeg');
+    $mech->content_contains('photo/' . $report->id . '.1.jpeg');
+    $mech->content_lacks('photo/' . $report->id . '.2.jpeg');
 
     # Internal notes
     $mech->get_ok( '/admin/report_edit/' . $report->id );
@@ -392,6 +495,12 @@ subtest 'SDM' => sub {
         $mech->submit_form_ok( { button => 'no_more_updates' } );
         is $mech->uri->path, '/admin/summary', "redirected now finished with report.";
 
+        # Can still view the edit page but can't change anything
+        $mech->get_ok( '/admin/report_edit/' . $report->id );
+        $mech->content_contains('<input disabled');
+        $mech->submit_form_ok( { with_fields => { status_update => 'This is a disallowed update.' } } );
+        $mech->content_lacks('This is a disallowed update');
+
         $mech->get_ok( '/report/' . $report->id );
         $mech->content_contains('In Bearbeitung');
         $mech->content_contains('Test Test');
@@ -404,7 +513,7 @@ subtest 'SDM' => sub {
     $mech->clear_emails_ok;
 
     $report->discard_changes;
-    is $report->state, 'planned', 'Report now in planned state';
+    is $report->state, 'feedback pending', 'Report now in feedback pending state';
 
     subtest 'send_back' => sub {
         FixMyStreet::override_config {
@@ -429,8 +538,8 @@ subtest 'SDM' => sub {
             $mech->get_ok( '/admin/report_edit/' . $report->id );
             $mech->submit_form_ok( { button => 'not_contactable', form_number => 2 } );
             $report->discard_changes;
-            is $report->state, 'planned', 'Report sent back to Rueckmeldung ausstehend state';
-            is $report->get_extra_metadata('closure_status'), 'partial', 'Report sent back to partial (not_contactable) state';
+            is $report->state, 'feedback pending', 'Report sent back to Rueckmeldung ausstehend state';
+            is $report->get_extra_metadata('closure_status'), 'not contactable', 'Report sent back to not_contactable state';
             is $report->bodies_str, $division->id, 'Report sent back to division';
         };
     };
@@ -446,19 +555,23 @@ FixMyStreet::override_config {
 };
 
 reset_report_state($report);
-$report->update({ state => 'planned' });
+$report->update({ state => 'feedback pending' });
 
 $mech->content_contains( 'report_edit/' . $report->id );
 $mech->content_contains( DateTime->now->strftime("%d.%m.%Y") );
 
 # User confirms their email address
 $report->set_extra_metadata(email_confirmed => 1);
+$report->confirmed(DateTime->now);
 $report->update;
 
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'zurich' ],
     MAP_TYPE => 'Zurich,OSM',
 }, sub {
+    # Quick RSS check here, while we have a report
+    $mech->get_ok('/rss/problems');
+
     $mech->get_ok( '/admin/report_edit/' . $report->id );
     $mech->content_lacks( 'Unbest&auml;tigt' ); # Confirmed email
     $mech->submit_form_ok( { with_fields => { status_update => 'FINAL UPDATE' } } );
@@ -477,12 +590,11 @@ like $email->header('From'), qr/do-not-reply\@example.org/, 'from line looks cor
 like $email->body, qr/FINAL UPDATE/, 'body looks correct';
 $mech->clear_emails_ok;
 
-# Assign planned (via confirmed), don't confirm email
+# Assign feedback pending (via confirmed), don't confirm email
 @reports = $mech->create_problems_for_body( 1, $division->id, 'Second', {
-    state              => 'unconfirmed',
+    state              => 'submitted',
     confirmed          => undef,
     cobrand            => 'zurich',
-    photo         => $sample_photo,
     areas => ',423017,',
 });
 $report = $reports[0];
@@ -494,7 +606,7 @@ FixMyStreet::override_config {
     $mech->get_ok( '/admin/report_edit/' . $report->id );
     $mech->submit_form_ok( { with_fields => { state => 'confirmed' } } );
     $mech->get_ok( '/admin/report_edit/' . $report->id );
-    $mech->submit_form_ok( { with_fields => { state => 'planned' } } );
+    $mech->submit_form_ok( { with_fields => { state => 'feedback pending' } } );
     $mech->get_ok( '/report/' . $report->id );
 };
 $mech->content_contains('In Bearbeitung');
@@ -521,10 +633,9 @@ $mech->email_count_is(0);
 # Report assigned to third party
 
 @reports = $mech->create_problems_for_body( 1, $division->id, 'Third', {
-    state              => 'unconfirmed',
+    state              => 'submitted',
     confirmed          => undef,
     cobrand            => 'zurich',
-    photo         => $sample_photo,
     areas => ',423017,',
 });
 $report = $reports[0];
@@ -537,8 +648,8 @@ subtest "external report triggers email" => sub {
     }, sub {
 
         # required to see body_external field
-        $report->state('planned');
-        $report->set_extra_metadata('closure_status' => 'closed');
+        $report->state('feedback pending');
+        $report->set_extra_metadata('closure_status' => 'external');
         # Set the public_response manually here because the default one will have line breaks that get escaped as HTML, causing the comparison to fail.
         $report->set_extra_metadata('public_response' => 'Freundliche Gruesse Ihre Stadt Zuerich');
         $report->update;
@@ -554,7 +665,7 @@ subtest "external report triggers email" => sub {
         $report->discard_changes;
         $mech->get_ok( '/report/' . $report->id );
     };
-    is ($report->state, 'closed', 'Report was closed correctly');
+    is ($report->state, 'external', 'Report was closed correctly');
     $mech->content_contains('Extern')
         or die $mech->content;
     $mech->content_contains('Third Test');
@@ -562,7 +673,7 @@ subtest "external report triggers email" => sub {
     send_reports_for_zurich();
     $email = $mech->get_email;
     like $email->header('Subject'), qr/Weitergeleitete Meldung/, 'subject looks okay';
-    like $email->header('To'), qr/external_body\@example.org/, 'to line looks correct';
+    like $email->header('To'), qr/external_body\@example.net/, 'to line looks correct';
     like $email->body, qr/External Body/, 'body has right name';
     like $email->body, qr/$EXTERNAL_MESSAGE/, 'external_message was passed on';
     unlike $email->body, qr/test\@example.com/, 'body does not contain email address';
@@ -575,8 +686,8 @@ subtest "external report triggers email" => sub {
         }, sub {
             $mech->get_ok( '/admin' );
             # required to see body_external field
-            $report->state('planned');
-            $report->set_extra_metadata('closure_status' => 'closed');
+            $report->state('feedback pending');
+            $report->set_extra_metadata('closure_status' => 'external');
             $report->set_extra_metadata('public_response' => 'Freundliche Gruesse Ihre Stadt Zuerich');
             $report->update;
 
@@ -598,7 +709,7 @@ subtest "external report triggers email" => sub {
         send_reports_for_zurich();
         $email = $mech->get_email;
         like $email->header('Subject'), qr/Weitergeleitete Meldung/, 'subject looks okay';
-        like $email->header('To'), qr/external_body\@example.org/, 'to line looks correct';
+        like $email->header('To'), qr/external_body\@example.net/, 'to line looks correct';
         like $email->body, qr/External Body/, 'body has right name';
         like $email->body, qr/test\@example.com/, 'body does contain email address';
         $mech->clear_emails_ok;
@@ -611,10 +722,10 @@ subtest "external report triggers email" => sub {
         }, sub {
             # set as wish
             $report->discard_changes;
-            $report->state('planned');
-            $report->set_extra_metadata('closure_status' => 'investigating');
+            $report->state('feedback pending');
+            $report->set_extra_metadata('closure_status' => 'wish');
             $report->update;
-            is ($report->state, 'planned', 'Sanity check') or die;
+            is ($report->state, 'feedback pending', 'Sanity check') or die;
 
             $mech->get_ok( '/admin/report_edit/' . $report->id );
 
@@ -625,11 +736,14 @@ subtest "external report triggers email" => sub {
                     body_external => $external_body->id,
                     external_message => $EXTERNAL_MESSAGE,
                 } });
+            # Wishes publicly viewable
+            $mech->get_ok( '/report/' . $report->id );
+            $mech->content_contains('Freundliche Gruesse Ihre Stadt Zuerich');
         };
         send_reports_for_zurich();
         $email = $mech->get_email;
         like $email->header('Subject'), qr/Weitergeleitete Meldung/, 'subject looks okay';
-        like $email->header('To'), qr/external_body\@example.org/, 'to line looks correct';
+        like $email->header('To'), qr/external_body\@example.net/, 'to line looks correct';
         like $email->body, qr/External Body/, 'body has right name';
         like $email->body, qr/$EXTERNAL_MESSAGE/, 'external_message was passed on';
         like $email->body, qr/test\@example.com/, 'body contains email address';
@@ -644,12 +758,12 @@ subtest "external report triggers email" => sub {
         }, sub {
             # set as extern
             reset_report_state($report);
-            $report->state('planned');
-            $report->set_extra_metadata('closure_status' => 'closed');
+            $report->state('feedback pending');
+            $report->set_extra_metadata('closure_status' => 'external');
             $report->set_extra_metadata('email_confirmed' => 1);
             $report->unset_extra_metadata('public_response');
             $report->update;
-            is ($report->state, 'planned', 'Sanity check') or die;
+            is ($report->state, 'feedback pending', 'Sanity check') or die;
 
             $mech->get_ok( '/admin/report_edit/' . $report->id );
 
@@ -698,6 +812,7 @@ subtest "only superuser can edit bodies" => sub {
     $user = $mech->log_in_ok( 'dm1@example.org' );
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'zurich' ],
+        MAPIT_URL => 'http://mapit.zurich/',
     }, sub {
         $mech->get( '/admin/body/' . $zurich->id );
     };
@@ -706,7 +821,6 @@ subtest "only superuser can edit bodies" => sub {
 };
 
 subtest "only superuser can see 'Add body' form" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapItZurich->run_if_script, host => 'mapit.zurich');
     $user = $mech->log_in_ok( 'dm1@example.org' );
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'zurich' ],
@@ -721,7 +835,6 @@ subtest "only superuser can see 'Add body' form" => sub {
 };
 
 subtest "phone number is mandatory" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapItZurich->run_if_script, host => 'mapit.zurich');
     FixMyStreet::override_config {
         MAPIT_TYPES => [ 'O08' ],
         MAPIT_URL => 'http://mapit.zurich/',
@@ -738,7 +851,6 @@ subtest "phone number is mandatory" => sub {
 };
 
 subtest "phone number is not mandatory for reports from mobile apps" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapItZurich->run_if_script, host => 'mapit.zurich');
     FixMyStreet::override_config {
         MAPIT_TYPES => [ 'O08' ],
         MAPIT_URL => 'http://mapit.zurich/',
@@ -765,7 +877,6 @@ subtest "phone number is not mandatory for reports from mobile apps" => sub {
 };
 
 subtest "problems can't be assigned to deleted bodies" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapItZurich->run_if_script, host => 'mapit.zurich');
     $user = $mech->log_in_ok( 'dm1@example.org' );
     $user->from_body( $zurich->id );
     $user->update;
@@ -794,13 +905,11 @@ subtest "problems can't be assigned to deleted bodies" => sub {
 };
 
 subtest "photo must be supplied for categories that require it" => sub {
-    LWP::Protocol::PSGI->register(t::Mock::MapItZurich->run_if_script, host => 'mapit.zurich');
     FixMyStreet::App->model('DB::Contact')->find_or_create({
         body => $division,
         category => "Graffiti - photo required",
         email => "graffiti\@example.org",
-        confirmed => 1,
-        deleted => 0,
+        state => 'confirmed',
         editor => "editor",
         whenedited => DateTime->now(),
         note => "note for graffiti",
@@ -816,7 +925,7 @@ subtest "photo must be supplied for categories that require it" => sub {
         $mech->get_ok('/report/new?lat=47.381817&lon=8.529156');
         $mech->submit_form_ok({ with_fields => {
             detail => 'Problem-Bericht',
-            email => 'user@example.org',
+            username => 'user@example.org',
             category => 'Graffiti - photo required',
         }});
         is $mech->res->code, 200, "missing photo shouldn't return anything but 200";
@@ -837,7 +946,7 @@ subtest "test stats" => sub {
         $mech->content_contains('Innerhalb von f&uuml;nf Arbeitstagen abgeschlossen: 3');
         # my @data = $mech->content =~ /(?:moderiert|abgeschlossen): \d+/g;
         # diag Dumper(\@data); use Data::Dumper;
-        
+
         my $export_count = get_export_rows_count($mech);
         if (defined $export_count) {
             is $export_count - $EXISTING_REPORT_COUNT, 3, 'Correct number of reports';
@@ -856,7 +965,7 @@ subtest "test admin_log" => sub {
     # XXX: following is dependent on all of test up till now, rewrite to explicitly
     # test which things need to be logged!
     is scalar @entries, 4, 'State changes logged';
-    is $entries[-1]->action, 'state change to closed', 'State change logged as expected';
+    is $entries[-1]->action, 'state change to external', 'State change logged as expected';
 };
 
 subtest 'email images to external partners' => sub {
@@ -872,11 +981,11 @@ subtest 'email images to external partners' => sub {
         });
         my $fileid = $photoset->data;
 
-        $report->set_extra_metadata('publish_photo' => 1);
+        $report->set_extra_metadata('publish_photo' => { 0 => 1 });
         # The below email comparison must not have an external message.
         $report->unset_extra_metadata('external_message');
         $report->update({
-            state => 'closed',
+            state => 'external',
             photo => $fileid,
             external_body => $external_body->id,
         });
@@ -928,9 +1037,9 @@ subtest 'Status update shown as appropriate' => sub {
     }, sub {
         # ALL closed states must hide the public_response edit, and public ones
         # must show the answer in blue.
-        for (['planned', 1, 0, 0],
+        for (['feedback pending', 1, 0, 0],
              ['fixed - council', 0, 1, 0],
-             ['closed', 0, 1, 0],
+             ['external', 0, 1, 0],
              ['hidden', 0, 0, 1])
          {
             my ($state, $update, $public, $user_response) = @$_;
@@ -968,13 +1077,26 @@ subtest 'time_spent' => sub {
 
 $mech->log_out_ok;
 
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ 'zurich' ],
+    MAPIT_URL => 'http://mapit.zurich/',
+    MAPIT_TYPES  => [ 'ZZZ' ],
+}, sub {
+    subtest 'users at the top level can be edited' => sub {
+        $mech->log_in_ok( $superuser->email );
+        $mech->get_ok('/admin/user_edit/' . $superuser->id );
+    };
+};
+
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ 'zurich' ],
+}, sub {
+    subtest 'A visit to /reports is okay' => sub {
+        $mech->get_ok('/reports');
+    };
+};
+
 END {
-    $mech->delete_body($subdivision);
-    $mech->delete_body($division);
-    $mech->delete_body($zurich);
-    $mech->delete_body($external_body);
-    $mech->delete_user( 'dm1@example.org' );
-    $mech->delete_user( 'sdm1@example.org' );
     ok $mech->host("www.fixmystreet.com"), "change host back";
     done_testing();
 }

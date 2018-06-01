@@ -30,7 +30,7 @@ sub disambiguate_location {
 
 sub area_types {
     my $self = shift;
-    return $self->next::method() if FixMyStreet->config('STAGING_SITE') && FixMyStreet->config('SKIP_CHECKS_ON_STAGING');
+    return $self->next::method() if FixMyStreet->staging_flag('skip_checks');
     [ 'NKO', 'NFY', 'NRA' ];
 }
 
@@ -61,8 +61,9 @@ sub geocoded_string_check {
 }
 
 sub find_closest {
-    my ( $self, $latitude, $longitude ) = @_;
-    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $latitude, $longitude );
+    my ( $self, $problem ) = @_;
+    $problem = $problem->{problem} if ref $problem eq 'HASH';
+    return FixMyStreet::Geocode::OSM::closest_road_text( $self, $problem->latitude, $problem->longitude );
 }
 
 # Used by send-reports, calling find_closest, calling OSM geocoding

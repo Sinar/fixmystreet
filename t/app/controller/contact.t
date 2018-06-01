@@ -1,7 +1,3 @@
-use strict;
-use warnings;
-use Test::More;
-
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new;
@@ -214,6 +210,7 @@ for my $test (
         # we santise this when we submit so need to remove it
         delete $test->{fields}->{id}
           if $test->{fields}->{id} and $test->{fields}->{id} eq 'invalid';
+        $test->{fields}->{'extra.phone'} = '';
         is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
     };
 }
@@ -327,6 +324,7 @@ for my $test (
             # we santise this when we submit so need to remove it
             delete $test->{fields}->{id}
               if $test->{fields}->{id} and $test->{fields}->{id} eq 'invalid';
+            $test->{fields}->{'extra.phone'} = '';
             is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
 
             if ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'update' ) {
@@ -378,6 +376,41 @@ for my $test (
             $mech->submit_form_ok( { with_fields => $test->{fields} } );
             $mech->content_contains('Thank you for your enquiry');
             $mech->email_count_is(1);
+        }
+    };
+}
+
+for my $test (
+    {
+        fields => {
+            em          => 'test@example.com',
+            name        => 'A name',
+            subject     => 'A subject',
+            message     => 'A message',
+            dest        => 'from_council',
+            success_url => '/faq',
+        },
+        url_should_be => 'http://localhost/faq',
+    },
+    {
+        fields => {
+            em          => 'test@example.com',
+            name        => 'A name',
+            subject     => 'A subject',
+            message     => 'A message',
+            dest        => 'from_council',
+            success_url => 'http://www.example.com',
+        },
+        url_should_be => 'http://www.example.com',
+    },
+  )
+{
+    subtest 'check user can be redirected to a custom URL after contact form is submitted' => sub {
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ 'fixmystreet' ],
+        }, sub {
+            $mech->post('/contact/submit', $test->{fields});
+            is $mech->uri->as_string, $test->{url_should_be};
         }
     };
 }

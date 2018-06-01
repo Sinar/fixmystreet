@@ -4,8 +4,7 @@
         </div><!-- .table-cell -->
 
         <div class="nav-wrapper">
-            <div class="nav-wrapper-2">
-                <div class="nav-wrapper-3">
+            <div class="container">
                     <div id="main-nav" role="navigation">
                       [% IF c.user_exists %]
                         <p>
@@ -23,7 +22,6 @@
                             %]>[% loc("Help") %]</[% c.req.uri.path == '/faq' ? 'span' : 'a' %]></li>
                         </ul>
                     </div>
-                </div>
             </div>
         </div>
     </div> <!-- .wrapper -->
@@ -36,10 +34,7 @@
     </div>
     </div>
 
-    <script src="[% version('/cobrands/zurich/validation_rules.js') %]"></script>
     [% INCLUDE 'common_footer_tags.html' %]
-    <script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js" charset="utf-8"></script>
-    <script src="[% version('/cobrands/zurich/js.js') %]"></script>
 
 </body>
 </html>

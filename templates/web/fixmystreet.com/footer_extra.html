@@ -9,11 +9,11 @@
                 </div>
 
                 <div class="fms-app-badges">
-                    <a href="https://itunes.apple.com/gb/app/fixmystreet/id297456545">
-                        <img alt="FixMyStreet app on the App Store" src="[% base %]/cobrands/fixmystreet/images/itunes_store_logo.png" srcset="[% base %]/cobrands/fixmystreet/images/itunes_store_logo.png 1x, [% base %]/cobrands/fixmystreet/images/itunes_store_logo@2.png 2x" />
+                    <a class="js-lazyload fms-app-badge fms-app-badge--ios" href="https://itunes.apple.com/gb/app/fixmystreet/id297456545">
+                        FixMyStreet app on the App Store
                     </a>
-                    <a href="https://play.google.com/store/apps/details?id=org.mysociety.FixMyStreet">
-                        <img alt="FixMyStreet Android app on Google Play" src="[% base %]/cobrands/fixmystreet/images/google_play_logo.png" srcset="[% base %]/cobrands/fixmystreet/images/google_play_logo.png 1x, [% base %]/cobrands/fixmystreet/images/google_play_logo@2.png 2x" />
+                    <a class="js-lazyload fms-app-badge fms-app-badge--android" href="https://play.google.com/store/apps/details?id=org.mysociety.FixMyStreet">
+                        FixMyStreet Android app on Google Play
                     </a>
                 </div>
             </div>
@@ -31,7 +31,7 @@
                             %]>[% loc("Local alerts") %]</[% c.req.uri.path == '/alert' ? 'span' : 'a' %]></li>
                     </ul>
                     <ul>
-                        <li><a href="https://www.fixmystreet.com/council">FixMyStreet for Councils</a></li>
+                        <li><a href="/pro/">FixMyStreet Pro</a></li>
                         <li><[% IF c.req.uri.path == '/posters' %]span[% ELSE %]a href="[% base %]/posters"[% END
                             %]>[% loc("FixMyStreet Goodies") %]</[% c.req.uri.path == '/posters' ? 'span' : 'a' %]></li>
                         <li><[% IF c.req.uri.path == '/contact' %]span[% ELSE %]a href="[% base %]/contact"[% END
@@ -47,7 +47,7 @@
             <div class="col-sm-3">
                 <div class="mysoc-footer__donate">
                     <p>Your donations keep this site and others like it running</p>
-                    <a href="https://www.mysociety.org/donate?utm_source=fixmystreet.com&utm_content=footer+donate+now&utm_medium=link&utm_campaign=mysoc_footer" class="mysoc-footer__donate__button">Donate now</a>
+                    <a href="https://www.mysociety.org/donate?utm_source=fixmystreet.com&amp;utm_content=footer+donate+now&amp;utm_medium=link&amp;utm_campaign=mysoc_footer" class="mysoc-footer__donate__button">Donate now</a>
                 </div>
             </div>
 
@@ -59,26 +59,26 @@
                 <div class="mysoc-footer__orgs">
                     <p class="mysoc-footer__org">
                         Built by
-                        <a href="https://www.mysociety.org?utm_source=fixmystreet.com&utm_content=footer+logo&utm_medium=link&utm_campaign=mysoc_footer" class="mysoc-footer__org__logo mysoc-footer__org__logo--mysociety">mySociety</a>
+                        <a href="https://www.mysociety.org?utm_source=fixmystreet.com&amp;utm_content=footer+logo&amp;utm_medium=link&amp;utm_campaign=mysoc_footer" class="js-lazyload mysoc-footer__org__logo mysoc-footer__org__logo--mysociety">mySociety</a>
                     </p>
                     <p class="mysoc-footer__org">
                         Powered by
-                        <a href="http://fixmystreet.org" class="mysoc-footer__org__logo mysoc-footer__org__logo--fms-platform">FixMyStreet Platform</a>
+                        <a href="https://fixmystreet.org" class="js-lazyload mysoc-footer__org__logo mysoc-footer__org__logo--fms-platform">FixMyStreet Platform</a>
                     </p>
                 </div>
             </div>
 
             <div class="col-sm-4">
                 <div class="mysoc-footer__legal">
-                    <p>mySociety Limited is a project of UK Citizens Online Democracy, a registered charity in England and Wales. For full details visit <a href="https://www.mysociety.org?utm_source=fixmystreet.com&utm_content=footer+full+legal+details&utm_medium=link&utm_campaign=mysoc_footer">mysociety.org</a>.</p>
+                    <p>mySociety Limited is a project of UK Citizens Online Democracy, a registered charity in England and Wales. For full details visit <a href="https://www.mysociety.org?utm_source=fixmystreet.com&amp;utm_content=footer+full+legal+details&amp;utm_medium=link&amp;utm_campaign=mysoc_footer">mysociety.org</a>.</p>
                 </div>
             </div>
 
             <div class="col-sm-2">
                 <ul class="mysoc-footer__badges">
-                    <li role="presentation"><a href="https://github.com/mysociety/fixmystreet" class="mysoc-footer__badge mysoc-footer__badge--github">Github</a></li>
-                    <li role="presentation"><a href="https://twitter.com/fixmystreet/" class="mysoc-footer__badge mysoc-footer__badge--twitter">Twitter</a></li>
-                    <li role="presentation"><a href="https://www.facebook.com/FixMyStreet" class="mysoc-footer__badge mysoc-footer__badge--facebook">Facebook</a></li>
+                    <li role="presentation"><a href="https://github.com/mysociety/fixmystreet" class="js-lazyload mysoc-footer__badge mysoc-footer__badge--github">Github</a></li>
+                    <li role="presentation"><a href="https://twitter.com/fixmystreet/" class="js-lazyload mysoc-footer__badge mysoc-footer__badge--twitter">Twitter</a></li>
+                    <li role="presentation"><a href="https://www.facebook.com/FixMyStreet" class="js-lazyload mysoc-footer__badge mysoc-footer__badge--facebook">Facebook</a></li>
                 </ul>
             </div>
 

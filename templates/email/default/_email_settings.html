@@ -43,9 +43,11 @@ button_border_radius = "4px" # a full CSS border-radius property
 button_background_color = color_yellow
 button_background_color_fixed = color_green_dark
 button_background_color_notfixed = color_red_dark
+button_background_color_dontknow = color_yellow
 button_text_color = color_black
 button_text_color_fixed = color_white
 button_text_color_notfixed = color_white
+button_text_color_dontknow = color_black
 button_font_weight = "bold"
 
 %]
@@ -58,7 +60,7 @@ button_font_weight = "bold"
 # Variables used inside the email templates.
 
 table_reset = 'cellspacing="0" cellpadding="0" border="0" width="100%"'
-wrapper_table = 'cellspacing="0" cellpadding="5" border="0" width="100%"'
+wrapper_table = table_reset
 
 link_style = "color: $link_text_color;"
 link_hover_style = "text-decoration: none; color: $link_hover_text_color;"
@@ -68,7 +70,12 @@ td_style = "font-family: $body_font_family; font-size: 16px; line-height: 21px; 
 body_style = "margin: 0;"
 wrapper_style = "$td_style background: $body_background_color; color: $body_text_color;"
 
-hint_style = "padding: ${ column_padding }px 0; color: $body_text_color; font-size: 12px; line-height: 18px;"
+wrapper_max_width = 620 # in pixels without "px" suffix
+wrapper_min_width = 520 # in pixels without "px" suffix
+
+hint_min_width = wrapper_min_width - (column_padding * 2)
+hint_style = "min-width: ${ hint_min_width }px; padding: ${ column_padding }px; color: $body_text_color; font-size: 12px; line-height: 18px;"
+
 header_style = "padding: $header_padding; background: $header_background_color; color: $header_text_color;"
 
 only_column_style = "padding: ${ column_padding }px; vertical-align: top; background-color: $primary_column_background_color; color: $primary_column_text_color;"
@@ -101,6 +108,7 @@ contact_td_style = "vertical-align: top; padding: 0.4em 0 0.4em 0; width: 100%;"
 button_style = "display: inline-block; border: 10px solid $button_background_color; border-width: 10px 15px; border-radius: $button_border_radius; background-color: $button_background_color; color: $button_text_color; font-size: 18px; line-height: 21px; font-weight: $button_font_weight; text-decoration: underline;"
 fixed_button_style = "$button_style border-color: $button_background_color_fixed; background-color: $button_background_color_fixed; color: $button_text_color_fixed; margin: 0 0.2em;"
 notfixed_button_style = "$button_style border-color: $button_background_color_notfixed; background-color: $button_background_color_notfixed; color: $button_text_color_notfixed; margin: 0 0.2em;"
+dontknow_button_style = "$button_style border-color: $button_background_color_dontknow; background-color: $button_background_color_dontknow; color: $button_text_color_dontknow; margin: 0 0.2em;"
 
 %]
 

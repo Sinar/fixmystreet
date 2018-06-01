@@ -67,9 +67,31 @@ h3, h4,
 @import "_colours";
 @import "../sass/layout";
 
-.nav-wrapper {
-    .nav-wrapper-2 {
-        border-top: 0;
+body.mappage {
+    background-image: none;
+}
+
+#site-header {
+    background: $map_nav_bg;
+    padding: 1em 0;
+}
+
+body.frontpage {
+    #site-logo {
+        width: 300px;
+        height: 55px;
+        background: transparent url('images/homepage-logo.png') 0 50% no-repeat;
+    }
+
+    #main-nav {
+        height: 55px + 16px + 16px;
+        margin-left: 300px;
+    }
+}
+
+body.mappage {
+    #site-logo {
+        margin-top: -5px;
     }
 }
 
@@ -80,13 +102,6 @@ h3, h4,
 .tablewrapper {
     >div {
         width: auto;
-    }
-}
-.ie7 {
-    .tablewrapper {
-        div {
-            width: auto;
-        }
     }
 }
 
@@ -101,22 +116,7 @@ h3, h4,
         }
     }
 }
-.ie7 {
-    #footer-help {
-        ul {
-            li {
-                width: 33%;
-            }
-        }
-    }
-}
 
 #postcodeForm { margin-left: -1em !important; margin-right: -1em !important; }
 
 body.fullwidthpage .container .content footer .tablewrapper { background: #fff; }
-
-body.frontpage #site-logo { top: 0em; }
-
-body.frontpage #site-header { height: 85px; }
-
-body.frontpage #user-meta { margin-top: 1.2em; }

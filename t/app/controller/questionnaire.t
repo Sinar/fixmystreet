@@ -1,21 +1,9 @@
-use strict;
-use warnings;
-use Test::More;
 use DateTime;
 
 use FixMyStreet::TestMech;
 use FixMyStreet::App::Controller::Questionnaire;
 
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
-
-# Make sure there's no outstanding questionnaire emails to be sent
-FixMyStreet::App->model('DB::Questionnaire')->send_questionnaires( {
-    site => 'fixmystreet'
-} );
-$mech->clear_emails_ok;
-
-# create a test user and report
-$mech->delete_user('test@example.com');
 
 my $user = $mech->create_user_ok('test@example.com', name => 'Test User');
 
@@ -64,7 +52,7 @@ like $plain->body, qr/fill in our short questionnaire/i, "got questionnaire emai
 like $plain->body_str, qr/Testing \x{2013} Detail/, 'email contains encoded character';
 is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'in the right character set';
 
-my $url = $mech->get_link_from_email($email);
+my $url = $mech->get_link_from_email($email, 0, 1);
 my ($token) = $url =~ m{/Q/(\S+)};
 ok $token, "extracted questionnaire token '$token'";
 $mech->clear_emails_ok;
@@ -87,16 +75,19 @@ foreach my $test (
         desc => 'User goes to questionnaire URL with a bad token',
         token_extra => 'BAD',
         content => "Sorry, that wasn&rsquo;t a valid link",
+        code => 400,
     },
     {
         desc => 'User goes to questionnaire URL for a now-hidden problem',
         state => 'hidden',
         content => "we couldn't locate your problem",
+        code => 400,
     },
     {
         desc => 'User goes to questionnaire URL for an already answered questionnaire',
         answered => \'current_timestamp',
         content => 'already answered this questionnaire',
+        code => 400,
     },
 ) {
     subtest $test->{desc} => sub {
@@ -106,7 +97,8 @@ foreach my $test (
         $questionnaire->update;
         (my $token = $token->token);
         $token .= $test->{token_extra} if $test->{token_extra};
-        $mech->get_ok("/Q/$token");
+        $mech->get("/Q/$token");
+        is $mech->res->code, $test->{code}, "Right status received";
         $mech->content_contains( $test->{content} );
         # Reset, no matter what test did
         $report->state( 'confirmed' );
@@ -115,6 +107,23 @@ foreach my $test (
         $questionnaire->update;
     };
 }
+
+subtest "If been_fixed is provided in the URL" => sub {
+    $mech->get_ok("/Q/" . $token->token . "?been_fixed=Yes");
+    $mech->content_contains('id="been_fixed_yes" value="Yes" checked');
+    $report->discard_changes;
+    is $report->state, 'fixed - user';
+    $questionnaire->discard_changes;
+    is $questionnaire->old_state, 'confirmed';
+    is $questionnaire->new_state, 'fixed - user';
+    $mech->submit_form_ok({ with_fields => { been_fixed => 'Unknown', reported => 'Yes', another => 'No' } });
+    $report->discard_changes;
+    is $report->state, 'confirmed';
+    $questionnaire->discard_changes;
+    is $questionnaire->old_state, 'confirmed';
+    is $questionnaire->new_state, 'unknown';
+    $questionnaire->update({ whenanswered => undef, ever_reported => undef, old_state => undef, new_state => undef });
+};
 
 $mech->get_ok("/Q/" . $token->token);
 $mech->title_like( qr/Questionnaire/ );
@@ -407,7 +416,7 @@ FixMyStreet::override_config {
     $mech->clear_emails_ok;
     $body =~ s/\s+/ /g;
     like $body, qr/fill in our short questionnaire/i, "got questionnaire email";
-    my $url = $mech->get_link_from_email($email);
+    my $url = $mech->get_link_from_email($email, 0, 1);
     ($token) = $url =~ m{/Q/(\S+)};
     ok $token, "extracted questionnaire token '$token'";
 
@@ -454,5 +463,4 @@ FixMyStreet::override_config {
     is $plain->header('Content-Type'), 'text/plain; charset="utf-8"', 'email is in right encoding';
 };
 
-$mech->delete_user('test@example.com');
 done_testing();

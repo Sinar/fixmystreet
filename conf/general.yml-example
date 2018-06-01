@@ -3,10 +3,10 @@
 # contains various configuration parameters, in YAML syntax.
 #
 # For more information about this file, and general documentation on setting up
-# the FixMyStreet platform, please see http://fixmystreet.org/
+# the FixMyStreet platform, please see https://fixmystreet.org/
 #
 # Specific details about this file can be found at
-# http://fixmystreet.org/customising/config/
+# https://fixmystreet.org/customising/config/
 #
 # To start, you can copy this file to one called "general.yml" in the same
 # directory. Or have multiple config files and use a symlink to change between
@@ -41,14 +41,19 @@ DO_NOT_REPLY_EMAIL: 'do-not-reply@example.org'
 # Whether this is a development site or not. It will mean e.g. templates/
 # CSS modified times aren't cached
 STAGING_SITE: 1
-# Normally, a staging site will route all reports to the reporter on a
-# development site (when STAGING_SITE is 1), to guard against sending fake
-# reports to live places. Set this to 1 if you want a dev site to route
-# reports as normal.
-SEND_REPORTS_ON_STAGING: 0
-# Manual testing of multiple cobrands can be made easier by skipping some
-# checks they have in them, if this variable is set
-SKIP_CHECKS_ON_STAGING: 0
+# Developers may want a staging site to act differently from a live site.
+# Possible flags include:
+# - send_reports: Normally, a staging site will route all reports to the
+#   reporter, to guard against sending fake reports to live places. Set
+#   this to 1 if you want a staging site to route reports as normal.
+# - skip_checks: Manual testing of multiple cobrands can be made easier by
+#   skipping some checks they have in them, if this variable is set.
+# - enable_appcache: Whether the appcache should be active. NB: Only affects
+#     superuser sessions.
+STAGING_FLAGS:
+  send_reports: 0
+  skip_checks: 0
+  enable_appcache: 0
 
 # What to use as front page/alert example places placeholder
 # Defaults to High Street, Main Street
@@ -85,6 +90,10 @@ GEO_CACHE: '../cache/'
 #   MAPIT_TYPES: [ 'O06' ]
 MAPIT_URL: ''
 MAPIT_TYPES: [ 'ZZZ' ]
+
+# If the MapIt you're using in MAPIT_URL requires an API key
+# (as https://mapit.mysociety.org/ does, for example), specify it here.
+# MAPIT_API_KEY: ''
 
 # If you are using global MapIt, you might want to restrict FixMyStreet usage
 # to only one or more areas, rather than all O04, for example. Provide MapIt
@@ -176,7 +185,8 @@ TWITTER_KEY: ''
 TWITTER_SECRET: ''
 
 # If you wish to send email through a SMTP server elsewhere, change these
-# variables. SMTP_TYPE should be one of '', 'ssl' or 'tls'.
+# variables. SMTP_TYPE should be one of '', 'ssl' or 'tls'. SMTP_PORT will
+# default to 587 (tls), 465 (ssl), or 25.
 SMTP_SMARTHOST: 'localhost'
 SMTP_TYPE: ''
 SMTP_PORT: ''
@@ -195,3 +205,21 @@ TESTING_COUNCILS: ''
 
 # if you're using Message Manager, include the URL here (see https://github.com/mysociety/message-manager/)
 MESSAGE_MANAGER_URL: ''
+
+# If you want to use SMS login or 'report as' with just a phone number, you'll
+# need to set the site's two-digit ISO 3166 country code (e.g. GB) here.
+PHONE_COUNTRY: ''
+
+# If you enable login via SMS authentication, you'll need a twilio account
+SMS_AUTHENTICATION: 0
+TWILIO_ACCOUNT_SID: ''
+TWILIO_AUTH_TOKEN: ''
+TWILIO_FROM_PARAMETER: ''
+TWILIO_MESSAGING_SERVICE_SID: ''
+
+# If you want to hide all pages from non-logged-in users, set this to 1.
+LOGIN_REQUIRED: 0
+
+# If you want to stop new users from registering, set this to 1.
+# NB: This also disables all Facebook/Twitter logins.
+SIGNUPS_DISABLED: 0

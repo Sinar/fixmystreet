@@ -31,6 +31,8 @@ has extended_description => ( is => 'ro', isa => Str, default => 1 );
 has use_service_as_deviceid => ( is => 'ro', isa => Bool, default => 0 );
 has use_extended_updates => ( is => 'ro', isa => Bool, default => 0 );
 has extended_statuses => ( is => 'ro', isa => Bool, default => 0 );
+has always_send_email => ( is => 'ro', isa => Bool, default => 0 );
+has multi_photos => ( is => 'ro', isa => Bool, default => 0 );
 
 before [
     qw/get_service_list get_service_meta_info get_service_requests get_service_request_updates
@@ -59,6 +61,24 @@ sub get_service_meta_info {
     return $self->_get_xml_object( $service_meta_xml );
 }
 
+sub to_bristol {
+    my $problem = shift;
+    return unless $problem->cobrand =~ /fixmystreet|bristol/;
+    my $bodies = $problem->bodies;
+    return unless %$bodies;
+    my $body = (values %$bodies)[0];
+    return unless $body->areas->{2561};
+    return 1;
+}
+
+sub warn_failure {
+    my ($obj, $problem) = @_;
+    # Special case a poorly behaving Open311 server
+    return 0 if to_bristol($problem || $obj);
+    my $threshold = 1;
+    return $obj->send_fail_count && $obj->send_fail_count == $threshold;
+}
+
 sub send_service_request {
     my $self = shift;
     my $problem = shift;
@@ -83,10 +103,10 @@ sub send_service_request {
         }
 
         warn sprintf( "Failed to submit problem %s over Open311, response\n: %s\n%s", $problem->id, $response, $self->debug_details )
-            unless $problem->send_fail_count;
+            if warn_failure($problem);
     } else {
         warn sprintf( "Failed to submit problem %s over Open311, details:\n%s", $problem->id, $self->error)
-            unless $problem->send_fail_count;
+            if warn_failure($problem);
     }
     return 0;
 }
@@ -106,15 +126,23 @@ sub _populate_service_request_params {
         $description = $problem->detail;
     }
 
-    my ( $firstname, $lastname ) = ( $problem->name =~ /(\w+)\.?\s+(.+)/ );
+    my ( $firstname, $lastname ) = $self->split_name( $problem->name );
 
     my $params = {
-        email => $problem->user->email,
         description => $description,
         service_code => $service_code,
         first_name => $firstname,
-        last_name => $lastname || '',
+        last_name => $lastname,
     };
+
+    $params->{phone} = $problem->user->phone if $problem->user->phone;
+    $params->{email} = $problem->user->email if $problem->user->email;
+
+    # Some endpoints don't follow the Open311 spec correctly and require an
+    # email address for service requests.
+    if ($self->always_send_email && !$params->{email}) {
+        $params->{email} = FixMyStreet->config('DO_NOT_REPLY_EMAIL');
+    }
 
     # if you click nearby reports > skip map then it's possible
     # to end up with used_map = f and nothing in postcode
@@ -135,12 +163,12 @@ sub _populate_service_request_params {
         $params->{address_string} = $problem->postcode;
     }
 
-    if ( $problem->user->phone ) {
-        $params->{ phone } = $problem->user->phone;
-    }
-
     if ( $extra->{image_url} ) {
-        $params->{media_url} = $extra->{image_url};
+        if ( $self->multi_photos ) {
+            $params->{media_url} = $extra->{all_image_urls};
+        } else {
+            $params->{media_url} = $extra->{image_url};
+        }
     }
 
     if ( $self->use_service_as_deviceid && $problem->service ) {
@@ -175,6 +203,7 @@ sub _generate_service_request_description {
             $description = "title: " . $problem->title . "\n\n$description";
         }
     } elsif ($problem->cobrand eq 'fixamingata') {
+        $description .= "Titel: " . $problem->title . "\n\n";
         $description .= "Beskrivning: " . $problem->detail . "\n\n";
         $description .= "Länk till ärendet: " . $extra->{url} . "\n\n";
         $description .= "Skickad via FixaMinGata\n";
@@ -189,13 +218,19 @@ sub _generate_service_request_description {
 
 sub get_service_requests {
     my $self = shift;
-    my $report_ids = shift;
+    my $args = shift;
 
     my $params = {};
 
-    if ( $report_ids ) {
-        $params->{service_request_id} = join ',', @$report_ids;
+    if ( $args->{report_ids} ) {
+        $params->{service_request_id} = join ',', @{$args->{report_ids}};
+        delete $args->{report_ids};
     }
+
+    $params = {
+      %$params,
+      %$args
+    };
 
     my $service_request_xml = $self->_get( $self->endpoints->{requests}, $params || undef );
     return $self->_get_xml_object( $service_request_xml );
@@ -222,7 +257,7 @@ sub get_service_request_updates {
     my $end_date = shift;
 
     my $params = {
-        api_key => $self->api_key,
+        api_key => $self->api_key || '',
     };
 
     if ( $start_date || $end_date ) {
@@ -259,12 +294,43 @@ sub post_service_request_update {
         }
 
         warn sprintf( "Failed to submit comment %s over Open311, response - %s\n%s\n", $comment->id, $response, $self->debug_details )
-            unless $comment->send_fail_count;
+            if warn_failure($comment, $comment->problem);
     } else {
         warn sprintf( "Failed to submit comment %s over Open311, details\n%s\n", $comment->id, $self->error)
-            unless $comment->send_fail_count;
+            if warn_failure($comment, $comment->problem);
     }
     return 0;
+}
+
+sub add_media {
+    my ($self, $url, $object) = @_;
+
+    my $ua = LWP::UserAgent->new;
+    my $res = $ua->get($url);
+    if ( $res->is_success && $res->content_type eq 'image/jpeg' ) {
+        my $photoset = FixMyStreet::App::Model::PhotoSet->new({
+            data_items => [ $res->decoded_content ],
+        });
+        $object->photo($photoset->data);
+    }
+}
+
+sub map_state {
+    my $self           = shift;
+    my $incoming_state = shift;
+
+    $incoming_state = lc($incoming_state);
+    $incoming_state =~ s/_/ /g;
+
+    my %state_map = (
+        fixed                         => 'fixed - council',
+        'not councils responsibility' => 'not responsible',
+        'no further action'           => 'unable to fix',
+        open                          => 'confirmed',
+        closed                        => 'fixed - council',
+    );
+
+    return $state_map{$incoming_state} || $incoming_state;
 }
 
 sub _populate_service_request_update_params {
@@ -272,7 +338,7 @@ sub _populate_service_request_update_params {
     my $comment = shift;
 
     my $name = $comment->name || $comment->user->name;
-    my ( $firstname, $lastname ) = ( $name =~ /(\w+)\.?\s+(.+)/ );
+    my ( $firstname, $lastname ) = $self->split_name( $name );
     $lastname ||= '-';
 
     # fall back to problem state as it's probably correct
@@ -308,11 +374,13 @@ sub _populate_service_request_update_params {
         updated_datetime => DateTime::Format::W3CDTF->format_datetime($comment->confirmed->set_nanosecond(0)),
         service_request_id => $comment->problem->external_id,
         status => $status,
-        email => $comment->user->email,
         description => $comment->text,
         last_name => $lastname,
         first_name => $firstname,
     };
+
+    $params->{phone} = $comment->user->phone if $comment->user->phone;
+    $params->{email} = $comment->user->email if $comment->user->email;
 
     if ( $self->use_extended_updates ) {
         $params->{public_anonymity_required} = $comment->anonymous ? 'TRUE' : 'FALSE',
@@ -329,7 +397,8 @@ sub _populate_service_request_update_params {
         $params->{media_url} = $url;
     }
 
-    if ( $comment->extra ) {
+    # The following will only set by UK in Bromley/Bromley cobrands
+    if ( $comment->extra && $comment->extra->{title} ) {
         $params->{'email_alerts_requested'}
             = $comment->extra->{email_alerts_requested} ? 'TRUE' : 'FALSE';
         $params->{'title'} = $comment->extra->{title};
@@ -339,6 +408,31 @@ sub _populate_service_request_update_params {
     }
 
     return $params;
+}
+
+sub split_name {
+    my ( $self, $name ) = @_;
+
+    return ('', '') unless $name;
+
+    my ( $first, $last ) = ( $name =~ /(\w+)(?:\.?\s+(.+))?/ );
+
+    return ( $first || '', $last || '');
+}
+
+sub _params_to_string {
+    my( $self, $params, $request_string ) = @_;
+
+    my $undefined;
+
+    my $string = join("\n", map {
+        $undefined .= "$_ undefined\n" unless defined $params->{$_};
+        "$_: " . ( $params->{$_} // '' );
+    } keys %$params);
+
+    warn "$request_string $undefined $string" if $undefined;
+
+    return $string;
 }
 
 sub _get {
@@ -351,9 +445,12 @@ sub _get {
     $params->{ jurisdiction_id } = $self->jurisdiction
         if $self->jurisdiction;
     $uri->path( $uri->path . $path );
+    my $base_uri = $uri->clone;
     $uri->query_form( $params );
 
-    $self->debug_details( $self->debug_details . "\nrequest:" . $uri->as_string );
+    my $debug_request = "GET " . $base_uri->as_string . "\n\n";
+    $debug_request .= $self->_params_to_string($params, $debug_request);
+    $self->debug_details( $self->debug_details . $debug_request );
 
     my $content;
     if ( $self->test_mode ) {
@@ -395,11 +492,13 @@ sub _post {
 
     $params->{jurisdiction_id} = $self->jurisdiction
         if $self->jurisdiction;
-    $params->{api_key} = $self->api_key
+    $params->{api_key} = ($self->api_key || '')
         if $self->api_key;
     my $req = POST $uri->as_string, $params;
 
-    $self->debug_details( $self->debug_details . "\nrequest:" . $req->as_string );
+    my $debug_request = $req->method . ' ' . $uri->as_string . "\n\n";
+    $debug_request .= $self->_params_to_string($params, $debug_request);
+    $self->debug_details( $self->debug_details . $debug_request );
 
     my $ua = LWP::UserAgent->new();
     my $res;
