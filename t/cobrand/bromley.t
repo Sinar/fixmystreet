@@ -4,7 +4,7 @@ use FixMyStreet::Script::Reports;
 my $mech = FixMyStreet::TestMech->new;
 
 # Create test data
-my $user = $mech->create_user_ok( 'bromley@example.com' );
+my $user = $mech->create_user_ok( 'bromley@example.com', name => 'Bromley' );
 my $body = $mech->create_body_ok( 2482, 'Bromley Council');
 my $contact = $mech->create_contact_ok(
     body_id => $body->id,
@@ -16,10 +16,19 @@ $contact->set_extra_fields(
     { code => 'easting', datatype => 'number', },
     { code => 'northing', datatype => 'number', },
     { code => 'service_request_id_ext', datatype => 'number', },
+    { code => 'service_sub_code', values => [ { key => 'RED', name => 'Red' }, { key => 'BLUE', name => 'Blue' } ], },
 );
 $contact->update;
+my $tfl = $mech->create_body_ok( 2482, 'TfL');
+$mech->create_contact_ok(
+    body_id => $tfl->id,
+    category => 'Traffic Lights',
+    email => 'tfl@example.org',
+);
 
 my @reports = $mech->create_problems_for_body( 1, $body->id, 'Test', {
+    latitude => 51.402096,
+    longitude => 0.015784,
     cobrand => 'bromley',
     user => $user,
 });
@@ -51,9 +60,10 @@ for my $test (
         desc => 'testing special Open311 behaviour',
         updates => {},
         expected => {
-          'attribute[easting]' => 529025,
-          'attribute[northing]' => 179716,
+          'attribute[easting]' => 540315,
+          'attribute[northing]' => 168935,
           'attribute[service_request_id_ext]' => $report->id,
+          'attribute[report_title]' => 'Test Test 1 for ' . $body->id,
           'jurisdiction_id' => 'FMS',
           address_id => undef,
         },
@@ -65,18 +75,27 @@ for my $test (
             postcode => ''
         },
         expected => {
-          'attribute[easting]' => 529025,
-          'attribute[northing]' => 179716,
+          'attribute[easting]' => 540315,
+          'attribute[northing]' => 168935,
           'attribute[service_request_id_ext]' => $report->id,
           'jurisdiction_id' => 'FMS',
           'address_id' => '#NOTPINPOINTED#',
         },
     },
+    {
+        desc => 'asset ID',
+        feature_id => '1234',
+        expected => {
+          'attribute[service_request_id_ext]' => $report->id,
+          'attribute[report_title]' => 'Test Test 1 for ' . $body->id . ' | ID: 1234',
+        },
+    },
 ) {
     subtest $test->{desc}, sub {
-        $report->set_extra_fields();
         $report->$_($test->{updates}->{$_}) for keys %{$test->{updates}};
         $report->$_(undef) for qw/ whensent send_method_used external_id /;
+        $report->set_extra_fields({ name => 'feature_id', value => $test->{feature_id} })
+            if $test->{feature_id};
         $report->update;
         $body->update( { send_method => 'Open311', endpoint => 'http://bromley.endpoint.example.com', jurisdiction => 'FMS', api_key => 'test', send_comments => 1 } );
         my $test_data;
@@ -157,5 +176,68 @@ for my $test (
         $mech->delete_user( $unreg_user );
     };
 }
+
+subtest 'check display of TfL reports' => sub {
+    $mech->create_problems_for_body( 1, $tfl->id, 'TfL Test', {
+        latitude => 51.402096,
+        longitude => 0.015784,
+        cobrand => 'bromley',
+        user => $user,
+    });
+    $mech->get_ok( '/report/' . $report->id );
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'bromley',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->follow_link_ok({ text_regex => qr/Back to all reports/i });
+    };
+    $mech->content_like(qr{<a title="TfL Test[^>]*www.example.org[^>]*><img[^>]*grey});
+    $mech->content_like(qr{<a title="Test Test[^>]*href="/[^>]*><img[^>]*yellow});
+};
+
+subtest 'check geolocation overrides' => sub {
+    my $cobrand = FixMyStreet::Cobrand::Bromley->new;
+    foreach my $test (
+        { query => 'Main Rd, BR1', town => 'Bromley', string => 'Main Rd' },
+        { query => 'Main Rd, BR3', town => 'Beckenham', string => 'Main Rd' },
+        { query => 'Main Rd, BR4', town => 'West Wickham', string => 'Main Rd' },
+        { query => 'Main Rd, BR5', town => 'Orpington', string => 'Main Rd' },
+        { query => 'Main Rd, BR7', town => 'Chislehurst', string => 'Main Rd' },
+        { query => 'Main Rd, BR8', town => 'Swanley', string => 'Main Rd' },
+        { query => 'Old Priory Avenue', town => 'BR6 0PL', string => 'Old Priory Avenue' },
+    ) {
+        my $res = $cobrand->disambiguate_location($test->{query});
+        is $res->{town}, $test->{town}, "Town matches $test->{town}";
+        is $res->{string}, $test->{string}, "String matches $test->{string}";
+    }
+};
+
+subtest 'check special subcategories in admin' => sub {
+    $mech->create_user_ok('superuser@example.com', is_superuser => 1);
+    $mech->log_in_ok('superuser@example.com');
+    $user->update({ from_body => $body->id });
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'bromley',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->get_ok('/admin/users/' . $user->id);
+        $mech->submit_form_ok({ with_fields => { 'contacts['.$contact->id.']' => 1, 'contacts[BLUE]' => 1 } });
+    };
+    $user->discard_changes;
+    is_deeply $user->get_extra_metadata('categories'), [ $contact->id ];
+    is_deeply $user->get_extra_metadata('subcategories'), [ 'BLUE' ];
+};
+
+subtest 'check heatmap page' => sub {
+    $user->update({ area_ids => [ 60705 ] });
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'bromley',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->log_in_ok($user->email);
+        $mech->get_ok('/about/heatmap?end_date=2018-12-31');
+        $mech->get_ok('/about/heatmap?filter_category=RED&ajax=1');
+    };
+};
 
 done_testing();

@@ -92,23 +92,33 @@ sub map_features {
         $p{latitude} = Utils::truncate_coordinate(($p{max_lat} + $p{min_lat} ) / 2);
     }
 
+    my $report_age = $c->stash->{show_old_reports} ? undef : $c->cobrand->report_age;
+    $p{report_age} = $report_age;
+
     $p{page} = $c->get_param('p') || 1;
     my $on_map = $c->cobrand->problems_on_map->around_map( $c, %p );
     my $pager = $c->stash->{pager} = $on_map->pager;
     $on_map = [ $on_map->all ];
 
-    my $dist = FixMyStreet::Gaze::get_radius_containing_population( $p{latitude}, $p{longitude} );
-
-    my $nearby;
-    if (@$on_map < $pager->entries_per_page && $pager->current_page == 1) {
-        my $limit = 20;
-        my @ids = map { $_->id } @$on_map;
-        $nearby = $c->model('DB::Nearby')->nearby(
-            $c, $dist, \@ids, $limit, @p{"latitude", "longitude", "categories", "states", "extra"}
-        );
+    if ( $c->{stash}->{show_old_reports} ) {
+        # if show_old_reports is on then there must be old reports
+        $c->stash->{num_old_reports} = 1;
+    } else {
+        my $older = $c->cobrand->problems_on_map->around_map( $c, %p, report_age => undef, page => 1 );
+        $c->stash->{num_old_reports} = $older->pager->total_entries - $pager->total_entries;
     }
 
-    return ( $on_map, $nearby, $dist );
+    # if there are fewer entries than our paging limit on the map then
+    # also return nearby entries for display
+    my $nearby;
+    if (@$on_map < $pager->entries_per_page && $pager->current_page == 1) {
+        $p{limit} = 20;
+        $p{ids} = [ map { $_->id } @$on_map ];
+        $p{distance} = FixMyStreet::Gaze::get_radius_containing_population( $p{latitude}, $p{longitude} );
+        $nearby = $c->model('DB::Nearby')->nearby($c, %p);
+    }
+
+    return ( $on_map, $nearby );
 }
 
 sub click_to_wgs84 {

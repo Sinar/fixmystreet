@@ -13,7 +13,6 @@ use URI;
 use Digest::MD5 qw(md5_hex);
 
 use Carp;
-use mySociety::MaPit;
 use mySociety::PostcodeUtil;
 
 =head1 The default cobrand
@@ -58,6 +57,21 @@ sub path_to_email_templates {
         FixMyStreet->path_to( 'templates', 'email', $self->moniker ),
     ];
     return $paths;
+}
+
+=item feature
+
+A helper utility to let you provide per-cobrand hooks for configuration.
+Mostly useful if running a site with multiple cobrands.
+
+=cut
+
+sub feature {
+    my ($self, $feature) = @_;
+    my $features = FixMyStreet->config('COBRAND_FEATURES');
+    return unless $features && ref $features eq 'HASH';
+    return unless $features->{$feature} && ref $features->{$feature} eq 'HASH';
+    return $features->{$feature}->{$self->moniker};
 }
 
 =item password_minimum_length
@@ -237,6 +251,18 @@ sub base_url_for_report {
     return $self->base_url_with_lang;
 }
 
+=item relative_url_for_report
+
+Returns the relative base url for a report (might be different in a two-tier
+county, but normally blank). Report may be an object, or a hashref.
+
+=cut
+
+sub relative_url_for_report {
+    my ( $self, $report ) = @_;
+    return "";
+}
+
 =item base_host
 
 Return the base host for the cobranded version of the site
@@ -397,25 +423,6 @@ Return cobrand extra data for the problem
 
 sub cobrand_data_for_generic_problem { '' }
 
-=item uri
-
-Given a URL ($_[1]), QUERY, EXTRA_DATA, return a URL with any extra params
-needed appended to it.
-
-In the default case, we need to make sure zoom is always present if lat/lon
-are, to stop OpenLayers defaulting to null/0.
-
-=cut
-
-sub uri {
-    my ( $self, $uri ) = @_;
-    $uri->query_param( zoom => $self->default_link_zoom )
-      if $uri->query_param('lat') && !$uri->query_param('zoom');
-
-    return $uri;
-}
-
-
 =item header_params
 
 Return any params to be added to responses
@@ -443,6 +450,10 @@ The number of reports to show per page on all reports page.
 
 sub reports_per_page {
     return FixMyStreet->config('ALL_REPORTS_PER_PAGE') || 100;
+}
+
+sub report_age {
+    return '6 months';
 }
 
 =item reports_ordering
@@ -526,7 +537,7 @@ sub find_closest {
     my $problem = $data->{problem};
     my $lat = $problem ? $problem->latitude : $data->{latitude};
     my $lon = $problem ? $problem->longitude : $data->{longitude};
-    my $j = $problem->geocode if $problem;
+    my $j = $problem ? $problem->geocode : undef;
 
     if (!$j) {
         $j = FixMyStreet::Geocode::Bing::reverse( $lat, $lon,
@@ -636,7 +647,7 @@ sub admin_pages {
     my $pages = {
          'summary' => [_('Summary'), 0],
          'timeline' => [_('Timeline'), 5],
-         'stats'  => [_('Stats'), 8],
+         'stats'  => [_('Stats'), 8.5],
     };
 
     # There are some pages that only super users can see
@@ -669,6 +680,7 @@ sub admin_pages {
     if ( $user->has_body_permission_to('user_edit') ) {
         $pages->{reports} = [ _('Reports'), 2 ];
         $pages->{users} = [ _('Users'), 6 ];
+        $pages->{roles} = [ _('Roles'), 7 ];
         $pages->{user_edit} = [ undef, undef ];
     }
     if ( $self->allow_report_extra_fields && $user->has_body_permission_to('category_edit') ) {
@@ -713,12 +725,15 @@ sub available_permissions {
             report_edit => _("Edit reports"),
             report_edit_category => _("Edit report category"), # future use
             report_edit_priority => _("Edit report priority"), # future use
+            report_mark_private => _("View/Mark private reports"),
             report_inspect => _("Markup problem details"),
             report_instruct => _("Instruct contractors to fix problems"), # future use
+            report_prefill => _("Automatically populate report subject/detail"),
             planned_reports => _("Manage shortlist"),
             contribute_as_another_user => _("Create reports/updates on a user's behalf"),
             contribute_as_anonymous_user => _("Create reports/updates as anonymous user"),
             contribute_as_body => _("Create reports/updates as the council"),
+            default_to_body => _("Default to creating reports/updates as the council"),
             view_body_contribute_details => _("See user detail for reports created as the council"),
 
             # NB this permission is special in that it can be assigned to users
@@ -760,6 +775,14 @@ used in emails).
 
 sub contact_name  { FixMyStreet->config('CONTACT_NAME') }
 sub contact_email { FixMyStreet->config('CONTACT_EMAIL') }
+
+=item abuse_reports_only
+
+Return true if only abuse reports should be allowed from the contact form.
+
+=cut
+
+sub abuse_reports_only { 0; }
 
 =item email_host
 
@@ -987,18 +1010,14 @@ sub tweak_all_reports_map {}
 
 sub can_support_problems { return 0; }
 
-=item default_map_zoom / default_link_zoom
+=item default_map_zoom
 
 default_map_zoom is used when displaying a map overriding the
 default of max-4 or max-3 depending on population density.
 
-default_link_zoom is used in links that contain a 'lat' and no
-zoom, to stop e.g. OpenLayers defaulting to null/0.
-
 =cut
 
 sub default_map_zoom { undef };
-sub default_link_zoom { 3 }
 
 sub users_can_hide { return 0; }
 
@@ -1008,9 +1027,7 @@ Returns true if the show name checkbox should be ticked by default.
 
 =cut
 
-sub default_show_name {
-    1;
-}
+sub default_show_name { 0 }
 
 =item report_check_for_errors
 
@@ -1029,7 +1046,7 @@ sub report_check_for_errors {
     );
 }
 
-sub report_sent_confirmation_email { 0; }
+sub report_sent_confirmation_email { '' }
 
 =item never_confirm_reports
 
@@ -1066,6 +1083,30 @@ Whether reports in state 'unconfirmed' should still be shown on the public site.
 
 sub show_unconfirmed_reports {
     0;
+}
+
+=item enable_category_groups
+
+Whether body category groups should be displayed on the new report form. If this is
+not enabled then any groups will be ignored and a flat list of categories displayed.
+
+=cut
+
+sub enable_category_groups {
+    my $self = shift;
+    return $self->feature('category_groups');
+}
+
+=item enable_multiple_category_groups
+
+Whether a category can be included in multiple groups. Required enable_category_groups
+to alse be true.
+
+=cut
+
+sub enable_multiple_category_groups {
+    my $self = shift;
+    return $self->enable_category_groups && $self->feature('multiple_category_groups');
 }
 
 sub default_problem_state { 'unconfirmed' }
@@ -1180,6 +1221,7 @@ Return true if an Open311 service attribute should be a hidden field.
 
 sub category_extra_hidden {
     my ($self, $meta) = @_;
+    return 1 if ($meta->{automated} || '') eq 'hidden_field';
     return 0;
 }
 
@@ -1242,5 +1284,13 @@ still be sent (because it wasn't disabled on the FixMyStreet cobrand).
 =cut
 
 sub send_moderation_notifications { 1 }
+
+=item privacy_policy_url
+
+The URL of the privacy policy to use on the report and update submissions forms.
+
+=cut
+
+sub privacy_policy_url { '/privacy' }
 
 1;

@@ -12,6 +12,7 @@ sub index : Path : Args(0) {
     my $user = $c->user;
 
     if ($user->is_superuser) {
+        $c->stash->{with_defect_type_count} = 1;
         $c->forward('/admin/fetch_all_bodies');
     } elsif ( $user->from_body ) {
         $c->forward('load_user_body', [ $user->from_body->id ]);
@@ -75,7 +76,7 @@ sub edit : Path : Args(2) {
         my @new_contact_ids = $c->get_param_list('categories');
         @new_contact_ids = @{ mySociety::ArrayUtils::intersection(\@live_contact_ids, \@new_contact_ids) };
         $defect_type->contact_defect_types->search({
-            contact_id => { '!=' => \@new_contact_ids },
+            contact_id => { -not_in => \@new_contact_ids },
         })->delete;
         foreach my $contact_id (@new_contact_ids) {
             $defect_type->contact_defect_types->find_or_create({

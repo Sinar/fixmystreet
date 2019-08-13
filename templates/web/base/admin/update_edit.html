@@ -1,7 +1,7 @@
 [% INCLUDE 'admin/header.html' title=tprintf(loc('Editing update %d'), update.id ) -%]
 [% PROCESS 'admin/report_blocks.html' %]
 
-[% status_message %]
+[% INCLUDE status_message %]
 
 <form method="post" action="[% c.uri_for( 'update_edit', update.id ) %]" enctype="application/x-www-form-urlencoded" accept-charset="utf-8">
     <input type="hidden" name="token" value="[% csrf_token %]" >
@@ -80,5 +80,25 @@
 
 </ul>
 <input type="submit" class="btn" name="Submit changes" value="[% loc('Submit changes') %]" ></form>
+
+[% moderation_history = update.moderation_history %]
+[% IF moderation_history %]
+    <h2>[% loc('Moderation history') %]</h2>
+    [% last_history = update %]
+    <ul>
+      [% FOR history IN moderation_history %]
+        [% SET diff = history.compare_with(last_history) %]
+        [% SET log = history.admin_log %]
+        <li><i>[% tprintf(loc('Moderated by %s at %s'), log.user.name OR loc('an administrator'), prettify_dt(history.created)) %]
+            [%~ IF log.reason %]<br>“[% log.reason %]”[% END %]</i>
+            [% IF diff.detail %]<br>[% loc('Text:') %] [% diff.detail %][% END %]
+            [% IF diff.photo %]<br>[% loc('Photo') %]: [% diff.photo %][% END %]
+            [% IF diff.anonymous %]<br>[% loc('Anonymous:') %] [% diff.anonymous %][% END %]
+            [% IF diff.extra %]<br>[% loc('Extra data:') %] [% diff.extra %][% END %]
+        </li>
+        [% last_history = history %]
+      [% END %]
+    </ul>
+[% END %]
 
 [% INCLUDE 'admin/footer.html' %]

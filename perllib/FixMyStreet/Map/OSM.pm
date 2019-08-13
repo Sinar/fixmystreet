@@ -19,7 +19,7 @@ sub map_type { 'OpenLayers.Layer.OSM.Mapnik' }
 sub map_template { 'osm' }
 
 sub map_javascript { [
-    '/vendor/OpenLayers/OpenLayers.fixmystreet.js',
+    '/vendor/OpenLayers/OpenLayers.wfs.js',
     '/js/map-OpenLayers.js',
     '/js/map-OpenStreetMap.js',
 ] }
@@ -57,6 +57,7 @@ sub display_map {
         if defined $c->get_param('lat');
     $params{longitude} = Utils::truncate_coordinate($c->get_param('lon') + 0)
         if defined $c->get_param('lon');
+    $params{zoomToBounds} = $params{any_zoom} && !defined $c->get_param('zoom');
 
     my %data;
     $data{cobrand} = $c->cobrand;
@@ -69,8 +70,8 @@ sub display_map {
 sub generate_map_data {
     my ($self, $data, %params) = @_;
 
-    my $numZoomLevels = ZOOM_LEVELS;
-    my $zoomOffset = MIN_ZOOM_LEVEL;
+    my $numZoomLevels = $self->ZOOM_LEVELS;
+    my $zoomOffset = $self->MIN_ZOOM_LEVEL;
     if ($params{any_zoom}) {
         $numZoomLevels = 19;
         $zoomOffset = 0;

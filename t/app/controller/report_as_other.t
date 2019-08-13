@@ -16,6 +16,8 @@ my $test_email = 'body-user@example.net';
 my $user = $mech->log_in_ok($test_email);
 $user->update({ from_body => $body->id, name => 'Body User' });
 
+my $superuser = $mech->create_user_ok('superuser@example.net', name => "Super", is_superuser => 1);
+
 my ($report_to_update) = $mech->create_problems_for_body(1, $body->id, 'Title', { category => 'Potholes' });
 
 subtest "Body user, no permissions, no special reporting tools shown" => sub {
@@ -123,7 +125,7 @@ subtest "Body user, has permission to add report as another (existing) user with
 
     my $send_confirmation_mail_override = Sub::Override->new(
         "FixMyStreet::Cobrand::Default::report_sent_confirmation_email",
-        sub { return 1; }
+        sub { return 'external_id'; }
     );
     FixMyStreet::Script::Reports::send();
     $mech->email_count_is(2);
@@ -150,10 +152,11 @@ subtest "Body user, has permission to add report as another (existing) user with
     push @users, $report->user;
 };
 
-subtest "Body user, has permission to add report as anonymous user" => sub {
+subtest "Superuser, can add report as anonymous user" => sub {
     FixMyStreet::Script::Reports::send();
     $mech->clear_emails_ok;
 
+    my $user = $mech->log_in_ok($superuser->email);
     my $report = add_report(
         'contribute_as_anonymous_user',
         form_as => 'anonymous_user',
@@ -161,23 +164,23 @@ subtest "Body user, has permission to add report as anonymous user" => sub {
         detail => 'Test report details.',
         category => 'Street lighting',
     );
-    is $report->name, 'Oxfordshire County Council', 'report name is body';
-    is $report->user->name, 'Body User', 'user name unchanged';
+    is $report->name, 'an administrator', 'report name is admin';
+    is $report->user->name, 'Super', 'user name unchanged';
     is $report->user->id, $user->id, 'user matches';
     is $report->anonymous, 1, 'report anonymous';
 
     my $send_confirmation_mail_override = Sub::Override->new(
         "FixMyStreet::Cobrand::Default::report_sent_confirmation_email",
-        sub { return 1; }
+        sub { return 'external_id'; }
     );
 
     FixMyStreet::Script::Reports::send();
-    # No report sent email is sent
-    $mech->email_count_is(1);
     my $email = $mech->get_email;
     like $email->header('Subject'), qr/Problem Report: Test Report/, 'report email title correct';
     $mech->clear_emails_ok;
     $send_confirmation_mail_override->restore();
+
+    $mech->log_in_ok($test_email);
 };
 
 subtest "Body user, has permission to add update as council" => sub {
@@ -282,6 +285,24 @@ subtest "Body user, has permission to add update as anonymous user" => sub {
     is $update->anonymous, 1, 'update anonymous';
 };
 
+for my $test_permission ( qw/planned_reports default_to_body/ ) {
+    subtest "$test_permission user defaults to reporting as body" => sub {
+        $_->delete for $user->user_body_permissions;
+        for my $permission ( 'contribute_as_another_user', 'contribute_as_anonymous_user', 'contribute_as_body', $test_permission ) {
+            $user->user_body_permissions->create({ body => $body, permission_type => $permission })
+        }
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ 'fixmystreet' ],
+            MAPIT_URL => 'http://mapit.uk/',
+            PHONE_COUNTRY => 'GB',
+        }, sub {
+            $mech->get_ok('/report/new?latitude=51.7549262252&longitude=-1.25617899435');
+        };
+
+        is $mech->visible_form_values()->{form_as}, 'body', 'report as body is default';
+    };
+}
+
 done_testing();
 
 sub start_report {
@@ -311,7 +332,9 @@ sub add_report {
             with_fields => \%fields,
         }, "submit details");
     };
-    $mech->content_contains('Thank you for reporting this issue');
+    # Anonymous test done as superuser, which redirects
+    $mech->content_contains('Thank you for reporting this issue')
+        unless $permission eq 'contribute_as_anonymous_user';
     my $report = FixMyStreet::DB->resultset("Problem")->search(undef, { order_by => { -desc => 'id' } })->first;
     ok $report, "Found the report";
     is $report->state, 'confirmed', "report is now confirmed";

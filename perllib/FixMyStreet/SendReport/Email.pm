@@ -12,12 +12,12 @@ sub build_recipient_list {
     my $all_confirmed = 1;
     foreach my $body ( @{ $self->bodies } ) {
 
-        my $contact = $row->result_source->schema->resultset("Contact")->not_deleted->find( {
-            body_id => $body->id,
-            category => $row->category
-        } );
+        my $contact = $self->fetch_category($body, $row) or next;
 
         my ($body_email, $state, $note) = ( $contact->email, $contact->state, $contact->note );
+
+        $body_email = swandt_contact($row->latitude, $row->longitude)
+            if $body->name eq 'Somerset West and Taunton Council' && $body_email eq 'SPECIAL';
 
         unless ($state eq 'confirmed') {
             $all_confirmed = 0;
@@ -57,7 +57,7 @@ sub send {
     my $self = shift;
     my ( $row, $h ) = @_;
 
-    my $recips = $self->build_recipient_list( $row, $h );
+    my $recips = @{$self->to} ? 1 : $self->build_recipient_list( $row, $h );
 
     # on a staging server send emails to ourselves rather than the bodies
     if (FixMyStreet->staging_flag('send_reports', 0) && !FixMyStreet->test_mode) {
@@ -71,7 +71,9 @@ sub send {
     }
 
     my ($verbose, $nomail) = CronFns::options();
-    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($row->cobrand)->new();
+    my $cobrand = $row->get_cobrand_logged;
+    $cobrand = $cobrand->call_hook(get_body_handler_for_problem => $row) || $cobrand;
+
     my $params = {
         To => $self->to,
     };
@@ -109,10 +111,19 @@ sub send {
     return $result;
 }
 
+# SW&T has different contact addresses depending upon the old district
+sub swandt_contact {
+    my $district = _get_district_for_contact(@_);
+    my $email;
+    $email = ['customerservices', 'westsomerset'] if $district == 2427;
+    $email = ['enquiries', 'tauntondeane'] if $district == 2429;
+    return join('@', $email->[0], $email->[1] . '.gov.uk');
+}
+
 sub _get_district_for_contact {
     my ( $lat, $lon ) = @_;
     my $district =
-      mySociety::MaPit::call( 'point', "4326/$lon,$lat", type => 'DIS' );
+      FixMyStreet::MapIt::call( 'point', "4326/$lon,$lat", type => 'DIS', generation => 34 );
     ($district) = keys %$district;
     return $district;
 }

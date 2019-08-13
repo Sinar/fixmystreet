@@ -5,9 +5,17 @@ $meta-font: Helmet, Freesans, sans-serif !default;
 $heading-font: 'Museo300-display', MuseoSans, Helmet, Freesans, sans-serif !default;
 $menu-image: 'menu-white' !default;
 
+$link-color: #005ea5 !default;
+$link-hover-color: #2b8cc4 !default;
+$link-visited-color: $link-color !default;
+$link-text-decoration: none !default;
+$link-hover-text-decoration: underline !default;
+
 $itemlist_item_background: #f6f6f6 !default;
 $itemlist_item_background_hover: #e6e6e6 !default;
 $col_big_numbers: #ccc !default;
+$col_fixed_label: #00BD08 !default;
+$col_fixed_label_light: mix($col_fixed_label, #fff, 10%) !default;
 
 $form-control-border-color: #aaaaaa !default;
 $header-top-border-width: 0.25em !default;
@@ -48,7 +56,17 @@ h1 {
   font-weight: normal;
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+
+  // Useful for extra inline text after a heading
+  small {
+    display: inline-block; // break onto its own line if not enough horizontal space
+    font-style: inherit;
+    font-family: inherit;
+    font-size: 0.5em; // back down to 1em from the 2em parent
+    line-height: 1em;
+  }
 }
+
 h1#reports_heading {
   margin-bottom: 0;
 }
@@ -115,11 +133,9 @@ ol.big-numbers {
       top:-0.2em;
       color:$col_big_numbers;
       line-height:1;
-      font: {
-        family: $meta-font;
-        weight:bold;
-        size:2.5rem;
-      }
+      font-family: $meta-font;
+      font-weight: bold;
+      font-size: 2.5rem;
     }
   }
 }
@@ -172,19 +188,30 @@ select {
   width: 100%;
 }
 
-a {
-  text-decoration: none;
-  color: #0BA7D1;
+a,
+.fake-link {
+  text-decoration: $link-text-decoration;
+  color: $link-color;
 
   &:visited {
-    color: #0BA7D1;
+    color: $link-visited-color;
   }
 
   &:hover,
   &:active {
-    text-decoration: underline;
-    color: #0D7CCE;
+    text-decoration: $link-hover-text-decoration;
+    color: $link-hover-color;
   }
+}
+
+.fake-link {
+  display: inline-block;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 1em;
+  padding: 0;
+  margin: 0;
 }
 
 // custom type
@@ -250,7 +277,8 @@ textarea {
   min-height: 5em;
 }
 
-label{
+label,
+legend {
   display: block;
   margin-top: 1.25em;
   margin-bottom: 0.5em;
@@ -258,7 +286,7 @@ label{
 
   &.inline {
     display: inline;
-    padding: flip(0 2em 0 1em, 0 1em 0 2em);
+    padding: flip(0 1em 0 5px, 0 5px 0 1em);
     font-weight: normal;
   }
 
@@ -338,6 +366,27 @@ select.form-control {
     line-height: 1em * (22/16);
 }
 
+.form-section-preview {
+    // If social_auth_enabled, but no javascript, we want the "Next" preview
+    // to be visible but without any other styling. Once javascript is enabled,
+    // the "next"/"back" buttons will work, so we want the styling back.
+    html.js & {
+        background-color: #eee;
+        border-radius: 4px;
+        padding: 1em;
+
+        .form-section-heading {
+          margin: 0 0 0.5em 0;
+        }
+    }
+}
+
+// Purposefully *not* wrapped in `html.js` because the margin-top helps
+// separate the social login buttons from the .description_tips list.
+.form-section-preview--next {
+    margin-top: 1.5em;
+}
+
 // grey background, full width box
 .form-box {
   margin: 0 -1em 0.25em;
@@ -374,18 +423,37 @@ select.form-control {
   }
 }
 
-// When the user is logged in, we show a shorter form-box,
-// without a heading before it. So add some space before.
-#form-box--logged-in-name {
-  margin-top: 1.25em;
-}
-
 .change_location {
     color: #666;
-    padding-#{$left}: 20px;
-    background: transparent url(/cobrands/fixmystreet/images/wrong-location.png) $left 50% no-repeat;
-    border-#{$left}: solid 4px transparent;
-    margin-top: -0.5em;
+    margin: 0;
+
+    // No need for this element on mobile, where they can't click the map,
+    // and there's already a "Report" button in the header that leads to
+    // the homepage search form. But we'll want to unhide in layout.scss.
+    display: none;
+
+    li {
+      list-style: none;
+      padding-#{$left}: 24px;
+      margin: 0.3em 0 0 0;
+      background-size: 14px 14px;
+      background-repeat: no-repeat;
+      background-position: flip(0 50%, 100% 50%);
+    }
+}
+
+.change_location__map {
+  @include svg-background-image('/cobrands/fixmystreet/images/change-location-arrow');
+}
+
+.change_location__search {
+  @include svg-background-image('/cobrands/fixmystreet/images/change-location-search');
+}
+
+// Space between the .change_location list and any
+// top_message.html announcements inserted via ajax.
+#js-top-message > :first-child {
+  margin-top: 1.5em;
 }
 
 .form-txt-submit-box {
@@ -447,6 +515,12 @@ textarea.form-error {
   @include border-radius(0 0.25em 0.25em 0.25em);
 }
 
+.form-error__box {
+    border: solid 2px #ff0000;
+    padding: 0.5em;
+    margin-bottom: 0.5em;
+}
+
 ul.error {
   background:#ff0000;
   color:#fff;
@@ -461,6 +535,53 @@ ul.error {
   @include border-radius(0.25em);
 }
 
+.duplicate-report-suggestions {
+    position: relative;
+
+    .item-list__item--expandable {
+      border-top: 1px solid #ddd;
+    }
+
+    .item-list {
+        margin: 0 -1em 1em -1em;
+        border-bottom: 1px solid #ddd;
+    }
+}
+
+.duplicate-report-suggestions__close {
+    position: absolute;
+    right: 0;
+    top: 0;
+    display: block;
+    width: 32px;
+    height: 0;
+    padding-top: 32px;
+    overflow: hidden;
+    border: none;
+    background: transparent;
+    opacity: 0.5;
+    line-height: 2em; // Make sure line box is taller than text, so text is pushed below hidden overflow.
+
+    &:hover,
+    &:focus {
+        opacity: 0.7;
+    }
+
+    // Doing some gymnastics so we can reuse the existing .btn--close icon.
+    &:before {
+      content: "";
+      display: block;
+      width: 16px;
+      height: 16px;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background-repeat: no-repeat;
+      background-size: 112px 16px;
+      @include svg-background-image('/cobrands/fixmystreet/images/button-icons');
+      background-position: -32px 0;
+    }
+}
 
 /*** LAYOUT ***/
 
@@ -481,8 +602,8 @@ ul.error {
   @if ($header-top-border) {
     border-top: $header-top-border;
   }
-  color: $nav_fg;
-  background-color: $map_nav_bg;
+  color: $nav_colour;
+  background-color: $nav_background_colour;
   position: relative;
 }
 
@@ -500,11 +621,12 @@ ul.error {
 // this is a skip to nav for mobile users only
 #nav-link {
   width: 3em;
-  height: 3em;
+  height: 0;
+  padding-top: 3em;
+  overflow: hidden;
   background: transparent url(../fixmystreet/images/#{$menu-image}.png) center center no-repeat;
   background-image: inline-image("../fixmystreet/images/#{$menu-image}.svg"), none;
   background-size: 22px 18px;
-  text-indent: -999999px;
   #{$right}: 0;
 }
 
@@ -522,13 +644,13 @@ ul.error {
   font-size: 0.9em;
   line-height: 1em;
   border: 1px solid #666;
-  color: $nav_fg;
+  color: $nav_colour;
   padding: 0.4em;
   border-radius: 0.3em;
 
   &:hover, &:focus {
     text-decoration: none;
-    background-color: $nav_fg_hover;
+    background-color: $nav_hover_background_colour;
   }
 }
 
@@ -645,8 +767,15 @@ ul.error {
   }
 }
 
-#report-updates-data img {
+#report-updates-data {
+  img {
     float: $right;
+  }
+
+  // Avoid double margin between opening paragraph and label.
+  label {
+    margin-top: 0;
+  }
 }
 
 #report-share {
@@ -701,7 +830,16 @@ footer {
 /*BUTTONS*/
 
 .btn {
-  @include button-reset;
+  @include button-reset();
+}
+
+// Deprecated
+// Try to use `btn btn--primary` etc instead of `btn-primary` where possible.
+.btn-primary,
+.green-btn,
+.btn-danger,
+.red-btn {
+  @include button-size();
 }
 
 .btn + .btn {
@@ -710,13 +848,15 @@ footer {
 }
 
 .btn-primary,
-.green-btn {
-  @include button-reset(#9FDE23, #7FB900, #5B9700, #fff, #9FDE23, #7FB900, #5B9700, #fff);
+.green-btn,
+.btn--primary {
+  @include button-variant(#9FDE23, #7FB900, #5B9700, #fff, #9FDE23, #7FB900, #5B9700, #fff);
 }
 
 .btn-danger,
-.red-btn {
-  @include button-reset(#FF0038, #BF002A, #80001C, #fff, #FF0038, #BF002A, #80001C, #fff);
+.red-btn,
+.btn--danger {
+  @include button-variant(#FF0038, #BF002A, #80001C, #fff, #FF0038, #BF002A, #80001C, #fff);
 }
 
 .final-submit,
@@ -726,7 +866,7 @@ input.final-submit {
 }
 
 .btn--facebook {
-    @include button-reset(#3b5998, darken(#3b5998, 10%), #3b5998, #fff, darken(#3b5998, 5%), darken(#3b5998, 10%), #3b5998, #fff);
+    @include button-variant(#3b5998, darken(#3b5998, 10%), #3b5998, #fff, darken(#3b5998, 5%), darken(#3b5998, 10%), #3b5998, #fff);
 
     img {
         margin-#{$right}: 0.5em;
@@ -737,7 +877,7 @@ input.final-submit {
 }
 
 .btn--twitter {
-    @include button-reset(#55acee, darken(#55acee, 10%), #55acee, #fff, darken(#55acee, 5%), darken(#55acee, 10%), #55acee, #fff);
+    @include button-variant(#55acee, darken(#55acee, 10%), #55acee, #fff, darken(#55acee, 5%), darken(#55acee, 10%), #55acee, #fff);
 
     img {
         margin-#{$right}: 0.5em;
@@ -817,60 +957,29 @@ input.final-submit {
 
 .btn--block {
     display: block;
-    text-align: center;
+    // Need to force 100% width if this is applied to <button> or <input> elements
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    @include box-sizing(border-box);
 }
 
-// Under the button to override its text transform and width
-.btn--social {
-    text-transform: none;
-    text-align: center;
+// Don't want space between block-level buttons,
+// because they don't sit beside each other anyway.
+.btn--block + .btn--block {
+    margin-#{$left}: 0;
+    margin-top: 1em;
 }
 
 .btn--small {
   font-size: 0.8em;
 }
 
-.js #js-social-email-hide {
-    display: none;
-}
-
-.banner {
-  position: relative;
-  p {
-    position: absolute;
-    top:-1.95em;
-    #{$right}: 0;
-    @include inline-block;
-    font-size:0.6875em;//11px
-    line-height:1em;
-    padding:0.5em 1em;
-    margin:0;
-    color:#1a1a1a;
-    background: #ccc;
-    text: {
-      transform:uppercase;
-      align:center;
-    }
-    &:before {
-      content: "";
-      #{$left}: -0.5em;
-      top:0;
-      position: absolute;
-      width: 0;
-      height: 0;
-      border-#{$left}: 0.5em solid transparent;
-      border-bottom: 0.5em solid #888;
-    }
-  }
-
-  #fixed {
-    color:#fff;
-    background: $col_fixed_label;
-
-    &:before {
-      border-bottom: 0.5em solid $col_fixed_label_dark;
-    }
-  }
+// Most of our forms get their vertical spacing from the margin-top on labels.
+// This means the final submit button can end up uncomfortably close to the
+// bottom of the final input. Add a class of `btn--final` to fix this.
+.btn--final {
+    margin-top: 1.25em; // matches margin-top on `label`
 }
 
 /*OTHER*/
@@ -1137,12 +1246,10 @@ input.final-submit {
 // that appears in Inspector form, when closing a report as a duplicate.
 .item-list--inspect-duplicates {
     border-bottom: none;
+    background-color: rgba(255, 255, 255, 0.5);
 
-    .item-list__item {
-        background-color: rgba(255, 255, 255, 0.5);
-    }
-
-    .item-list--reports__item--selected {
+    .item-list__item--selected,
+    .js & .item-list__item--selected.expanded:hover {
         border: 0.25em solid $primary;
         background-color: #fff;
     }
@@ -1196,6 +1303,103 @@ input.final-submit {
 
   .item-list__item {
     background-color: transparent;
+  }
+}
+
+.item-list__item--expandable {
+  @include clearfix();
+  margin: 0;
+  padding: 1em;
+
+  .js & {
+      cursor: pointer;
+
+      &:hover,
+      &.hovered {
+          background-color: $itemlist_item_background_hover;
+      }
+
+      &.item-list__item--selected,
+      &.item-list__item--selected:hover,
+      &.item-list__item--selected.hovered {
+          cursor: default;
+          background-color: #fff;
+      }
+  }
+
+  h3 {
+      margin: 0;
+  }
+
+  .img {
+      float: $right;
+      width: 90px;
+      height: auto;
+      margin: flip(0 0 0.5em 1em, 0 1em 0.5em 0);
+  }
+
+  small {
+      color: #666;
+      display: block;
+      margin-top: 0.5em;
+  }
+
+  // A sort of hybrid between the .problem-header meta rows,
+  // and the regular .list-item meta row.
+  .report_meta_info,
+  .council_sent_info {
+      color: #666;
+      font-family: $meta-font;
+      font-style: italic;
+      font-size: 0.8125em;
+  }
+
+  p {
+      line-height: 1.4em;
+      margin-top: 0.5em;
+  }
+
+  &.expanded {
+      .js & {
+          cursor: default;
+
+          &:hover {
+              background-color: $itemlist_item_background;
+          }
+      }
+  }
+}
+
+.item-list__item--expandable__actions {
+  clear: both; // clear floated .update-img images
+  @include flex-container();
+
+  & > * {
+      @include flex(1); // Force equal width children
+  }
+}
+
+.item-list__item--expandable__hide-until-expanded {
+  display: none;
+
+  .expanded & {
+      display: block;
+  }
+}
+
+.item-list__item--expandable__hide-when-expanded {
+  .expanded & {
+      display: none;
+  }
+}
+
+.item-list__item .get-updates {
+  margin: 0 -1em -1em -1em;
+  padding: 1em;
+  background-color: $itemlist_item_background_hover;
+
+  p, label {
+    margin: 0 0 0.5em 0;
   }
 }
 
@@ -1261,9 +1465,9 @@ input.final-submit {
   display: block;
   font-size: 1em;
   line-height: 1.2em;
-  margin-bottom: 1em;
-  padding-bottom: 0.8em;
-  border-bottom: 1px solid #eee;
+  margin: -1em -1em 1em -1em;
+  padding: 0.9em 1em;
+  border-bottom: 0.2em solid #eee;
 
   &:link, &:visited, &:hover {
     color: #666;
@@ -1281,6 +1485,36 @@ input.final-submit {
     @include svg-background-image('/cobrands/fixmystreet/images/report-tools');
     background-position: flip(0 0, -16px 0);
   }
+}
+
+// Banner showing report status, above report title on individual report page.
+.banner {
+  line-height: 1.2; // down from 1.5 default on `body`
+  margin: -1.2em -1em 1em -1em;
+  padding: 0.9em 1em;
+  background-color: #f6f6f6;
+  border-top: 0.2em solid #999;
+
+  p {
+    font-weight: bold;
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  .pin {
+    width: 16px;
+    height: 20px;
+    margin: -10px 0;
+    margin-#{$right}: 0.3em;
+    vertical-align: 0.4em;
+  }
+}
+
+.banner--fixed {
+  border-top-color: $col_fixed_label;
+  background-color: $col_fixed_label_light;
 }
 
 .problem-header {
@@ -1314,6 +1548,15 @@ input.final-submit {
 
   h1 input {
     border-width: (0.125em/2); // compensate for 2em font-size on h1s
+  }
+}
+
+.show-moderation {
+  .moderate-edit {
+    display: block;
+  }
+  .moderate-display {
+    display: none;
   }
 }
 
@@ -1436,7 +1679,7 @@ html.js #map .noscript {
     height: 12px;
     margin-#{$left}: 8px;
     vertical-align: -0.1em;
-    background-size: 96px 12px;
+    background-size: 108px 12px;
     @include svg-background-image('/cobrands/fixmystreet/images/map-tools');
 }
 
@@ -1506,6 +1749,11 @@ html.js #map .noscript {
         @extend %sub-map-link-icon;
         background-position: -84px 0;
     }
+
+    #map_filter:after {
+        @extend %sub-map-link-icon;
+        background-position: -96px 0;
+    }
 }
 
 // Want some visual consistency between the top and bottom bars on mobile.
@@ -1516,6 +1764,11 @@ html.js #map .noscript {
     color: #fff;
 }
 
+// "Selected" styling for the report-list-filter toggle when selected.
+.mobile-filters-active #map_filter {
+    background: #000;
+}
+
 // On mobile, once #mob_ok has been pressed, the new report form is shown,
 // and .sub-map-links transforms into a completely different-looking set
 // of buttons for return back to the map.
@@ -1524,7 +1777,7 @@ html.js #map .noscript {
     display: block;
 
     // "Fade out" the map.
-    height: 100%;
+    top: 30px;
     background-color: rgba(#000, 0.3);
 
     #try_again,
@@ -1599,10 +1852,8 @@ html.js #map .noscript {
   padding:0.75em 30px;
   a {
     @include button-reset(#333, #1a1a1a, #1a1a1a, #fff, #333, #1a1a1a, #1a1a1a, #fff);
-    font: {
-      weight:normal;
-      size:0.875em;
-    }
+    font-weight: normal;
+    font-size: 0.875em;
     line-height:1;
     padding:0.5em 0.75em;
     position:absolute;
@@ -1672,6 +1923,23 @@ img.pin {
   height: 10em; // eg: at the top of individual report pages
 }
 
+#map_sidebar {
+  // Chrome/Safari count padding-bottom as part of the scrollable content in
+  // an overflow:scroll element (technically in contravention of the spec),
+  // whereas Firefox/IE render the padding outside the scrollable area.
+  // In desktop mode, we need padding at the bottom of the sidebar, to stop
+  // .shadow-wrap from obscuring content at the bottom of the sidebar. So we
+  // use an :after pseudo-element instead of padding.
+  // In mobile mode, the extra space here still helps differentiate the page
+  // content on report/reporting pages, from the nav immediately below.
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=748518
+  &:after {
+    content: "";
+    display: block;
+    height: 4em;
+  }
+}
+
 // When you're in the reporting flow on mobile, we hide the site-header
 // and make the map full screen to reduce distractions. JavaScript also
 // tweaks the text content of some of the map-related elements, to make
@@ -1736,13 +2004,21 @@ label .muted {
   font-weight: normal;
 }
 
+.form-hint {
+  color: #666;
+
+  // Reduce space between labels and their form-hints
+  label + & {
+    margin-top: -0.5em;
+  }
+}
+
 .description_tips {
-  @include clearfix;
+  display: flex;
 
   ul {
-    width: 49%;
+    flex: 1;
     margin: 0;
-    float: $left;
     font-size: 14px;
     line-height: 20px;
   }
@@ -1760,7 +2036,6 @@ label .muted {
   }
 
   .dont {
-    float: $right;
     color: #881111;
 
     li {
@@ -1775,33 +2050,73 @@ label .muted {
   display: inline-block;
 }
 
-#problem_form > label:first-child {
-  margin-top: 0;
+#problem_form {
+  & > label:first-child {
+    margin-top: 0;
+  }
+}
+
+.box-warning,
+.extra-category-questions {
+  margin: 1em -1em;
 }
 
 .extra-category-questions {
   background-color: #eee;
   padding: 1em;
-  margin-top: 1.5em; // make room for the triangle
-  position: relative;
-
-  // An upwards pointing triangle
-  &:before {
-    content: "";
-    display: block;
-    width: 0;
-    height: 0;
-    border-style: solid;
-    border-width: 0 1em 1em 1em;
-    border-color: transparent transparent #eee transparent;
-    position: absolute;
-    top: -0.9em; // avoid hairline gap between triangle and parent
-    #{$left}: 1.5em;
-  }
 
   & > :first-child {
     margin-top: 0;
   }
+}
+
+.box-warning {
+    padding: 2em 2em;
+    background-color: mix(#fff, $primary, 70%);
+
+    h1 {
+        font-size: 1.4em;
+    }
+
+    p {
+        margin-bottom: 0.5em;
+    }
+
+    .btn, .btn-primary {
+        margin: 0.5em 0 1em 0;
+
+        &:first-child {
+            margin-top: 0;
+        }
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    .segmented-control {
+        .btn {
+            &:last-child {
+                margin-bottom: 1em;
+            }
+        }
+    }
+}
+
+.js-hide-if-public-category {
+  display: none;
+}
+
+.asset-spot:before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid #000;
+    background-color: #ffff00;
+    margin: 0 0.3em 0 0.2em;
+    border-radius: 100%;
+    vertical-align: -2px;
 }
 
 // The coloured sidebar column on .with-actions pages.
@@ -1813,6 +2128,7 @@ label .muted {
 
   #detailed_information_length {
     float: #{$right};
+    margin-top: 0.25em; // match the label next to it
     &.error {
       color: red;
     }
@@ -1908,11 +2224,9 @@ label .muted {
   text-align:center;
   margin: 1em;
   h2 {
-    font: {
-      style:italic;
-      family: $meta-font;
-      size:1.1875em;
-    }
+    font-style: italic;
+    font-family: $meta-font;
+    font-size: 1.1875em;
     color:#4d4d4d;
   }
   p {
@@ -1926,6 +2240,9 @@ label .muted {
     font-family: $meta-font;
     label {
       margin:0;
+    }
+    .form-hint {
+      margin-bottom: 0.5em;
     }
     div {
       display:table;
@@ -1964,10 +2281,8 @@ label .muted {
     background:#1a1a1a;
     color:#C8C8C8;
     padding:0.5em;
-    font: {
-      family: $meta-font;
-      size:0.8125em;
-    }
+    font-family: $meta-font;
+    font-size: 0.8125em;
     @include border-radius(0 0 0.25em 0.25em);
     &:hover {
       text-decoration:none;
@@ -1989,28 +2304,24 @@ a#geolocate_link.loading, .btn--geolocate.loading {
     padding-#{$right}: 1.5em;
 }
 
-#front-howto {
-  #front_stats {
-    display:table;
-    width:100%;
-    color: $primary_text;
-    background: $primary;
-    font-family: $meta-font;
-    div {
-      display:table-cell;
-      text-align:center;
-      padding:1em;
-      line-height:1.25em;
-      font: {
-        size:0.8125em;
-        weight:bold;
-      }
-    }
-    big {
-      display:block;
-      margin-bottom:0.5em;
-      font-size:1.5385em;
-    }
+#front_stats {
+  display:table;
+  width:100%;
+  color: $primary_text;
+  background: $primary;
+  font-family: $meta-font;
+  div {
+    display:table-cell;
+    text-align:center;
+    padding:1em;
+    line-height:1.25em;
+    font-size: 0.8125em;
+    font-weight: bold;
+  }
+  big {
+    display:block;
+    margin-bottom:0.5em;
+    font-size:1.5385em;
   }
 }
 
@@ -2137,6 +2448,12 @@ a#geolocate_link.loading, .btn--geolocate.loading {
   }
 }
 
+.confirmation-again {
+  margin-top: 2em;
+  color: inherit;
+  font-size: 1em;
+}
+
 /* Questionnaire page */
 
 .questionnaire-report-header {
@@ -2223,7 +2540,7 @@ a#geolocate_link.loading, .btn--geolocate.loading {
   }
 
   input:checked + label {
-    color: $primary_text;
+    color: $primary_text !important;
     background: $primary;
     border-color: darken($primary, 5%);
     background-image: none; // remove gradient
@@ -2336,44 +2653,6 @@ a#geolocate_link.loading, .btn--geolocate.loading {
   html.js #map .noscript {
     display: block;
   }
-}
-
-.box-warning {
-    margin: 1em -1em;
-    padding: 2em 2em;
-    background-color: mix(#fff, $primary, 70%);
-
-    h1 {
-        font-size: 1.4em;
-    }
-
-    p {
-        margin-bottom: 0.5em;
-    }
-
-    .btn, .btn-primary {
-        margin: 0.5em 0 1em 0;
-
-        &:first-child {
-            margin-top: 0;
-        }
-
-        &:last-child {
-            margin-bottom: 0;
-        }
-    }
-}
-
-.asset-spot:before {
-    content: "";
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 2px solid #000;
-    background-color: #ffff00;
-    margin: 0 0.3em 0 0.2em;
-    border-radius: 100%;
-    vertical-align: -2px;
 }
 
 $nicetable-cell-padding: 0.6em 1.5em !default;

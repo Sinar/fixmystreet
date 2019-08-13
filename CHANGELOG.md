@@ -1,6 +1,261 @@
 ## Releases
 
 * Unreleased
+    - Front end improvements:
+        - Improved 403 message, especially for private reports. #2511
+        - Mobile users can now filter the pins on the `/around` map view. #2366
+        - Maintain whitespace formatting in email report/update lists. #2525
+        - Improve keyboard accessibility. #2542
+        - Report form now indicates that details are kept private if report is
+          made in a private category. #2528
+        - Improve map JavaScript defensiveness.
+        - Upgrade jquery-validation plugin. #2540
+    - Admin improvements:
+        - Add new roles system, to group permissions and apply to users. #2483
+    - New features:
+        - Categories can be listed under more than one group #2475
+    - Bugfixes:
+        - Prevent creation of two templates with same title. #2471
+        - Fix bug going between report/new pages client side. #2484
+        - Don't include private reports when searching by ref from front page.
+        - Set fixmystreet.bodies sooner client-side, for two-tier locations. #2498
+        - Fix front-end testing script when run with Vagrant. #2514
+        - Handle missing category when sending open311 reports #2502
+        - Fix label associations with category groups. #2541
+        - Hide category extras when duplicate suggestions shown.
+        - Hide duplicate suggestions when signing in during reporting.
+        - Retain extra data if signing in during reporting.
+        - Have duplicate suggestion and assets coexist better.
+    - Front end improvements:
+        - Set report title autocomplete to off to prevent email autocompleting
+    - Development improvements:
+        - Upgrade the underlying framework and a number of other packages. #2473
+        - Add feature cobrand helper function.
+        - Add front-end testing support for WSL. #2514
+        - Allow cobrands to disable admin resending.
+        - Sass variables for default link colour and decoration.
+    - Open311 improvements:
+        - Support use of 'private' service definition <keywords> to mark
+          reports made in that category private. #2488
+        - Ensure any reports fetched in a category marked private are also
+          marked private on the site. #2488
+        - Add new upload_files flag which sends files/photos as part of the
+          POST service request. #2495
+        - Allow description in email template with placeholder. #2470
+        - Do not store display-only extra fields on new reports.
+        - Support receiving updates from external source.
+        - Improve JSON output of controller.
+        - unset external_status_code if blank in update
+
+* v2.6 (3rd May 2019)
+    - New features:
+        - (Optional) auto-suggestion of similar nearby problems,
+          while reporting, to discourage duplicate reports. #2386
+    - Front end improvements:
+        - Track map state in URL to make sharing links easier. #2242
+        - Default to unchecked for show name checkbox. #347
+    - Email improvements:
+        - Header image file name can be customised
+    - Admin improvements:
+        - Include moderation history in report updates. #2379
+        - Allow moderation to potentially change state. #2381
+        - Spot moderation conflicts and raise an error. #2384
+        - Allow searching for <email> in admin.
+        - Make staff JavaScript more self-contained.
+        - Alow staff user to be associated with multiple areas.
+        - Improvements to admin checkbox display.
+    - Bugfixes:
+        - Check cached reports do still have photos before being shown. #2374
+        - Delete cache photos upon photo moderation. #2374
+        - Remove any use of `my $x if $foo`. #2377
+        - Fix saving of inspect form data offline.
+        - Add CSRF and time to contact form. #2388
+        - Make sure admin metadata dropdown index numbers are updated too. #2369
+        - Fix issue with Open311 codes starting with ‘_’. #2391
+        - Add parameter to URL when “Show older” clicked. #2397
+        - Don't ask for email on alert signup if logged in. #2402
+        - Filter out hidden reports from top 5 list. #1957
+        - Add space below "map page" contents on narrow screens.
+        - Use relative report links where possible. #1995
+        - Improve inline checkbox spacing. #2411
+        - Prevent duplicate contact history creation with Unicode data.
+        - Show all Open311 extra fields in edit admin.
+        - Proper bodies check for sending updates.
+        - Check better if extra question has values.
+        - Stop filter category overriding chosen category.
+        - Allow things to reset if "Pick a category" picked.
+        - Stop category_change firing more than it should.
+        - Fix extra question display when only one category.
+        - Fix superusers creating anonymous reports. #2435
+        - Ensure non_public reports aren't exposed at /open311 endpoint.
+        - Escape body name in admin title.
+        - Use REQUEST_URI, not PATH_INFO, to infer path.
+    - Development improvements:
+        - Make front page cache time configurable.
+        - Better working of /fakemapit/ under https.
+        - Improve Open311 error output on failing GET requests.
+    - Backwards incompatible changes:
+        - If you wish the default for the showname checkbox to be checked,
+          add `sub default_show_name { 1 }` to your cobrand file.
+        - The admin body and user sections have been refactored – if you have
+          custom templates/code, you may need to update links to those.
+
+* v2.5 (21st December 2018)
+    - Front end improvements:
+        - Simplify new report/update sign in flow. #642
+        - Simplify /auth sign in page. #2208
+        - Clearer relocation options while you’re reporting a problem #2238
+        - Enforce maximum photo size server side, strip EXIF data. #2326 #2134
+        - Don't require two taps on reports list on touchscreens. #2294
+        - Allow moderation to work without JavaScript. #2339
+        - More prominent display of "state" on report page #2350
+        - Improved report/update display on contact form. #2351
+        - Can limit /reports to non-public reports. #2363
+    - Admin improvements:
+        - Allow moderation to potentially change category. #2320
+        - Add Mark/View private reports permission #2306
+        - Store more original stuff on moderation. #2325
+        - Sort user updates in reverse date order.
+        - Improve update display on admin report edit page.
+        - Keep all moderation history, and show in report/update admin. #2329
+    - Bugfixes:
+        - Restore map zoom out when navigating to /around from /report. #1649
+        - Don’t escape HTML entities in report titles pulled in by ajax. #2346
+        - Show reopening/fixed questionnaire responses lacking updates. #2357
+    - Open311 improvements:
+        - Fix bug in contact group handling. #2323
+        - Improve validation of fetched reports timestamps. #2327
+        - Fetched reports can be marked non_public #2356
+    - Development improvements:
+        - Add option to symlink full size photos. #2326
+        - default_to_body/report_prefill permissions to control default
+          report as/prefill behaviour. #2316
+
+* v2.4.2 (6th November 2018)
+    - New features:
+        - Dashboard now has update CSV export. #2249
+        - Allow cobrands to override searching by reference #2271
+        - Allow cobrands to limit contact form to abuse reports only
+    - Admin improvements:
+        - List number of alerts on report page #669
+        - viewing and managing of user alerts in admin #676
+        - Allow moderation to potentially change photos/extra info. #2291 #2307
+    - Bugfixes:
+        - Add perl 5.26/5.28 support.
+        - Fix subcategory issues when visiting /report/new directly #2276
+        - Give superusers access to update staff dropdowns. #2286
+        - Update report areas when moving its location. #2181
+        - Don't send questionnaires for closed reports. #2310
+        - Make sure Open311 send_method always recorded/spotted. #2121
+    - Development improvements:
+        - Add cobrand hook for dashboard viewing permission. #2285
+        - Have body.url work in hashref lookup. #2284
+        - OSM based map types can now override zoom levels #2288
+        - Clearer name for navigation colours in SCSS. #2080
+        - `script/setup` now creates `conf/general.yml` for Vagrant when needed.
+    - Internal things:
+        - Move send-comments code to package for testing. #2109 #2170
+    - Open311 improvements:
+        - Set contact group only if handling cobrand has groups enabled. #2312
+
+* v2.4.1 (2nd October 2018)
+    - New features:
+        - Support for storing photos in AWS S3. #2253
+    - Front end improvements:
+        - Import end point can optionally return a web page #2225
+        - Clicking the "Report" header links on the homepage now focusses
+          the #pc search input #2237
+        - Speed up fetching lists of bodies. #2248
+        - Improve vertical alignment of navigation menu in Internet Explorer 9–11.
+        - Mobile menu button no longer uses -9999px text-indent hack.
+        - HTML email template for confirming "partial" reports #2263
+    - Bugfixes:
+        - Fix display of area/pins on body page when using Bing or TonerLite map.
+        - Do not scan through all problems to show /_dev pages.
+        - Say “Set password”, not Change, if no password set.
+        - Do not lose from_body field when edited by non-superuser admin.
+        - Fix history API bug with category/state selection.
+    - Development improvements:
+        - Cobrand hook for disabling updates on individual problems.
+        - Cobrand hook for disallowing title moderation. #2228
+        - Cobrand hook for per-questionnaire sending. #2231
+        - Add option for configuring memcache server.
+        - Add Blackhole send method. #2246
+        - Add script to list/diff template changes in core that
+          might need applying to a cobrand.
+        - Move away from FastCGI in sample conf/sysvinit config.
+        - Customised Vagrant box available, with an override option.
+        - Add Dockerfile and example Docker Compose setup.
+        - Add a sample systemd unit file for the Catalyst application server.
+
+* v2.4 (6th September 2018)
+    - Security
+        - Update user object before attempting sign-in,
+          to prevent leak of user account phone number.
+    - Front end improvements:
+        - Simplify footer CSS. #2107
+        - Keep commas in geocode lookups. #2162
+        - Show message on reports closed to updates. #2163
+        - Only display last 6 months of reports on around page by default #2098
+        - Always show all reports by default on /my.
+        - Much less reliance on input placeholders, for better accessibility #2180
+        - “Report another problem here” button on report confirmation page #2198 #393
+        - Button in nav bar now makes it easier to report again in the same location #2195
+        - Shrink OpenLayers library a bit. #2217
+        - Remove need for separate per-category ajax call. #1201
+    - Admin improvements:
+        - Mandatory defect type selection if defect raised. #2173
+        - Send login email button on user edit page #2041
+        - Use do-not-reply address for sent report email.
+        - Category group can be edited.
+        - Trim spaces from user/report search input.
+    - Bugfixes:
+        - Don't remove automated fields when editing contacts #2163
+        - Remove small border to left of Fixed banner. #2156
+        - Fix issue displaying admin timeline. #2159
+        - Send details of unresponsive bodies to mobile app #2164
+        - Fix issue with category filter when category contains comma #2166
+        - Inspectors can unset priority. #2171
+        - Defect type is recorded if category change made. #2172
+        - [UK] Store body ID on council/ward alerts. #2175
+        - Show all fixed issues when staff user uses map page filter #2176
+        - Allow any user who can see private checkbox to use it. #2182
+        - Prevent duplicate category listing on /my.
+        - Hide password help field along with other similar. #2185
+        - Allow questionnaire link to be revisited in quick succession. #2123
+        - Update Google Maps directions link.
+        - Fix inspector pin dragging. #2073.
+        - Maintain all single newlines in text output, not only the first.
+        - Make sure Home clickable with Try again overlay.
+        - Check all contacts for metadata and non-public.
+    - Open311 improvements:
+        - CLOSED status maps to 'closed' state if extended statuses are enabled.
+        - Don't generate template comment text on move between fixed states. #2199
+    - Development improvements:
+        - Cobrand hook for presenting custom search results. #2183
+        - Cobrand hook to allow extra login conditions #2092
+        - Add ability for client to set bodies not to be sent to. #2179
+        - Make it easier to prevent a form_detail_placeholder being printed. #2212
+        - Include user agent in contact form emails. #2206
+        - Use site name in contact email subject line.
+        - Add /_dev endpoints for previewing confirmation/submission pages. #2218
+        - Allow cobrand to add extra ability to moderate. #2216
+
+* v2.3.4 (7th June 2018)
+    - Bugfixes:
+        - Fix pin clicking on non-/around pages, broken in 2.3.3.
+        - Fix issue displaying anonymous account email.
+
+* v2.3.3 (6th June 2018)
+    - Front end improvements:
+        - Extra help text on contact form #2149
+    - Admin improvements:
+        - Improve inspect form position and configurability.
+    - Bugfixes:
+        - Prevent contact form leaking information about updates #2149
+        - Fix pointer event issue selecting pin on map. #2130
+        - Fix admin navigation links in multi-language installs.
+        - Fix map display issue clicking back from report page as inspector.
 
 * v2.3.2 (31st May 2018)
     - Front end improvements:
@@ -37,6 +292,7 @@
         - Response template containing double quote now works.
         - A few small display issues with RTL text display.
         - Improve handling of loading spinner display. #2059
+        - Ignore non-interactive layers for asset message.
     - Admin improvements:
         - Inspectors can set non_public status of reports. #1992
         - Default start date is shown on the dashboard.

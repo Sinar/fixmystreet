@@ -1,93 +1,20 @@
-$.extend(fixmystreet.set_up, {
-  manage_duplicates: function() {
-      // Deal with changes to report state by inspector/other staff, specifically
-      // displaying nearby reports if it's changed to 'duplicate'.
-      function refresh_duplicate_list() {
-          var report_id = $("#report_inspect_form .js-report-id").text();
-          var args = {
-              filter_category: $("#report_inspect_form select#category").val(),
-              latitude: $('input[name="latitude"]').val(),
-              longitude: $('input[name="longitude"]').val()
-          };
-          $("#js-duplicate-reports ul").html('<li class="item-list__item">Loading...</li>');
-          var nearby_url = '/report/'+report_id+'/nearby.json';
-          $.getJSON(nearby_url, args, function(data) {
-              var duplicate_of = $("#report_inspect_form [name=duplicate_of]").val();
-              var $reports = $(data.reports_list)
-                              .not("[data-report-id="+report_id+"]")
-                              .slice(0, 5);
-              $reports.filter("[data-report-id="+duplicate_of+"]").addClass("item-list--reports__item--selected");
-
-              (function() {
-                  var timeout;
-                  $reports.on('mouseenter', function(){
-                      clearTimeout(timeout);
-                      fixmystreet.maps.markers_highlight(parseInt($(this).data('reportId'), 10));
-                  }).on('mouseleave', function(){
-                      timeout = setTimeout(fixmystreet.maps.markers_highlight, 50);
-                  });
-              })();
-
-              $("#js-duplicate-reports ul").empty().prepend($reports);
-
-              $reports.find("a").click(function() {
-                  var report_id = $(this).closest("li").data('reportId');
-                  $("#report_inspect_form [name=duplicate_of]").val(report_id);
-                  $("#js-duplicate-reports ul li").removeClass("item-list--reports__item--selected");
-                  $(this).closest("li").addClass("item-list--reports__item--selected");
-                  return false;
-              });
-
-              show_nearby_pins(data, report_id);
-          });
-      }
-
-      function show_nearby_pins(data, report_id) {
-          var markers = fixmystreet.maps.markers_list( data.pins, true );
-          // We're replacing all the features in the markers layer with the
-          // possible duplicates, but the list of pins from the server doesn't
-          // include the current report. So we need to extract the feature for
-          // the current report and include it in the list of features we're
-          // showing on the layer.
-          var report_marker = fixmystreet.maps.get_marker_by_id(parseInt(report_id, 10));
-          if (report_marker) {
-              markers.unshift(report_marker);
-          }
-          fixmystreet.markers.removeAllFeatures();
-          fixmystreet.markers.addFeatures( markers );
-      }
-
-      function state_change() {
-          // The duplicate report list only makes sense when state is 'duplicate'
-          if ($(this).val() !== "duplicate") {
-              $("#js-duplicate-reports").addClass("hidden");
-              return;
-          } else {
-              $("#js-duplicate-reports").removeClass("hidden");
-          }
-          // If this report is already marked as a duplicate of another, then
-          // there's no need to refresh the list of duplicate reports
-          var duplicate_of = $("#report_inspect_form [name=duplicate_of]").val();
-          if (!!duplicate_of) {
-              return;
-          }
-
-          refresh_duplicate_list();
-      }
-
-      $("#report_inspect_form").on("change.state", "select#state", state_change);
-      $("#js-change-duplicate-report").click(refresh_duplicate_list);
-  },
-
+fixmystreet.staff_set_up = {
   action_scheduled_raise_defect: function() {
     $("#report_inspect_form").find('[name=state]').on('change', function() {
         if ($(this).val() !== "action scheduled") {
             $("#js-inspect-action-scheduled").addClass("hidden");
             $('#raise_defect_yes').prop('required', false);
+            $('#defect_type').prop('required', false);
         } else {
             $("#js-inspect-action-scheduled").removeClass("hidden");
             $('#raise_defect_yes').prop('required', true);
+            var dt_required = $('#defect_type')[0].length > 1 && $('input[name=raise_defect]:checked').val();
+            $('#defect_type').prop('required', dt_required ? true : false);
         }
+    });
+    $('input[name=raise_defect]').change(function() {
+        var dt_required = $('#defect_type')[0].length > 1 && this.value;
+        $('#defect_type').prop('required', dt_required ? true : false);
     });
   },
 
@@ -225,7 +152,9 @@ $.extend(fixmystreet.set_up, {
     }
 
     // Focus on form
-    $('html,body').scrollTop($inspect_form.offset().top);
+    if (!fixmystreet.inspect_form_no_scroll_on_load) {
+        document.getElementById('side-inspect').scrollIntoView();
+    }
 
     function updateTemplates(opts) {
         opts.category = opts.category || $inspect_form.find('[name=category]').val();
@@ -367,9 +296,10 @@ $.extend(fixmystreet.set_up, {
       function add_handlers (elem, word) {
           elem.each( function () {
               var $elem = $(this);
-              $elem.find('.js-moderate').on('click', function () {
-                  $elem.find('.moderate-display').hide();
-                  $elem.find('.moderate-edit').show();
+              $elem.find('.js-moderate').on('click', function(e) {
+                  e.preventDefault();
+                  $elem.toggleClass('show-moderation');
+                  $('#map_sidebar').scrollTop(word === 'problem' ? 0 : $elem[0].offsetTop);
               });
 
               $elem.find('.revert-title').change( function () {
@@ -389,8 +319,9 @@ $.extend(fixmystreet.set_up, {
               });
 
               $elem.find('.cancel').click( function () {
-                  $elem.find('.moderate-display').show();
-                  $elem.find('.moderate-edit').hide();
+                  $elem.toggleClass('show-moderation');
+                  $('.js-moderation-error').hide();
+                  $('#map_sidebar').scrollTop(word === 'problem' ? 0 : $elem[0].offsetTop);
               });
 
               $elem.find('form').submit( function () {
@@ -439,15 +370,31 @@ $.extend(fixmystreet.set_up, {
     });
   }
 
+};
+
+$(function() {
+    $.each(fixmystreet.staff_set_up, function(setup_name, setup_func) {
+        setup_func();
+    });
 });
 
-$(fixmystreet).on('report_new:category_change', function(evt, $this) {
+$(fixmystreet).on('display:report', function() {
+    fixmystreet.staff_set_up.moderation();
+    fixmystreet.staff_set_up.response_templates();
+    if ($("#report_inspect_form").length) {
+        fixmystreet.staff_set_up.report_page_inspect();
+        fixmystreet.staff_set_up.action_scheduled_raise_defect();
+    }
+});
+
+$(fixmystreet).on('report_new:category_change', function() {
+    var $this = $('#form_category');
     var category = $this.val();
     var prefill_reports = $this.data('prefill');
-    var role = $this.data('role');
-    var body = $this.data('body');
+    var display_names = fixmystreet.reporting_data.display_names || {};
+    var body = display_names[ $this.data('body') ] || $this.data('body');
 
-    if (prefill_reports && role == 'inspector') {
+    if (prefill_reports) {
         var title = 'A ' + category + ' problem has been found';
         var description = 'A ' + category + ' problem has been found by ' + body;
 
@@ -518,6 +465,10 @@ $.extend(fixmystreet.maps, {
       $shortlistButton.addClass('hidden');
     }
   }
+});
+
+$(fixmystreet).on('map:zoomend', function() {
+    fixmystreet.maps.show_shortlist_control();
 });
 
 fixmystreet.utils = fixmystreet.utils || {};

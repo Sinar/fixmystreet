@@ -4,6 +4,7 @@ sub path_to_web_templates { [ FixMyStreet->path_to( 't', 'app', 'controller', 't
 
 package main;
 
+use utf8;
 use FixMyStreet::TestMech;
 
 ok( my $mech = FixMyStreet::TestMech->new, 'Created mech object' );
@@ -23,12 +24,12 @@ ok !$mech->res->is_success(), "want a bad response";
 is $mech->res->code, 404, "got 404";
 
 FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ 'fiksgatami' ],
+    ALLOWED_COBRANDS => [ 'fixamingata' ],
 }, sub {
-    ok $mech->host("www.fiksgatami.no"), 'host to fiksgatami';
+    ok $mech->host("www.fixamingata.se"), 'host to fixamingata';
     $mech->get_ok('/faq');
-    $mech->content_like(qr{Ofte spurte spørsmål ::});
-    $mech->content_contains('html class="no-js" lang="nb"');
+    $mech->content_like(qr{Vanliga frågor ::});
+    $mech->content_contains('html class="no-js" lang="sv"');
 };
 
 $mech->get_ok('/');

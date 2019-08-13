@@ -1,10 +1,19 @@
 <h1>[% loc('Report your problem') %]</h1>
 
+<div class="js-new-report-user-hidden">
+
 [% IF report.used_map %]
-    <p class="change_location">[% loc('Wrong location? Just click again on the map.') %]</p>
+    <ul class="change_location">
+        <li class="change_location__map">[% loc('Click the map or drag the pin to adjust the location') %]</li>
+        <li class="change_location__search">[% loc('Or <a href="/">search for a different location</a>') %]</li>
+    </ul>
 [% END %]
 
+</div>
+
 [% TRY %][% INCLUDE 'report/new/roads_message.html' %][% CATCH file %][% END %]
+
+<div class="js-new-report-user-hidden">
 
 <div id="js-top-message">
     [% PROCESS 'report/new/top_message.html' %]
@@ -21,9 +30,13 @@
 
 [% INCLUDE 'errors.html' %]
 
+</div>
+
 <fieldset>
     <div id="problem_form">
-        [% PROCESS 'report/new/form_report.html' %]
+        <div class="js-new-report-user-hidden">
+            [% PROCESS 'report/new/form_report.html' %]
+        </div>
         [% PROCESS 'report/new/form_user.html' %]
     </div>
 </fieldset>

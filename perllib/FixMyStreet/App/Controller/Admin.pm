@@ -13,6 +13,7 @@ use List::Util 'first';
 use List::MoreUtils 'uniq';
 use mySociety::ArrayUtils;
 use Text::CSV;
+use Try::Tiny;
 
 use FixMyStreet::SendReport;
 use FixMyStreet::SMS;
@@ -142,9 +143,6 @@ sub timeline : Path( 'timeline' ) : Args(0) {
 
     my %time;
 
-    $c->model('DB')->schema->storage->sql_maker->quote_char( '"' );
-    $c->model('DB')->schema->storage->sql_maker->name_sep( '.' );
-
     my $probs = $c->cobrand->problems->timeline;
 
     foreach ($probs->all) {
@@ -178,317 +176,9 @@ sub timeline : Path( 'timeline' ) : Args(0) {
         push @{$time{$_->whendisabled->epoch}}, { type => 'alertDel', date => $_->whendisabled, obj => $_ };
     }
 
-    $c->model('DB')->schema->storage->sql_maker->quote_char( '' );
-
     $c->stash->{time} = \%time;
 
     return 1;
-}
-
-sub bodies : Path('bodies') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    if (my $body_id = $c->get_param('body')) {
-        return $c->res->redirect( $c->uri_for( 'body', $body_id ) );
-    }
-
-    if (!$c->user->is_superuser && $c->user->from_body && $c->cobrand->moniker ne 'zurich') {
-        return $c->res->redirect( $c->uri_for( 'body', $c->user->from_body->id ) );
-    }
-
-    $c->forward( '/auth/get_csrf_token' );
-
-    my $edit_activity = $c->model('DB::ContactsHistory')->search(
-        undef,
-        {
-            select => [ 'editor', { count => 'contacts_history_id', -as => 'c' } ],
-            as     => [ 'editor', 'c' ],
-            group_by => ['editor'],
-            order_by => { -desc => 'c' }
-        }
-    );
-
-    $c->stash->{edit_activity} = $edit_activity;
-
-    $c->forward( 'fetch_languages' );
-    $c->forward( 'fetch_translations' );
-
-    my $posted = $c->get_param('posted') || '';
-    if ( $posted eq 'body' ) {
-        $c->forward('check_for_super_user');
-        $c->forward('/auth/check_csrf_token');
-
-        my $values = $c->forward('body_params');
-        unless ( keys %{$c->stash->{body_errors}} ) {
-            my $body = $c->model('DB::Body')->create( $values->{params} );
-            if ($values->{extras}) {
-                $body->set_extra_metadata( $_ => $values->{extras}->{$_} )
-                    for keys %{$values->{extras}};
-                $body->update;
-            }
-            my @area_ids = $c->get_param_list('area_ids');
-            foreach (@area_ids) {
-                $c->model('DB::BodyArea')->create( { body => $body, area_id => $_ } );
-            }
-
-            $c->stash->{object} = $body;
-            $c->stash->{translation_col} = 'name';
-            $c->forward('update_translations');
-            $c->stash->{updated} = _('New body added');
-        }
-    }
-
-    $c->forward( 'fetch_all_bodies' );
-
-    my $contacts = $c->model('DB::Contact')->search(
-        undef,
-        {
-            select => [ 'body_id', { count => 'id' }, { count => \'case when state = \'deleted\' then 1 else null end' },
-            { count => \'case when state = \'confirmed\' then 1 else null end' } ],
-            as => [qw/body_id c deleted confirmed/],
-            group_by => [ 'body_id' ],
-            result_class => 'DBIx::Class::ResultClass::HashRefInflator'
-        }
-    );
-
-    my %council_info = map { $_->{body_id} => $_ } $contacts->all;
-
-    $c->stash->{counts} = \%council_info;
-
-    $c->forward( 'body_form_dropdowns' );
-
-    return 1;
-}
-
-sub body_form_dropdowns : Private {
-    my ( $self, $c ) = @_;
-
-    my $areas;
-    my $whitelist = $c->config->{MAPIT_ID_WHITELIST};
-
-    if ( $whitelist && ref $whitelist eq 'ARRAY' && @$whitelist ) {
-        $areas = mySociety::MaPit::call('areas', $whitelist);
-    } else {
-        $areas = mySociety::MaPit::call('areas', $c->cobrand->area_types);
-    }
-
-    # Some cobrands may want to add extra areas at runtime beyond those
-    # available via MAPIT_WHITELIST or MAPIT_TYPES. This can be used for,
-    # e.g., parish councils on a particular council cobrand.
-    $areas = $c->cobrand->call_hook("add_extra_areas" => $areas) || $areas;
-
-    $c->stash->{areas} = [ sort { strcoll($a->{name}, $b->{name}) } values %$areas ];
-
-    my @methods = map { $_ =~ s/FixMyStreet::SendReport:://; $_ } sort keys %{ FixMyStreet::SendReport->get_senders };
-    $c->stash->{send_methods} = \@methods;
-}
-
-sub check_for_super_user : Private {
-    my ( $self, $c ) = @_;
-
-    my $superuser = $c->user->is_superuser;
-    # Zurich currently has its own way of defining superusers
-    $superuser ||= $c->cobrand->moniker eq 'zurich' && $c->stash->{admin_type} eq 'super';
-
-    unless ( $superuser ) {
-        $c->detach('/page_error_403_access_denied', []);
-    }
-}
-
-sub update_contacts : Private {
-    my ( $self, $c ) = @_;
-
-    my $posted = $c->get_param('posted');
-    my $editor = $c->forward('get_user');
-
-    if ( $posted eq 'new' ) {
-        $c->forward('/auth/check_csrf_token');
-
-        my %errors;
-
-        my $category = $self->trim( $c->get_param('category') );
-        $errors{category} = _("Please choose a category") unless $category;
-        $errors{note} = _('Please enter a message') unless $c->get_param('note');
-
-        my $contact = $c->model('DB::Contact')->find_or_new(
-            {
-                body_id => $c->stash->{body_id},
-                category => $category,
-            }
-        );
-
-        my $email = $c->get_param('email');
-        $email =~ s/\s+//g;
-        my $send_method = $c->get_param('send_method') || $contact->send_method || $contact->body->send_method || "";
-        unless ( $send_method eq 'Open311' ) {
-            $errors{email} = _('Please enter a valid email') unless is_valid_email_list($email) || $email eq 'REFUSED';
-        }
-
-        $contact->email( $email );
-        $contact->state( $c->get_param('state') );
-        $contact->non_public( $c->get_param('non_public') ? 1 : 0 );
-        $contact->note( $c->get_param('note') );
-        $contact->whenedited( \'current_timestamp' );
-        $contact->editor( $editor );
-        $contact->endpoint( $c->get_param('endpoint') );
-        $contact->jurisdiction( $c->get_param('jurisdiction') );
-        $contact->api_key( $c->get_param('api_key') );
-        $contact->send_method( $c->get_param('send_method') );
-
-        # Set flags in extra to the appropriate values
-        if ( $c->get_param('photo_required') ) {
-            $contact->set_extra_metadata_if_undefined(  photo_required => 1 );
-        }
-        else {
-            $contact->unset_extra_metadata( 'photo_required' );
-        }
-        if ( $c->get_param('inspection_required') ) {
-            $contact->set_extra_metadata( inspection_required => 1 );
-        }
-        else {
-            $contact->unset_extra_metadata( 'inspection_required' );
-        }
-        if ( $c->get_param('reputation_threshold') ) {
-            $contact->set_extra_metadata( reputation_threshold => int($c->get_param('reputation_threshold')) );
-        }
-
-        $c->forward('update_extra_fields', [ $contact ]);
-        $c->forward('contact_cobrand_extra_fields', [ $contact ]);
-
-        if ( %errors ) {
-            $c->stash->{updated} = _('Please correct the errors below');
-            $c->stash->{contact} = $contact;
-            $c->stash->{errors} = \%errors;
-        } elsif ( $contact->in_storage ) {
-            $c->stash->{updated} = _('Values updated');
-
-            # NB: History is automatically stored by a trigger in the database
-            $contact->update;
-        } else {
-            $c->stash->{updated} = _('New category contact added');
-            $contact->insert;
-        }
-
-        unless ( %errors ) {
-            $c->stash->{translation_col} = 'category';
-            $c->stash->{object} = $contact;
-            $c->forward('update_translations');
-        }
-
-    } elsif ( $posted eq 'update' ) {
-        $c->forward('/auth/check_csrf_token');
-
-        my @categories = $c->get_param_list('confirmed');
-
-        my $contacts = $c->model('DB::Contact')->search(
-            {
-                body_id => $c->stash->{body_id},
-                category => { -in => \@categories },
-            }
-        );
-
-        $contacts->update(
-            {
-                state => 'confirmed',
-                whenedited => \'current_timestamp',
-                note => 'Confirmed',
-                editor => $editor,
-            }
-        );
-
-        $c->stash->{updated} = _('Values updated');
-    } elsif ( $posted eq 'body' ) {
-        $c->forward('check_for_super_user');
-        $c->forward('/auth/check_csrf_token');
-
-        my $values = $c->forward( 'body_params' );
-        unless ( keys %{$c->stash->{body_errors}} ) {
-            $c->stash->{body}->update( $values->{params} );
-            if ($values->{extras}) {
-                $c->stash->{body}->set_extra_metadata( $_ => $values->{extras}->{$_} )
-                    for keys %{$values->{extras}};
-                $c->stash->{body}->update;
-            }
-            my @current = $c->stash->{body}->body_areas->all;
-            my %current = map { $_->area_id => 1 } @current;
-            my @area_ids = $c->get_param_list('area_ids');
-            foreach (@area_ids) {
-                $c->model('DB::BodyArea')->find_or_create( { body => $c->stash->{body}, area_id => $_ } );
-                delete $current{$_};
-            }
-            # Remove any others
-            $c->stash->{body}->body_areas->search( { area_id => [ keys %current ] } )->delete;
-
-            $c->stash->{translation_col} = 'name';
-            $c->stash->{object} = $c->stash->{body};
-            $c->forward('update_translations');
-
-            $c->stash->{updated} = _('Values updated');
-        }
-    }
-}
-
-sub update_translations : Private {
-    my ( $self, $c ) = @_;
-
-    foreach my $lang (keys(%{$c->stash->{languages}})) {
-        my $id = $c->get_param('translation_id_' . $lang);
-        my $text = $c->get_param('translation_' . $lang);
-        if ($id) {
-            my $translation = $c->model('DB::Translation')->find(
-                {
-                    id => $id,
-                }
-            );
-
-            if ($text) {
-                $translation->msgstr($text);
-                $translation->update;
-            } else {
-                $translation->delete;
-            }
-        } elsif ($text) {
-            my $col = $c->stash->{translation_col};
-            $c->stash->{object}->add_translation_for(
-                $col, $lang, $text
-            );
-        }
-    }
-}
-
-sub body_params : Private {
-    my ( $self, $c ) = @_;
-
-    my @fields = qw/name endpoint jurisdiction api_key send_method external_url/;
-    my %defaults = map { $_ => '' } @fields;
-    %defaults = ( %defaults,
-        send_comments => 0,
-        fetch_problems => 0,
-        convert_latlong => 0,
-        blank_updates_permitted => 0,
-        suppress_alerts => 0,
-        comment_user_id => undef,
-        send_extended_statuses => 0,
-        can_be_devolved => 0,
-        parent => undef,
-        deleted => 0,
-    );
-    my %params = map { $_ => $c->get_param($_) || $defaults{$_} } keys %defaults;
-    $c->forward('check_body_params', [ \%params ]);
-    my @extras = qw/fetch_all_problems/;
-    %defaults = map { $_ => '' } @extras;
-    my %extras = map { $_ => $c->get_param($_) || $defaults{$_} } @extras;
-    return { params => \%params, extras => \%extras };
-}
-
-sub check_body_params : Private {
-    my ( $self, $c, $params ) = @_;
-
-    $c->stash->{body_errors} ||= {};
-
-    unless ($params->{name}) {
-        $c->stash->{body_errors}->{name} = _('Please enter a name for this body');
-    }
 }
 
 sub fetch_contacts : Private {
@@ -522,125 +212,6 @@ sub fetch_languages : Private {
     return 1;
 }
 
-sub fetch_translations : Private {
-    my ( $self, $c ) = @_;
-
-    my $translations = {};
-    if ($c->get_param('posted')) {
-        foreach my $lang (keys %{$c->stash->{languages}}) {
-            if (my $msgstr = $c->get_param('translation_' . $lang)) {
-                $translations->{$lang} = { msgstr => $msgstr };
-            }
-            if (my $id = $c->get_param('translation_id_' . $lang)) {
-                $translations->{$lang}->{id} = $id;
-            }
-        }
-    } elsif ($c->stash->{object}) {
-        my @translations = $c->stash->{object}->translation_for($c->stash->{translation_col})->all;
-
-        foreach my $tx (@translations) {
-            $translations->{$tx->lang} = { id => $tx->id, msgstr => $tx->msgstr };
-        }
-    }
-
-    $c->stash->{translations} = $translations;
-}
-
-sub lookup_body : Private {
-    my ( $self, $c, $body_id ) = @_;
-
-    $c->stash->{body_id} = $body_id;
-    my $body = $c->model('DB::Body')->find($body_id);
-    $c->detach( '/page_error_404_not_found', [] )
-      unless $body;
-    $c->stash->{body} = $body;
-}
-
-sub body : Chained('/') : PathPart('admin/body') : CaptureArgs(1) {
-    my ( $self, $c, $body_id ) = @_;
-
-    $c->forward('lookup_body');
-    my $body = $c->stash->{body};
-
-    if ($body->body_areas->first) {
-        my $example_postcode = mySociety::MaPit::call('area/example_postcode', $body->body_areas->first->area_id);
-        if ($example_postcode && ! ref $example_postcode) {
-            $c->stash->{example_pc} = $example_postcode;
-        }
-    }
-}
-
-sub edit_body : Chained('body') : PathPart('') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    unless ($c->user->has_permission_to('category_edit', $c->stash->{body_id})) {
-        $c->forward('check_for_super_user');
-    }
-
-    $c->forward( '/auth/get_csrf_token' );
-    $c->forward( 'fetch_all_bodies' );
-    $c->forward( 'body_form_dropdowns' );
-    $c->forward('fetch_languages');
-
-    if ( $c->get_param('posted') ) {
-        $c->forward('update_contacts');
-    }
-
-    $c->stash->{object} = $c->stash->{body};
-    $c->stash->{translation_col} = 'name';
-
-    # if there's a contact then it's because we're displaying error
-    # messages about adding a contact so grabbing translations will
-    # fetch the contact submitted translations. So grab them, stash
-    # them and then clear posted so we can fetch the body translations
-    if ($c->stash->{contact}) {
-        $c->forward('fetch_translations');
-        $c->stash->{contact_translations} = $c->stash->{translations};
-    }
-    $c->set_param('posted', '');
-
-    $c->forward('fetch_translations');
-
-    # don't set this last as fetch_contacts might over-ride it
-    # to display email addresses as text
-    $c->stash->{template} = 'admin/body.html';
-    $c->forward('fetch_contacts');
-
-    return 1;
-}
-
-sub category : Chained('body') : PathPart('') {
-    my ( $self, $c, @category ) = @_;
-    my $category = join( '/', @category );
-
-    $c->forward( '/auth/get_csrf_token' );
-    $c->stash->{template} = 'admin/category_edit.html';
-
-    my $contact = $c->stash->{body}->contacts->search( { category => $category } )->first;
-    $c->stash->{contact} = $contact;
-
-    $c->stash->{translation_col} = 'category';
-    $c->stash->{object} = $c->stash->{contact};
-
-    $c->forward('fetch_languages');
-    $c->forward('fetch_translations');
-
-    my $history = $c->model('DB::ContactsHistory')->search(
-        {
-            body_id => $c->stash->{body_id},
-            category => $c->stash->{contact}->category
-        },
-        {
-            order_by => ['contacts_history_id']
-        },
-    );
-    $c->stash->{history} = $history;
-    my @methods = map { $_ =~ s/FixMyStreet::SendReport:://; $_ } sort keys %{ FixMyStreet::SendReport->get_senders };
-    $c->stash->{send_methods} = \@methods;
-
-    return 1;
-}
-
 sub reports : Path('reports') {
     my ( $self, $c ) = @_;
 
@@ -660,11 +231,11 @@ sub reports : Path('reports') {
         }
     }
 
-    my $order = $c->get_param('o') || 'created';
+    my $order = $c->get_param('o') || 'id';
     my $dir = defined $c->get_param('d') ? $c->get_param('d') : 1;
     $c->stash->{order} = $order;
     $c->stash->{dir} = $dir;
-    $order .= ' desc' if $dir;
+    $order = $dir ? { -desc => "me.$order" } : "me.$order";
 
     my $p_page = $c->get_param('p') || 1;
     my $u_page = $c->get_param('u') || 1;
@@ -672,6 +243,15 @@ sub reports : Path('reports') {
     return if $c->cobrand->call_hook(report_search_query => $query, $p_page, $u_page, $order);
 
     if (my $search = $c->get_param('search')) {
+        $search = $self->trim($search);
+
+        # In case an email address, wrapped in <...>
+        if ($search =~ /^<(.*)>$/) {
+            my $possible_email = $1;
+            my $parsed = FixMyStreet::SMS->parse_username($possible_email);
+            $search = $possible_email if $parsed->{email};
+        }
+
         $c->stash->{searched} = $search;
 
         my $search_n = 0;
@@ -683,26 +263,13 @@ sub reports : Path('reports') {
         my $valid_phone = $parsed->{phone};
         my $valid_email = $parsed->{email};
 
-        # when DBIC creates the join it does 'JOIN users user' in the
-        # SQL which makes PostgreSQL unhappy as user is a reserved
-        # word. So look up user ID for email separately.
-        my @user_ids = $c->model('DB::User')->search({
-            email => { ilike => $like_search },
-        }, { columns => [ 'id' ] } )->all;
-        @user_ids = map { $_->id } @user_ids;
-
-        my @user_ids_phone = $c->model('DB::User')->search({
-            phone => { ilike => $like_search },
-        }, { columns => [ 'id' ] } )->all;
-        @user_ids_phone = map { $_->id } @user_ids_phone;
-
         if ($valid_email) {
             $query->{'-or'} = [
-                'me.user_id' => { -in => \@user_ids },
+                'user.email' => { ilike => $like_search },
             ];
         } elsif ($valid_phone) {
             $query->{'-or'} = [
-                'me.user_id' => { -in => \@user_ids_phone },
+                'user.phone' => { ilike => $like_search },
             ];
         } elsif ($search =~ /^id:(\d+)$/) {
             $query->{'-or'} = [
@@ -719,7 +286,8 @@ sub reports : Path('reports') {
         } else {
             $query->{'-or'} = [
                 'me.id' => $search_n,
-                'me.user_id' => { -in => [ @user_ids, @user_ids_phone ] },
+                'user.email' => { ilike => $like_search },
+                'user.phone' => { ilike => $like_search },
                 'me.external_id' => { ilike => $like_search },
                 'me.name' => { ilike => $like_search },
                 'me.title' => { ilike => $like_search },
@@ -732,8 +300,9 @@ sub reports : Path('reports') {
         my $problems = $c->cobrand->problems->search(
             $query,
             {
+                prefetch => 'user',
                 rows => 50,
-                order_by => [ \"(state='hidden')", \$order ]
+                order_by => $order,
             }
         )->page( $p_page );
 
@@ -742,11 +311,11 @@ sub reports : Path('reports') {
 
         if ($valid_email) {
             $query = [
-                'me.user_id' => { -in => \@user_ids },
+                'user.email' => { ilike => $like_search },
             ];
         } elsif ($valid_phone) {
             $query = [
-                'me.user_id' => { -in => \@user_ids_phone },
+                'user.phone' => { ilike => $like_search },
             ];
         } elsif ($search =~ /^id:(\d+)$/) {
             $query = [
@@ -759,7 +328,8 @@ sub reports : Path('reports') {
             $query = [
                 'me.id' => $search_n,
                 'problem.id' => $search_n,
-                'me.user_id' => { -in => [ @user_ids, @user_ids_phone ] },
+                'user.email' => { ilike => $like_search },
+                'user.phone' => { ilike => $like_search },
                 'me.name' => { ilike => $like_search },
                 text => { ilike => $like_search },
                 'me.cobrand_data' => { ilike => $like_search },
@@ -773,9 +343,9 @@ sub reports : Path('reports') {
                 },
                 {
                     -select   => [ 'me.*', qw/problem.bodies_str problem.state/ ],
-                    prefetch => [qw/problem/],
+                    prefetch => [qw/user problem/],
                     rows => 50,
-                    order_by => [ \"(me.state='hidden')", \"(problem.state='hidden')", 'me.created' ]
+                    order_by => { -desc => 'me.id' }
                 }
             )->page( $u_page );
             $c->stash->{updates} = [ $updates->all ];
@@ -822,6 +392,7 @@ sub report_edit_display : Private {
             longitude => $problem->longitude,
             colour    => $c->cobrand->pin_colour($problem, 'admin'),
             type      => 'big',
+            draggable => 1,
           } ]
         : [],
         print_report => 1,
@@ -870,11 +441,13 @@ sub report_edit : Path('report_edit') : Args(1) {
 
     $c->forward('categories_for_point');
 
+    $c->forward('alerts_for_report');
+
     $c->forward('check_username_for_abuse', [ $problem->user ] );
 
     $c->stash->{updates} =
       [ $c->model('DB::Comment')
-          ->search( { problem_id => $problem->id }, { order_by => 'created' } )
+          ->search( { problem_id => $problem->id }, { order_by => [ 'created', 'id' ] } )
           ->all ];
 
     if (my $rotate_photo_param = $self->_get_rotate_photo_param($c)) {
@@ -887,32 +460,31 @@ sub report_edit : Path('report_edit') : Args(1) {
         $c->detach('report_edit_display') if $done;
     }
 
-    if ( $c->get_param('resend') ) {
+    if ( $c->get_param('resend') && !$c->cobrand->call_hook('disable_resend') ) {
         $c->forward('/auth/check_csrf_token');
 
-        $problem->whensent(undef);
+        $problem->resend;
         $problem->update();
-        $c->stash->{status_message} =
-          '<p><em>' . _('That problem will now be resent.') . '</em></p>';
+        $c->stash->{status_message} = _('That problem will now be resent.');
 
         $c->forward( 'log_edit', [ $id, 'problem', 'resend' ] );
     }
     elsif ( $c->get_param('mark_sent') ) {
         $c->forward('/auth/check_csrf_token');
         $problem->update({ whensent => \'current_timestamp' })->discard_changes;
-        $c->stash->{status_message} = '<p><em>' . _('That problem has been marked as sent.') . '</em></p>';
+        $c->stash->{status_message} = _('That problem has been marked as sent.');
         $c->forward( 'log_edit', [ $id, 'problem', 'marked sent' ] );
     }
     elsif ( $c->get_param('flaguser') ) {
-        $c->forward('flag_user');
+        $c->forward('users/flag');
         $c->stash->{problem}->discard_changes;
     }
     elsif ( $c->get_param('removeuserflag') ) {
-        $c->forward('remove_user_flag');
+        $c->forward('users/flag_remove');
         $c->stash->{problem}->discard_changes;
     }
     elsif ( $c->get_param('banuser') ) {
-        $c->forward('ban_user');
+        $c->forward('users/ban');
     }
     elsif ( $c->get_param('submit') ) {
         $c->forward('/auth/check_csrf_token');
@@ -943,8 +515,8 @@ sub report_edit : Path('report_edit') : Args(1) {
             $self->remove_photo($c, $problem, $remove_photo_param);
         }
 
-        if ($problem->state eq 'hidden') {
-            $problem->get_photoset->delete_cached;
+        if ($problem->state eq 'hidden' || $problem->non_public) {
+            $problem->get_photoset->delete_cached(plus_updates => 1);
         }
 
         if ( $problem->is_visible() and $old_state eq 'unconfirmed' ) {
@@ -957,10 +529,9 @@ sub report_edit : Path('report_edit') : Args(1) {
         if ( $problem->state ne $old_state ) {
             $c->forward( 'log_edit', [ $id, 'problem', 'state_change' ] );
 
-            my $name = _('an administrator');
+            my $name = $c->user->moderating_user_name;
             my $extra = { is_superuser => 1 };
             if ($c->user->from_body) {
-                $name = $c->user->from_body->name;
                 delete $extra->{is_superuser};
                 $extra->{is_body_user} = $c->user->from_body->id;
             }
@@ -980,8 +551,7 @@ sub report_edit : Path('report_edit') : Args(1) {
         }
         $c->forward( 'log_edit', [ $id, 'problem', 'edit' ] );
 
-        $c->stash->{status_message} =
-          '<p><em>' . _('Updated!') . '</em></p>';
+        $c->stash->{status_message} = _('Updated!');
 
         # do this here otherwise lastupdate and confirmed times
         # do not display correctly
@@ -994,6 +564,7 @@ sub report_edit : Path('report_edit') : Args(1) {
 =head2 report_edit_category
 
 Handles changing a problem's category and the complexity that comes with it.
+Returns 1 if category changed, 0 if no change.
 
 =cut
 
@@ -1001,14 +572,15 @@ sub report_edit_category : Private {
     my ($self, $c, $problem, $no_comment) = @_;
 
     if ((my $category = $c->get_param('category')) ne $problem->category) {
+        my $disable_resend = $c->cobrand->call_hook('disable_resend');
         my $category_old = $problem->category;
         $problem->category($category);
         my @contacts = grep { $_->category eq $problem->category } @{$c->stash->{contacts}};
         my @new_body_ids = map { $_->body_id } @contacts;
         # If the report has changed bodies (and not to a subset!) we need to resend it
         my %old_map = map { $_ => 1 } @{$problem->bodies_str_ids};
-        if (grep !$old_map{$_}, @new_body_ids) {
-            $problem->whensent(undef);
+        if (!$disable_resend && grep !$old_map{$_}, @new_body_ids) {
+            $problem->resend;
         }
         # If the send methods of the old/new contacts differ we need to resend the report
         my @new_send_methods = uniq map {
@@ -1018,8 +590,8 @@ sub report_edit_category : Private {
                 : $c->cobrand->_fallback_body_sender()->{method};
         } @contacts;
         my %old_send_methods = map { $_ => 1 } split /,/, ($problem->send_method_used || "Email");
-        if (grep !$old_send_methods{$_}, @new_send_methods) {
-            $problem->whensent(undef);
+        if (!$disable_resend && grep !$old_send_methods{$_}, @new_send_methods) {
+            $problem->resend;
         }
 
         $problem->bodies_str(join( ',', @new_body_ids ));
@@ -1038,7 +610,9 @@ sub report_edit_category : Private {
                 anonymous => 0,
             });
         }
+        return 1;
     }
+    return 0;
 }
 
 =head2 report_edit_location
@@ -1047,7 +621,8 @@ Handles changing a problem's location and the complexity that comes with it.
 For now, we reject the new location if the new location and old locations aren't
 covered by the same body.
 
-Returns 1 if the new position (if any) is acceptable, undef otherwise.
+Returns 2 if the new position (if any) is acceptable and changed,
+1 if acceptable and unchanged, undef otherwise.
 
 NB: This must be called before report_edit_category, as that might modify
 $problem->bodies_str.
@@ -1067,6 +642,8 @@ sub report_edit_location : Private {
         # this lookup is bad. So let's save the stash and restore it after the
         # comparison.
         my $safe_stash = { %{$c->stash} };
+        $c->stash->{fetch_all_areas} = 1;
+        $c->stash->{area_check_action} = 'admin';
         $c->forward('/council/load_and_check_areas', []);
         $c->forward('/report/new/setup_categories_and_bodies');
         my %allowed_bodies = map { $_ => 1 } @{$problem->bodies_str_ids};
@@ -1076,6 +653,9 @@ sub report_edit_location : Private {
         return unless $bodies_match;
         $problem->latitude($c->stash->{latitude});
         $problem->longitude($c->stash->{longitude});
+        my $areas = $c->stash->{all_areas_mapit};
+        $problem->areas( ',' . join( ',', sort keys %$areas ) . ',' );
+        return 2;
     }
     return 1;
 }
@@ -1096,6 +676,17 @@ sub categories_for_point : Private {
     shift @{$c->stash->{category_options}} if @{$c->stash->{category_options}};
 
     $c->stash->{categories_hash} = { map { $_->category => 1 } @{$c->stash->{category_options}} };
+}
+
+sub alerts_for_report : Private {
+    my ($self, $c) = @_;
+
+    $c->stash->{alert_count} = $c->model('DB::Alert')->search({
+        alert_type => 'new_updates',
+        parameter => $c->stash->{report}->id,
+        confirmed => 1,
+        whendisabled => undef,
+    })->count();
 }
 
 sub templates : Path('templates') : Args(0) {
@@ -1171,6 +762,15 @@ sub template_edit : Path('templates') : Args(2) {
             }
 
             $template->title( $c->get_param('title') );
+            my $query = { title => $template->title };
+            if ($template->in_storage) {
+                $query->{id} = { '!=', $template->id };
+            }
+            if ($c->stash->{body}->response_templates->search($query)->count) {
+                $c->stash->{errors} ||= {};
+                $c->stash->{errors}->{title} = _("There is already a template with that title.");
+            }
+
             $template->text( $c->get_param('text') );
             $template->state( $c->get_param('state') );
             $template->external_status_code( $c->get_param('external_status_code') );
@@ -1213,7 +813,7 @@ sub template_edit : Path('templates') : Args(2) {
 
             $template->update_or_insert;
             $template->contact_response_templates->search({
-                contact_id => { '!=' => \@new_contact_ids },
+                contact_id => { -not_in => \@new_contact_ids },
             })->delete;
             foreach my $contact_id (@new_contact_ids) {
                 $template->contact_response_templates->find_or_create({
@@ -1249,46 +849,6 @@ sub load_template_body : Private {
         or $c->detach( '/page_error_404_not_found', [] );
 }
 
-sub users: Path('users') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    if (my $search = $c->get_param('search')) {
-        $c->stash->{searched} = $search;
-
-        my $isearch = '%' . $search . '%';
-        my $search_n = 0;
-        $search_n = int($search) if $search =~ /^\d+$/;
-
-        my $users = $c->cobrand->users->search(
-            {
-                -or => [
-                    email => { ilike => $isearch },
-                    phone => { ilike => $isearch },
-                    name => { ilike => $isearch },
-                    from_body => $search_n,
-                ]
-            }
-        );
-        my @users = $users->all;
-        $c->stash->{users} = [ @users ];
-        $c->forward('add_flags', [ { email => { ilike => $isearch } } ]);
-
-    } else {
-        $c->forward('/auth/get_csrf_token');
-        $c->forward('fetch_all_bodies');
-
-        # Admin users by default
-        my $users = $c->cobrand->users->search(
-            { from_body => { '!=', undef } },
-            { order_by => 'name' }
-        );
-        my @users = $users->all;
-        $c->stash->{users} = \@users;
-    }
-
-    return 1;
-}
-
 sub update_edit : Path('update_edit') : Args(1) {
     my ( $self, $c, $id ) = @_;
 
@@ -1309,14 +869,14 @@ sub update_edit : Path('update_edit') : Args(1) {
     $c->forward('check_username_for_abuse', [ $update->user ] );
 
     if ( $c->get_param('banuser') ) {
-        $c->forward('ban_user');
+        $c->forward('users/ban');
     }
     elsif ( $c->get_param('flaguser') ) {
-        $c->forward('flag_user');
+        $c->forward('users/flag');
         $c->stash->{update}->discard_changes;
     }
     elsif ( $c->get_param('removeuserflag') ) {
-        $c->forward('remove_user_flag');
+        $c->forward('users/flag_remove');
         $c->stash->{update}->discard_changes;
     }
     elsif ( $c->get_param('submit') ) {
@@ -1341,13 +901,12 @@ sub update_edit : Path('update_edit') : Args(1) {
             $self->remove_photo($c, $update, $remove_photo_param);
         }
 
-        $c->stash->{status_message} = '<p><em>' . _('Updated!') . '</em></p>';
+        $c->stash->{status_message} = _('Updated!');
 
         # Must call update->hide while it's not hidden (so is_latest works)
         if ($new_state eq 'hidden') {
             my $outcome = $update->hide;
-            $c->stash->{status_message} .=
-              '<p><em>' . _('Problem marked as open.') . '</em></p>'
+            $c->stash->{status_message} .= _('Problem marked as open.')
                 if $outcome->{reopened};
         }
 
@@ -1381,366 +940,6 @@ sub update_edit : Path('update_edit') : Args(1) {
     }
 
     return 1;
-}
-
-sub phone_check : Private {
-    my ($self, $c, $phone) = @_;
-    my $parsed = FixMyStreet::SMS->parse_username($phone);
-    if ($parsed->{phone} && $parsed->{may_be_mobile}) {
-        return $parsed->{username};
-    } elsif ($parsed->{phone}) {
-        $c->stash->{field_errors}->{phone} = _('Please enter a mobile number');
-    } else {
-        $c->stash->{field_errors}->{phone} = _('Please check your phone number is correct');
-    }
-}
-
-sub user_add : Path('user_edit') : Args(0) {
-    my ( $self, $c ) = @_;
-
-    $c->stash->{template} = 'admin/user_edit.html';
-    $c->forward('/auth/get_csrf_token');
-    $c->forward('fetch_all_bodies');
-
-    return unless $c->get_param('submit');
-
-    $c->forward('/auth/check_csrf_token');
-
-    $c->stash->{field_errors} = {};
-    my $email = lc $c->get_param('email');
-    my $phone = $c->get_param('phone');
-    my $email_v = $c->get_param('email_verified');
-    my $phone_v = $c->get_param('phone_verified');
-
-    unless ($email || $phone) {
-        $c->stash->{field_errors}->{username} = _('Please enter a valid email or phone number');
-    }
-    if (!$email_v && !$phone_v) {
-        $c->stash->{field_errors}->{username} = _('Please verify at least one of email/phone');
-    }
-    if ($email && !is_valid_email($email)) {
-        $c->stash->{field_errors}->{email} = _('Please enter a valid email');
-    }
-    unless ($c->get_param('name')) {
-        $c->stash->{field_errors}->{name} = _('Please enter a name');
-    }
-
-    if ($phone_v) {
-        my $parsed_phone = $c->forward('phone_check', [ $phone ]);
-        $phone = $parsed_phone if $parsed_phone;
-    }
-
-    my $existing_email = $email_v && $c->model('DB::User')->find( { email => $email } );
-    my $existing_phone = $phone_v && $c->model('DB::User')->find( { phone => $phone } );
-    if ($existing_email || $existing_phone) {
-        $c->stash->{field_errors}->{username} = _('User already exists');
-    }
-
-    return if %{$c->stash->{field_errors}};
-
-    my $user = $c->model('DB::User')->create( {
-        name => $c->get_param('name'),
-        email => $email ? $email : undef,
-        email_verified => $email && $email_v ? 1 : 0,
-        phone => $phone || undef,
-        phone_verified => $phone && $phone_v ? 1 : 0,
-        from_body => $c->get_param('body') || undef,
-        flagged => $c->get_param('flagged') || 0,
-        # Only superusers can create superusers
-        is_superuser => ( $c->user->is_superuser && $c->get_param('is_superuser') ) || 0,
-    } );
-    $c->stash->{user} = $user;
-    $c->forward('user_cobrand_extra_fields');
-    $user->update;
-
-    $c->forward( 'log_edit', [ $user->id, 'user', 'edit' ] );
-
-    $c->flash->{status_message} = _("Updated!");
-    $c->res->redirect( $c->uri_for( 'user_edit', $user->id ) );
-}
-
-sub user_edit : Path('user_edit') : Args(1) {
-    my ( $self, $c, $id ) = @_;
-
-    $c->forward('/auth/get_csrf_token');
-
-    my $user = $c->cobrand->users->find( { id => $id } );
-    $c->detach( '/page_error_404_not_found', [] ) unless $user;
-
-    unless ( $c->user->has_body_permission_to('user_edit') || $c->cobrand->moniker eq 'zurich' ) {
-        $c->detach('/page_error_403_access_denied', []);
-    }
-
-    $c->stash->{user} = $user;
-    $c->forward( 'check_username_for_abuse', [ $user ] );
-
-    if ( $user->from_body && $c->user->has_permission_to('user_manage_permissions', $user->from_body->id) ) {
-        $c->stash->{available_permissions} = $c->cobrand->available_permissions;
-    }
-
-    $c->forward('fetch_all_bodies');
-    $c->forward('fetch_body_areas', [ $user->from_body ]) if $user->from_body;
-
-    if ( defined $c->flash->{status_message} ) {
-        $c->stash->{status_message} =
-            '<p><em>' . $c->flash->{status_message} . '</em></p>';
-    }
-
-    $c->forward('/auth/check_csrf_token') if $c->get_param('submit');
-
-    if ( $c->get_param('submit') and $c->get_param('unban') ) {
-        $c->forward('unban_user', [ $user ]);
-    } elsif ( $c->get_param('submit') and $c->get_param('logout_everywhere') ) {
-        $c->forward('user_logout_everywhere', [ $user ]);
-    } elsif ( $c->get_param('submit') and $c->get_param('anon_everywhere') ) {
-        $c->forward('user_anon_everywhere', [ $user ]);
-    } elsif ( $c->get_param('submit') and $c->get_param('hide_everywhere') ) {
-        $c->forward('user_hide_everywhere', [ $user ]);
-    } elsif ( $c->get_param('submit') and $c->get_param('remove_account') ) {
-        $c->forward('user_remove_account', [ $user ]);
-    } elsif ( $c->get_param('submit') ) {
-
-        my $edited = 0;
-
-        my $name = $c->get_param('name');
-        my $email = lc $c->get_param('email');
-        my $phone = $c->get_param('phone');
-        my $email_v = $c->get_param('email_verified') || 0;
-        my $phone_v = $c->get_param('phone_verified') || 0;
-
-        $c->stash->{field_errors} = {};
-
-        unless ($email || $phone) {
-            $c->stash->{field_errors}->{username} = _('Please enter a valid email or phone number');
-        }
-        if (!$email_v && !$phone_v) {
-            $c->stash->{field_errors}->{username} = _('Please verify at least one of email/phone');
-        }
-        if ($email && !is_valid_email($email)) {
-            $c->stash->{field_errors}->{email} = _('Please enter a valid email');
-        }
-
-        if ($phone_v) {
-            my $parsed_phone = $c->forward('phone_check', [ $phone ]);
-            $phone = $parsed_phone if $parsed_phone;
-        }
-
-        unless ($name) {
-            $c->stash->{field_errors}->{name} = _('Please enter a name');
-        }
-
-        my $email_params = { email => $email, email_verified => 1, id => { '!=', $user->id } };
-        my $phone_params = { phone => $phone, phone_verified => 1, id => { '!=', $user->id } };
-        my $existing_email = $email_v && $c->model('DB::User')->search($email_params)->first;
-        my $existing_phone = $phone_v && $c->model('DB::User')->search($phone_params)->first;
-        my $existing_user = $existing_email || $existing_phone;
-        my $existing_email_cobrand = $email_v && $c->cobrand->users->search($email_params)->first;
-        my $existing_phone_cobrand = $phone_v && $c->cobrand->users->search($phone_params)->first;
-        my $existing_user_cobrand = $existing_email_cobrand || $existing_phone_cobrand;
-        if ($existing_phone_cobrand && $existing_email_cobrand && $existing_email_cobrand->id != $existing_phone_cobrand->id) {
-            $c->stash->{field_errors}->{username} = _('User already exists');
-        }
-
-        return if %{$c->stash->{field_errors}};
-
-        if ( ($user->email || "") ne $email ||
-            $user->name ne $name ||
-            ($user->phone || "") ne $phone ||
-            ($user->from_body && $c->get_param('body') && $user->from_body->id ne $c->get_param('body')) ||
-            (!$user->from_body && $c->get_param('body'))
-        ) {
-                $edited = 1;
-        }
-
-        if ($existing_user_cobrand) {
-            $existing_user->adopt($user);
-            $c->forward( 'log_edit', [ $id, 'user', 'merge' ] );
-            return $c->res->redirect( $c->uri_for( 'user_edit', $existing_user->id ) );
-        }
-
-        $user->email($email) if !$existing_email;
-        $user->phone($phone) if !$existing_phone;
-        $user->email_verified( $email_v );
-        $user->phone_verified( $phone_v );
-        $user->name( $name );
-
-        $user->flagged( $c->get_param('flagged') || 0 );
-        # Only superusers can grant superuser status
-        $user->is_superuser( ( $c->user->is_superuser && $c->get_param('is_superuser') ) || 0 );
-        # Superusers can set from_body to any value, but other staff can only
-        # set from_body to the same value as their own from_body.
-        if ( $c->user->is_superuser || $c->cobrand->moniker eq 'zurich' ) {
-            $user->from_body( $c->get_param('body') || undef );
-        } elsif ( $c->user->has_body_permission_to('user_assign_body') &&
-                  $c->get_param('body') && $c->get_param('body') eq $c->user->from_body->id ) {
-            $user->from_body( $c->user->from_body );
-        } else {
-            $user->from_body( undef );
-        }
-
-        $c->forward('user_cobrand_extra_fields');
-
-        # Has the user's from_body changed since we fetched areas (if we ever did)?
-        # If so, we need to re-fetch areas so the UI is up to date.
-        if ( $user->from_body && $user->from_body->id ne $c->stash->{fetched_areas_body_id} ) {
-            $c->forward('fetch_body_areas', [ $user->from_body ]);
-        }
-
-        if (!$user->from_body) {
-            # Non-staff users aren't allowed any permissions or to be in an area
-            $user->admin_user_body_permissions->delete;
-            $user->area_id(undef);
-            delete $c->stash->{areas};
-            delete $c->stash->{fetched_areas_body_id};
-        } elsif ($c->stash->{available_permissions}) {
-            my @all_permissions = map { keys %$_ } values %{ $c->stash->{available_permissions} };
-            my @user_permissions = grep { $c->get_param("permissions[$_]") ? 1 : undef } @all_permissions;
-            $user->admin_user_body_permissions->search({
-                body_id => $user->from_body->id,
-                permission_type => { '!=' => \@user_permissions },
-            })->delete;
-            foreach my $permission_type (@user_permissions) {
-                $user->user_body_permissions->find_or_create({
-                    body_id => $user->from_body->id,
-                    permission_type => $permission_type,
-                });
-            }
-        }
-
-        if ( $user->from_body && $c->user->has_permission_to('user_assign_areas', $user->from_body->id) ) {
-            my %valid_areas = map { $_->{id} => 1 } @{ $c->stash->{areas} };
-            my $new_area = $c->get_param('area_id');
-            $user->area_id( $valid_areas{$new_area} ? $new_area : undef );
-        }
-
-        # Handle 'trusted' flag(s)
-        my @trusted_bodies = $c->get_param_list('trusted_bodies');
-        if ( $c->user->is_superuser ) {
-            $user->user_body_permissions->search({
-                body_id => { '!=' => \@trusted_bodies },
-                permission_type => 'trusted',
-            })->delete;
-            foreach my $body_id (@trusted_bodies) {
-                $user->user_body_permissions->find_or_create({
-                    body_id => $body_id,
-                    permission_type => 'trusted',
-                });
-            }
-        } elsif ( $c->user->from_body ) {
-            my %trusted = map { $_ => 1 } @trusted_bodies;
-            my $body_id = $c->user->from_body->id;
-            if ( $trusted{$body_id} ) {
-                $user->user_body_permissions->find_or_create({
-                    body_id => $body_id,
-                    permission_type => 'trusted',
-                });
-            } else {
-                $user->user_body_permissions->search({
-                    body_id => $body_id,
-                    permission_type => 'trusted',
-                })->delete;
-            }
-        }
-
-        # Update the categories this user operates in
-        if ( $user->from_body ) {
-            $c->stash->{body} = $user->from_body;
-            $c->forward('fetch_contacts');
-            my @live_contacts = $c->stash->{live_contacts}->all;
-            my @live_contact_ids = map { $_->id } @live_contacts;
-            my @new_contact_ids = grep { $c->get_param("contacts[$_]") } @live_contact_ids;
-            $user->set_extra_metadata('categories', \@new_contact_ids);
-        }
-
-        $user->update;
-        if ($edited) {
-            $c->forward( 'log_edit', [ $id, 'user', 'edit' ] );
-        }
-        $c->flash->{status_message} = _("Updated!");
-        return $c->res->redirect( $c->uri_for( 'user_edit', $user->id ) );
-    }
-
-    if ( $user->from_body ) {
-        unless ( $c->stash->{live_contacts} ) {
-            $c->stash->{body} = $user->from_body;
-            $c->forward('fetch_contacts');
-        }
-        my @contacts = @{$user->get_extra_metadata('categories') || []};
-        my %active_contacts = map { $_ => 1 } @contacts;
-        my @live_contacts = $c->stash->{live_contacts}->all;
-        my @all_contacts = map { {
-            id => $_->id,
-            category => $_->category,
-            active => $active_contacts{$_->id},
-        } } @live_contacts;
-        $c->stash->{contacts} = \@all_contacts;
-    }
-
-    return 1;
-}
-
-sub user_import : Path('user_import') {
-    my ( $self, $c, $id ) = @_;
-
-    $c->forward('/auth/get_csrf_token');
-    return unless $c->user_exists && $c->user->is_superuser;
-
-    if ($c->req->method eq 'POST') {
-        $c->forward('/auth/check_csrf_token');
-        $c->stash->{new_users} = [];
-        $c->stash->{existing_users} = [];
-
-        my @all_permissions = map { keys %$_ } values %{ $c->cobrand->available_permissions };
-        my %available_permissions = map { $_ => 1 } @all_permissions;
-
-        my $csv = Text::CSV->new({ binary => 1});
-        my $fh = $c->req->upload('csvfile')->fh;
-        $csv->getline($fh); # discard the header
-        while (my $row = $csv->getline($fh)) {
-            my ($name, $email, $from_body, $permissions) = @$row;
-            $email = lc Utils::trim_text($email);
-            my @permissions = split(/:/, $permissions);
-
-            my $user = FixMyStreet::DB->resultset("User")->find_or_new({ email => $email, email_verified => 1 });
-            if ($user->in_storage) {
-                push @{$c->stash->{existing_users}}, $user;
-                next;
-            }
-
-            $user->name($name);
-            $user->from_body($from_body || undef);
-            $user->update_or_insert;
-
-            my @user_permissions = grep { $available_permissions{$_} } @permissions;
-            foreach my $permission_type (@user_permissions) {
-                $user->user_body_permissions->find_or_create({
-                    body_id => $user->from_body->id,
-                    permission_type => $permission_type,
-                });
-            }
-
-            push @{$c->stash->{new_users}}, $user;
-        }
-
-    }
-}
-
-sub contact_cobrand_extra_fields : Private {
-    my ( $self, $c, $contact ) = @_;
-
-    my $extra_fields = $c->cobrand->call_hook('contact_extra_fields');
-    foreach ( @$extra_fields ) {
-        $contact->set_extra_metadata( $_ => $c->get_param("extra[$_]") );
-    }
-}
-
-sub user_cobrand_extra_fields : Private {
-    my ( $self, $c ) = @_;
-
-    my @extra_fields = @{ $c->cobrand->call_hook('user_extra_fields') || [] };
-    foreach ( @extra_fields ) {
-        $c->stash->{user}->set_extra_metadata( $_ => $c->get_param("extra[$_]") );
-    }
 }
 
 sub add_flags : Private {
@@ -1840,165 +1039,6 @@ sub log_edit : Private {
         }
     )->insert();
 }
-
-=head2 ban_user
-
-Add the user's email address/phone number to the abuse table if they are not
-already in there and sets status_message accordingly.
-
-=cut
-
-sub ban_user : Private {
-    my ( $self, $c ) = @_;
-
-    my $user;
-    if ($c->stash->{problem}) {
-        $user = $c->stash->{problem}->user;
-    } elsif ($c->stash->{update}) {
-        $user = $c->stash->{update}->user;
-    }
-    return unless $user;
-
-    if ($user->email_verified && $user->email) {
-        my $abuse = $c->model('DB::Abuse')->find_or_new({ email => $user->email });
-        if ( $abuse->in_storage ) {
-            $c->stash->{status_message} = _('User already in abuse list');
-        } else {
-            $abuse->insert;
-            $c->stash->{status_message} = _('User added to abuse list');
-        }
-        $c->stash->{username_in_abuse} = 1;
-    }
-    if ($user->phone_verified && $user->phone) {
-        my $abuse = $c->model('DB::Abuse')->find_or_new({ email => $user->phone });
-        if ( $abuse->in_storage ) {
-            $c->stash->{status_message} = _('User already in abuse list');
-        } else {
-            $abuse->insert;
-            $c->stash->{status_message} = _('User added to abuse list');
-        }
-        $c->stash->{username_in_abuse} = 1;
-    }
-    return 1;
-}
-
-sub user_logout_everywhere : Private {
-    my ( $self, $c, $user ) = @_;
-    my $sessions = $user->get_extra_metadata('sessions');
-    foreach (grep { $_ ne $c->sessionid } @$sessions) {
-        $c->delete_session_data("session:$_");
-    }
-    $c->stash->{status_message} = _('That user has been logged out.');
-}
-
-sub user_anon_everywhere : Private {
-    my ( $self, $c, $user ) = @_;
-    $user->problems->update({anonymous => 1});
-    $user->comments->update({anonymous => 1});
-    $c->stash->{status_message} = _('That user has been made anonymous on all reports and updates.');
-}
-
-sub user_hide_everywhere : Private {
-    my ( $self, $c, $user ) = @_;
-    my $problems = $user->problems->search({ state => { '!=' => 'hidden' } });
-    while (my $problem = $problems->next) {
-        $problem->get_photoset->delete_cached;
-        $problem->update({ state => 'hidden' });
-    }
-    my $updates = $user->comments->search({ state => { '!=' => 'hidden' } });
-    while (my $update = $updates->next) {
-        $update->hide;
-    }
-    $c->stash->{status_message} = _('That user’s reports and updates have been hidden.');
-}
-
-# Anonymize and remove name from all problems/updates, disable all alerts.
-# Remove their account's email address, phone number, password, etc.
-sub user_remove_account : Private {
-    my ( $self, $c, $user ) = @_;
-    $c->forward('user_logout_everywhere', [ $user ]);
-    $user->anonymize_account;
-    $c->stash->{status_message} = _('That user’s personal details have been removed.');
-}
-
-sub unban_user : Private {
-    my ( $self, $c, $user ) = @_;
-
-    my @username;
-    if ($user->email_verified && $user->email) {
-        push @username, $user->email;
-    }
-    if ($user->phone_verified && $user->phone) {
-        push @username, $user->phone;
-    }
-    if (@username) {
-        my $abuse = $c->model('DB::Abuse')->search({ email => \@username });
-        if ( $abuse ) {
-            $abuse->delete;
-            $c->stash->{status_message} = _('user removed from abuse list');
-        } else {
-            $c->stash->{status_message} = _('user not in abuse list');
-        }
-        $c->stash->{username_in_abuse} = 0;
-    }
-}
-
-=head2 flag_user
-
-Sets the flag on a user
-
-=cut
-
-sub flag_user : Private {
-    my ( $self, $c ) = @_;
-
-    my $user;
-    if ($c->stash->{problem}) {
-        $user = $c->stash->{problem}->user;
-    } elsif ($c->stash->{update}) {
-        $user = $c->stash->{update}->user;
-    }
-
-    if ( !$user ) {
-        $c->stash->{status_message} = _('Could not find user');
-    } else {
-        $user->flagged(1);
-        $user->update;
-        $c->stash->{status_message} = _('User flagged');
-    }
-
-    $c->stash->{user_flagged} = 1;
-
-    return 1;
-}
-
-=head2 remove_user_flag
-
-Remove the flag on a user
-
-=cut
-
-sub remove_user_flag : Private {
-    my ( $self, $c ) = @_;
-
-    my $user;
-    if ($c->stash->{problem}) {
-        $user = $c->stash->{problem}->user;
-    } elsif ($c->stash->{update}) {
-        $user = $c->stash->{update}->user;
-    }
-
-    if ( !$user ) {
-        $c->stash->{status_message} = _('Could not find user');
-    } else {
-        $user->flagged(0);
-        $user->update;
-        $c->stash->{status_message} = _('User flag removed');
-    }
-
-    return 1;
-}
-
 
 =head2 check_username_for_abuse
 
@@ -2101,10 +1141,15 @@ sub check_page_allowed : Private {
 sub fetch_all_bodies : Private {
     my ($self, $c ) = @_;
 
-    my @bodies = $c->model('DB::Body')->translated->all_sorted;
-    if ( $c->cobrand->moniker eq 'zurich' ) {
-        @bodies = $c->cobrand->admin_fetch_all_bodies( @bodies );
+    my @bodies = $c->cobrand->call_hook('admin_fetch_all_bodies');
+    if (!@bodies) {
+        my $bodies = $c->model('DB::Body')->search(undef, {
+            columns => [ "id", "name", "deleted", "parent" ],
+        })->with_parent_name;
+        $bodies = $bodies->with_defect_type_count if $c->stash->{with_defect_type_count};
+        @bodies = $bodies->translated->all_sorted;
     }
+
     $c->stash->{bodies} = \@bodies;
 
     return 1;
@@ -2145,6 +1190,8 @@ sub update_extra_fields : Private {
         $meta->{variable} = $notice ? 'false' : 'true';
         $meta->{description} = $c->get_param("metadata[$i].description");
         $meta->{datatype_description} = $c->get_param("metadata[$i].datatype_description");
+        $meta->{automated} = $c->get_param("metadata[$i].automated")
+            if $c->get_param("metadata[$i].automated");
 
         if ( $meta->{datatype} eq "singlevaluelist" ) {
             $meta->{values} = [];

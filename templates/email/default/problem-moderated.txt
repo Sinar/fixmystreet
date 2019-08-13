@@ -15,11 +15,11 @@ The following data has been changed:
 
 Your report had the title:
 
-[% problem.moderation_original_data.title %]
+[% moderated_data.title %]
 
 And details:
 
-[% problem.moderation_original_data.detail %]
+[% moderated_data.detail %]
 
 [% UNLESS types == 'hide' %]
 You can see the report at [% report_uri %]
@@ -31,7 +31,7 @@ the team at [% report_complain_uri %]
 Thank you for submitting a report through [% site_name %].
 
 
-[% INCLUDE 'signature.txt' %]
+[% signature %]
 
 This email was sent automatically, from an unmonitored email account - so
 please do not reply to it.

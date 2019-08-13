@@ -38,9 +38,8 @@
     [% SET shown_form = 1 %]
 [% END %]
 
-[% INCLUDE 'report/banner.html' %]
 [% IF c.user_exists %]
-    [% DEFAULT permissions = c.user.permissions(c, problem.bodies_str) %]
+    [% DEFAULT permissions = c.user.permissions(problem) %]
 [%- END %]
 [% INCLUDE 'report/_main.html' %]
 
@@ -53,17 +52,16 @@
 [% TRY %][% INCLUDE 'report/sharing.html' %][% CATCH file %][% END %]
 [% INCLUDE 'report/updates.html' %]
 
-[% IF two_column_sidebar AND NOT problem.extra.closed_updates %]
-<button class="btn btn--provide-update js-provide-update hidden-nojs">[% loc('Provide an update') %]</button>
-<div class="hidden-js">
-[% END %]
 [% IF problem.duplicate_of %]
     [% INCLUDE 'report/duplicate-no-updates.html' %]
-[% ELSIF NOT shown_form %]
-    [% INCLUDE 'report/update-form.html' %]
-[% END %]
-[% IF two_column_sidebar AND NOT problem.extra.closed_updates %]
-</div>
+[% ELSIF problem.extra.closed_updates %]
+    <p>[% loc('This report is now closed to updates.') %]
+       [% tprintf(loc('You can <a href="%s">make a new report in the same location</a>.'),
+              c.uri_for( '/report/new', { longitude => longitude, latitude => latitude } )
+          ) %]
+    </p>
+[% ELSIF NOT shown_form  %]
+    [% PROCESS 'report/update-form-wrapper.html' %]
 [% END %]
 
   </div>

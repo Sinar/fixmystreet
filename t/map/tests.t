@@ -2,15 +2,15 @@ use FixMyStreet::Map;
 use Test::More;
 
 my $requires = {
-    'Angus' => 'angus/js.js',
-    'BathNES' => 'bathnes/js.js',
     'Bing' => 'map-bing-ol.js',
-    'Bristol' => 'bristol/js.js',
-    'Bromley' => 'bromley/map.js',
-    'Buckinghamshire' => 'buckinghamshire/js.js',
+    'Bristol' => 'map-wmts-bristol.js',
+    'Bromley' => 'map-fms.js',
+    'Buckinghamshire' => 'map-wmts-buckinghamshire.js',
+    'Lincolnshire' => 'lincolnshire/assets.js',
     'FMS' => 'map-fms.js',
     'Google' => 'map-google.js',
     'GoogleOL' => 'map-google-ol.js',
+    'Hounslow' => 'map-wmts-hounslow.js',
     'OSM' => 'OpenStreetMap.js',
     'CycleMap' => 'OpenStreetMap.js',
     'MapQuest' => 'OpenStreetMap.js',
@@ -20,7 +20,7 @@ my $requires = {
 };
 
 foreach (FixMyStreet::Map->maps) {
-    next if /WMTSBase/; # Only its subclasses have JS
+    next if /WMTSBase|UKCouncilWMTS/; # Only its subclasses have JS
     my $js = $_->map_javascript;
     my $test_file = $js->[-1];
     s/.*:://;

@@ -19,9 +19,8 @@ Return a PhotoSet object for all photos attached to this field
 
 sub get_photoset {
     my ($self) = @_;
-    my $class = 'FixMyStreet::App::Model::PhotoSet';
-    eval "use $class";
-    return $class->new({
+    require FixMyStreet::App::Model::PhotoSet;
+    return FixMyStreet::App::Model::PhotoSet->new({
         db_data => $self->photo,
         object => $self,
     });
@@ -39,15 +38,18 @@ sub photos {
     my $id = $self->id;
     my $typ = $self->result_source->name eq 'comment' ? 'c/' : '';
 
+    my $non_public = $self->result_source->name eq 'comment'
+        ? $self->problem->non_public : $self->non_public;
+
     my @photos = map {
         my $cachebust = substr($_, 0, 8);
         # Some Varnish configurations (e.g. on mySociety infra) strip cookies from
         # images, which means image requests will be redirected to the login page
-        # if LOGIN_REQUIRED is set. To stop this happening, Varnish should be
+        # if e.g. LOGIN_REQUIRED is set. To stop this happening, Varnish should be
         # configured to not strip cookies if the cookie_passthrough param is
         # present, which this line ensures will be if LOGIN_REQUIRED is set.
         my $extra = '';
-        if (FixMyStreet->config('LOGIN_REQUIRED')) {
+        if (FixMyStreet->config('LOGIN_REQUIRED') || $non_public) {
             $cachebust .= '&cookie_passthrough=1';
             $extra = '?cookie_passthrough=1';
         }

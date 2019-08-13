@@ -1,4 +1,7 @@
-[% permissions = c.user.permissions(c, problem.bodies_str) %]
+[% extra_js = [
+    version('/js/duplicates.js'),
+] -%]
+[% permissions = c.user.permissions(problem) %]
 [% second_column = BLOCK -%]
   <div id="side-inspect">
 
@@ -47,15 +50,19 @@
         </p>
         [% END %]
         <p>
-          <a target="_blank" href="https://www.google.com/maps/dir/Current+Location/[% problem.latitude %],[% problem.longitude %]" class="btn btn--block btn--navigate">[% loc('Navigate to this problem') %]</a>
+          <a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=[% problem.latitude %],[% problem.longitude %]" class="btn btn--block btn--navigate">[% loc('Navigate to this problem') %]</a>
         </p>
         <p>
           <a href="#" class="btn btn--block btn--geolocate">[% loc('Set to my current location') %]</a>
         </p>
         [% IF permissions.report_reject %]
-          <p>
-            <a href="[% c.uri_for( '/contact', { id => problem.id, reject => 1 } ) %]" class="btn btn--block">[% loc('Reject report') %]</a>
-          </p>
+          [% TRY %]
+            [% INCLUDE 'report/_inspect_reject_button.html' %]
+          [% CATCH file %]
+            <p>
+              <a href="[% c.uri_for( '/contact', { id => problem.id, reject => 1 } ) %]" class="btn btn--block">[% loc('Reject report') %]</a>
+            </p>
+          [% END %]
         [% END %]
       </div>
 
@@ -116,7 +123,7 @@
             <p class="[% "hidden" IF problem.duplicate_of %]">[% loc('Which report is it a duplicate of?') %]</p>
             <ul class="item-list item-list--inspect-duplicates">
               [% IF problem.duplicate_of %]
-                [% INCLUDE 'report/_item.html' item_extra_class = 'item-list--reports__item--selected' problem = problem.duplicate_of %]
+                [% INCLUDE 'report/_item_expandable.html' item_extra_class = 'item-list__item--selected' problem = problem.duplicate_of %]
                 <li class="item-list__item"><a class="btn" href="#" id="js-change-duplicate-report">[% loc('Choose another') %]</a></li>
               [% END %]
             </ul>
@@ -125,7 +132,7 @@
             <p><strong>[% loc('Duplicates') %]</strong></p>
             <ul class="item-list item-list--inspect-duplicates">
               [% FOR duplicate IN problem.duplicates %]
-                [% INCLUDE 'report/_item.html' problem = duplicate %]
+                [% INCLUDE 'report/_item_expandable.html' problem = duplicate %]
               [% END %]
             </ul>
           [% END %]
@@ -158,9 +165,14 @@
           </select>
         </p>
         <p>
-          <label for="detailed_information">[% loc('Extra details') %]</label> <span id="detailed_information_length"></span>
+          <label for="detailed_information">[% loc('Extra details') %]</label>
+        [% IF max_detailed_info_length %]
+          <span id="detailed_information_length">
+              [% tprintf(loc('%d characters maximum'), max_detailed_info_length) %]
+          </span>
+        [% END %]
           <textarea rows="2" name="detailed_information" id="detailed_information" class="form-control"
-            [% IF max_detailed_info_length %]data-max-length="[% max_detailed_info_length %]" placeholder="[% tprintf(loc('%d characters maximum'), max_detailed_info_length) %]"[% END %]>[% problem.get_extra_metadata('detailed_information') | html %]</textarea>
+            [% IF max_detailed_info_length %]data-max-length="[% max_detailed_info_length %]"[% END %]>[% problem.get_extra_metadata('detailed_information') | html %]</textarea>
         </p>
         [% END %]
 

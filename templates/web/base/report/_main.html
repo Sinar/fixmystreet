@@ -1,7 +1,17 @@
+[%
+USE date;
+can_moderate = permissions.moderate OR c.user.can_moderate(problem, staff = permissions.moderate)
+can_moderate_title = c.user.can_moderate_title(problem, can_moderate)
+%]
+
 <a href="[% c.uri_for( '/around', { lat => latitude, lon => longitude } ) %]"
     class="problem-back js-back-to-report-list">[% loc('Back to all reports') %]</a>
 
-<div class="problem-header clearfix" data-lastupdate="[% problem.lastupdate %]">
+[% INCLUDE 'report/banner.html' %]
+
+<div class="problem-header clearfix
+    [%~ ' show-moderation' IF show_moderation == 'report' ~%]
+    " data-lastupdate="[% problem.lastupdate %]">
 
 [% IF permissions.planned_reports %]
 <form method="post" action="/my/planned/change" id="planned_form" class="hidden-label-target">
@@ -30,29 +40,35 @@
 </form>
 [% END %]
 
-  [% IF permissions.moderate %]
+  [% IF can_moderate %]
     [% original = problem_original %]
     <form method="post" action="/moderate/report/[% problem.id %]">
         <input type="hidden" name="token" value="[% csrf_token %]">
+        <input type="hidden" name="form_started" value="[% date.now %]">
   [% END %]
 
-    <h1 class="moderate-display">[% problem.title | html %]</h1>
+  [% FOR error IN moderate_errors %]
+    <p class="form-error js-moderation-error">[% error %]</p>
+  [% END %]
 
-  [% IF permissions.moderate %]
+  [% IF can_moderate_title %]
+    <h1 class="moderate-display">[% problem.title | html %]</h1>
     <div class="moderate-edit">
       [% IF problem.title != original.title %]
         <label>
-            <input type="checkbox" name="problem_revert_title" class="revert-title">
+            <input type="checkbox" name="problem_revert_title" class="revert-title"[% " checked" IF c.req.params.problem_revert_title %]>
             [% loc('Revert to original title') %]
         </label>
       [% END %]
-        <h1><input class="form-control" type="text" name="problem_title" value="[% problem.title | html %]" data-original-value="[% original.title | html %]"></h1>
+        <h1><input class="form-control" type="text" name="problem_title" value="[% (c.req.params.problem_title || problem.title) | html %]" data-original-value="[% original.title | html %]"></h1>
     </div>
+  [% ELSE %]
+    <h1>[% problem.title | html %]</h1>
   [% END %]
 
     <div class="moderate-edit">
         <label>
-            <input type="checkbox" name="problem_show_name" [% 'checked' UNLESS problem.anonymous %]>
+            <input type="checkbox" name="problem_show_name" [% 'checked' IF !problem.anonymous OR c.req.params.problem_show_name %]>
             [% loc('Show reporter&rsquo;s name') %]
         </label>
     </div>
@@ -71,11 +87,11 @@
 
     [% INCLUDE 'report/_support.html' %]
 
-  [% IF permissions.moderate %]
+  [% IF can_moderate %]
     [% IF problem.photo or original.photo %]
         <p class="moderate-edit">
             <label>
-                <input type="checkbox" name="problem_show_photo" [% problem.photo ? 'checked' : '' %]>
+                <input type="checkbox" name="problem_photo" [% 'checked' IF problem.photo OR c.req.params.problem_photo %]>
                 [% loc('Show photo') %]
             </label>
         </p>
@@ -87,43 +103,44 @@
         [% problem.detail | add_links | html_para %]
     </div>
 
-  [% IF permissions.moderate %]
+  [% IF can_moderate %]
     <p class="moderate-edit">
       [% IF problem.detail != original.detail %]
         <label>
-            <input type="checkbox" name="problem_revert_detail" class="revert-textarea">
+            <input type="checkbox" name="problem_revert_detail" class="revert-textarea"[% ' checked' IF c.req.params.problem_revert_detail %]>
             [% loc('Revert to original text') %]
         </label>
       [% END %]
-        <textarea class="form-control" name="problem_detail" data-original-value="[% original.detail | html %]">[% problem.detail | html %]</textarea>
+        <textarea class="form-control" name="problem_detail" data-original-value="[% original.detail | html %]">[% (c.req.params.problem_detail || problem.detail) | html %]</textarea>
     </p>
 
     <div class="moderate-edit">
         <p>
             <label>
-                <input type="checkbox" class="hide-document" name="problem_hide" [% problem.hidden ? 'checked' : '' %]>
+                <input type="checkbox" class="hide-document" name="problem_hide" [% 'checked' IF problem.hidden OR c.req.params.problem_hide %]>
                 [% loc('Hide entire report') %]
             </label>
         </p>
         <p>
-            <label for="moderation_reason">[% loc('Moderation reason:') %]</label>
-            <input type="text" class="form-control" name="moderation_reason" placeholder="[% loc('Describe why you are moderating this') %]">
+            <label for="moderation_reason">[% loc('Describe why you are moderating this') %]</label>
+            <input type="text" class="form-control" name="moderation_reason" value="[% (c.req.params.moderation_reason || '') | html %]">
         </p>
         <p>
             <input type="submit" class="green-btn" value="[% loc('Save changes') %]">
-            <input type="button" class="btn cancel" value="[% loc('Discard changes') %]">
+            <input type="button" class="hidden-nojs btn cancel" value="[% loc('Discard changes') %]">
         </p>
     </div>
   [% END %]
 
-  [% IF permissions.moderate %]
+  [% IF can_moderate %]
     </form>
   [% END %]
 
-  [% IF permissions.moderate OR permissions.planned_reports %]
+  [% IF can_moderate OR permissions.planned_reports %]
     <div class="moderate-display segmented-control" role="menu">
-      [% IF permissions.moderate %]
-        <a class="js-moderate btn" role="menuitem" aria-label="[% loc('Moderate this report') %]">[% loc('Moderate') %]</a>
+      [% IF can_moderate %]
+        <a class="js-moderate btn" role="menuitem" href="/report/[% problem.id %]/moderate"
+            aria-label="[% loc('Moderate this report') %]">[% loc('Moderate') %]</a>
       [% END %]
       [% IF permissions.planned_reports %]
           [%~ IF c.user.is_planned_report(problem) ~%]

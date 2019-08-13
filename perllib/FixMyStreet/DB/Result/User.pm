@@ -8,7 +8,11 @@ use strict;
 use warnings;
 
 use base 'DBIx::Class::Core';
-__PACKAGE__->load_components("FilterColumn", "InflateColumn::DateTime", "EncodedColumn");
+__PACKAGE__->load_components(
+  "FilterColumn",
+  "FixMyStreet::InflateColumn::DateTime",
+  "FixMyStreet::EncodedColumn",
+);
 __PACKAGE__->table("users");
 __PACKAGE__->add_columns(
   "id",
@@ -36,16 +40,6 @@ __PACKAGE__->add_columns(
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "is_superuser",
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
-  "title",
-  { data_type => "text", is_nullable => 1 },
-  "twitter_id",
-  { data_type => "bigint", is_nullable => 1 },
-  "facebook_id",
-  { data_type => "bigint", is_nullable => 1 },
-  "area_id",
-  { data_type => "integer", is_nullable => 1 },
-  "extra",
-  { data_type => "text", is_nullable => 1 },
   "created",
   {
     data_type     => "timestamp",
@@ -60,6 +54,16 @@ __PACKAGE__->add_columns(
     is_nullable   => 0,
     original      => { default_value => \"now()" },
   },
+  "title",
+  { data_type => "text", is_nullable => 1 },
+  "twitter_id",
+  { data_type => "bigint", is_nullable => 1 },
+  "facebook_id",
+  { data_type => "bigint", is_nullable => 1 },
+  "extra",
+  { data_type => "text", is_nullable => 1 },
+  "area_ids",
+  { data_type => "integer[]", is_nullable => 1 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->add_unique_constraint("users_facebook_id_key", ["facebook_id"]);
@@ -117,10 +121,16 @@ __PACKAGE__->has_many(
   { "foreign.user_id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+__PACKAGE__->has_many(
+  "user_roles",
+  "FixMyStreet::DB::Result::UserRole",
+  { "foreign.user_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2018-05-23 18:54:36
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:/V7+Ygv/t6VX8dDhNGN16w
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2019-05-23 18:03:28
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:qtmzA7ywVkyQpjLh1ienNg
 
 # These are not fully unique constraints (they only are when the *_verified
 # is true), but this is managed in ResultSet::User's find() wrapper.
@@ -131,6 +141,7 @@ __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 
 use Moo;
+use Text::CSV;
 use FixMyStreet::SMS;
 use mySociety::EmailUtil;
 use namespace::clean -except => [ 'meta' ];
@@ -138,6 +149,7 @@ use namespace::clean -except => [ 'meta' ];
 with 'FixMyStreet::Roles::Extra';
 
 __PACKAGE__->many_to_many( planned_reports => 'user_planned_reports', 'report' );
+__PACKAGE__->many_to_many( roles => 'user_roles', 'role' );
 
 sub cost {
     FixMyStreet->test_mode ? 1 : 12;
@@ -175,8 +187,8 @@ sub phone_display {
 
 sub latest_anonymity {
     my $self = shift;
-    my $p = $self->problems->search(undef, { order_by => { -desc => 'id' } } )->first;
-    my $c = $self->comments->search(undef, { order_by => { -desc => 'id' } } )->first;
+    my $p = $self->problems->search(undef, { rows => 1, order_by => { -desc => 'id' } } )->first;
+    my $c = $self->comments->search(undef, { rows => 1, order_by => { -desc => 'id' } } )->first;
     my $p_created = $p ? $p->created->epoch : 0;
     my $c_created = $c ? $c->created->epoch : 0;
     my $obj = $p_created >= $c_created ? $p : $c;
@@ -291,6 +303,11 @@ sub body {
     return $self->from_body->name;
 }
 
+sub moderating_user_name {
+    my $self = shift;
+    return $self->body || _('an administrator');
+}
+
 =head2 belongs_to_body
 
     $belongs_to_body = $user->belongs_to_body( $bodies );
@@ -329,27 +346,72 @@ sub split_name {
     return { first => $first || '', last => $last || '' };
 }
 
+sub can_moderate {
+    my ($self, $object, $perms) = @_;
+
+    my ($type, $ids);
+    if ($object->isa("FixMyStreet::DB::Result::Comment")) {
+        $type = 'update';
+        $ids = $object->problem->bodies_str_ids;
+    } else {
+        $type = 'problem';
+        $ids = $object->bodies_str_ids;
+    }
+
+    my $staff_perm = exists($perms->{staff}) ? $perms->{staff} : $self->has_permission_to(moderate => $ids);
+    return 1 if $staff_perm;
+
+    # See if the cobrand wants to allow it in some circumstance
+    my $cobrand = $self->result_source->schema->cobrand;
+    return $cobrand->call_hook('moderate_permission', $self, $type => $object);
+}
+
+sub can_moderate_title {
+    my ($self, $problem, $perm) = @_;
+
+    # Must have main permission, this is to potentially restrict only
+    return 0 unless $perm;
+
+    # If hook returns anything use it, otherwise default to yes
+    my $cobrand = $self->result_source->schema->cobrand;
+    return $cobrand->call_hook('moderate_permission_title', $self, $problem) // 1;
+}
+
 has body_permissions => (
     is => 'ro',
     lazy => 1,
     default => sub {
         my $self = shift;
-        return [ $self->user_body_permissions->all ];
+        my $perms = [];
+        foreach my $role ($self->roles->all) {
+            push @$perms, map { {
+                body_id => $role->body_id,
+                permission => $_,
+            } } @{$role->permissions};
+        }
+        push @$perms, map { {
+            body_id => $_->body_id,
+            permission => $_->permission_type,
+        } } $self->user_body_permissions->all;
+        return $perms;
     },
 );
 
 sub permissions {
-    my ($self, $c, $body_id) = @_;
+    my ($self, $problem) = @_;
+    my $cobrand = $self->result_source->schema->cobrand;
 
     if ($self->is_superuser) {
-        my $perms = $c->cobrand->available_permissions;
+        my $perms = $cobrand->available_permissions;
         return { map { %$_ } values %$perms };
     }
 
+    my $body_id = $problem->bodies_str;
+
     return unless $self->belongs_to_body($body_id);
 
-    my @permissions = grep { $_->body_id == $self->from_body->id } @{$self->body_permissions};
-    return { map { $_->permission_type => 1 } @permissions };
+    my @permissions = grep { $_->{body_id} == $self->from_body->id } @{$self->body_permissions};
+    return { map { $_->{permission} => 1 } @permissions };
 }
 
 sub has_permission_to {
@@ -371,7 +433,7 @@ sub has_permission_to {
     my %body_ids = map { $_ => 1 } @$body_ids;
 
     foreach (@{$self->body_permissions}) {
-        return 1 if $_->permission_type eq $permission_type && $body_ids{$_->body_id};
+        return 1 if $_->{permission} eq $permission_type && $body_ids{$_->{body_id}};
     }
     return 0;
 }
@@ -544,11 +606,52 @@ has categories => (
     },
 );
 
+has categories_string => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        my $csv = Text::CSV->new;
+        $csv->combine(@{$self->categories});
+        return $csv->string;
+    },
+);
+
 sub set_last_active {
     my $self = shift;
     my $time = shift;
     $self->unset_extra_metadata('inactive_email_sent');
     $self->last_active($time or \'current_timestamp');
+}
+
+has areas_hash => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        my %ids = map { $_ => 1 } @{$self->area_ids || []};
+        return \%ids;
+    },
+);
+
+sub in_area {
+    my ($self, $area) = @_;
+    return $self->areas_hash->{$area};
+}
+
+has roles_hash => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        my %ids = map { $_->role_id => 1 } $self->user_roles->all;
+        return \%ids;
+    },
+);
+
+sub in_role {
+    my ($self, $role) = @_;
+    return $self->roles_hash->{$role};
 }
 
 1;

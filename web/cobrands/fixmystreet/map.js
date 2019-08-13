@@ -3,9 +3,10 @@ var fixmystreet = fixmystreet || {};
 (function(){
 
     var map_data = document.getElementById('js-map-data'),
-        map_keys = [ 'area', 'latitude', 'longitude', 'zoomToBounds', 'zoom', 'pin_prefix', 'pin_new_report_colour', 'numZoomLevels', 'zoomOffset', 'map_type', 'key' ],
+        map_keys = [ 'area', 'latitude', 'longitude', 'zoomToBounds', 'zoom', 'pin_prefix', 'pin_new_report_colour', 'numZoomLevels', 'zoomOffset', 'map_type', 'key', 'bodies' ],
         numeric = { zoom: 1, numZoomLevels: 1, zoomOffset: 1, id: 1 },
-        pin_keys = [ 'lat', 'lon', 'colour', 'id', 'title', 'type' ];
+        bool = { draggable: 1 },
+        pin_keys = [ 'lat', 'lon', 'colour', 'id', 'title', 'type', 'draggable' ];
 
     if (!map_data) {
         return;
@@ -17,6 +18,9 @@ var fixmystreet = fixmystreet || {};
             fixmystreet[key] = +fixmystreet[key];
         }
     });
+
+
+    fixmystreet.bodies = fixmystreet.bodies ? fixmystreet.utils.csv_to_array(fixmystreet.bodies)[0] : [];
 
     fixmystreet.area = fixmystreet.area ? fixmystreet.area.split(',') : [];
     if (fixmystreet.map_type) {
@@ -35,6 +39,9 @@ var fixmystreet = fixmystreet || {};
             var val = pin.getAttribute('data-' + key);
             if (numeric[key]) {
                 val = +val;
+            }
+            if (bool[key]) {
+                val = !!val;
             }
             arr.push(val);
         });

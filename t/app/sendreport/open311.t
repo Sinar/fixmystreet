@@ -14,7 +14,6 @@ sub test_overrides; # defined below
 use constant TEST_USER_EMAIL => 'fred@example.com';
 
 my %standard_open311_parameters = (
-    'use_extended_updates' => 0,
     'send_notpinpointed' => 0,
     'extended_description' => 1,
     'use_service_as_deviceid' => 0,
@@ -49,9 +48,6 @@ test_overrides oxfordshire =>
         'open311' => noclass(superhashof({
             %standard_open311_parameters,
             'extended_description' => 'oxfordshire',
-            'endpoints' => {
-                'requests' => 'open311_service_request.cgi'
-            },
         })),
         problem_extra => bag(
             { name => 'northing', value => 100 },

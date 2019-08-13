@@ -1,8 +1,29 @@
+package FixMyStreet::Cobrand::AbuseOnly;
+
+use base 'FixMyStreet::Cobrand::Default';
+
+sub abuse_reports_only { 1; }
+
+1;
+
+package FixMyStreet::Cobrand::GeneralEnquiries;
+
+use base 'FixMyStreet::Cobrand::Default';
+
+sub abuse_reports_only { 1 }
+
+sub setup_general_enquiries_stash { 1 }
+
+1;
+
+package main;
+
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new;
 
 $mech->get_ok('/contact');
+my ($csrf) = $mech->content =~ /meta content="([^"]*)" name="csrf-token"/;
 $mech->title_like(qr/Contact Us/);
 $mech->content_contains("It's often quickest to ");
 
@@ -37,9 +58,52 @@ for my $test (
         detail    => 'More detail on the different problem',
         postcode  => 'EH99 1SP',
         confirmed => '2011-05-03 13:24:28.145168',
+        anonymous => 0,
+        hidden    => 1,
+        meta      => 'Reported anonymously at 13:24, Tue  3 May 2011',
+    },
+    {
+        name      => 'A User',
+        email     => 'problem_report_test@example.com',
+        title     => 'A different problem',
+        detail    => 'More detail on the different problem',
+        postcode  => 'EH99 1SP',
+        confirmed => '2011-05-03 13:24:28.145168',
         anonymous => 1,
         meta      => 'Reported anonymously at 13:24, Tue  3 May 2011',
         update    => {
+            name  => 'Different User',
+            email => 'commenter@example.com',
+            text  => 'This is an update',
+        },
+    },
+    {
+        name      => 'A User',
+        email     => 'problem_report_test@example.com',
+        title     => 'A different problem',
+        detail    => 'More detail on the different problem',
+        postcode  => 'EH99 1SP',
+        confirmed => '2011-05-03 13:24:28.145168',
+        anonymous => 1,
+        meta      => 'Reported anonymously at 13:24, Tue  3 May 2011',
+        update    => {
+            other_problem => 1,
+            name  => 'Different User',
+            email => 'commenter@example.com',
+            text  => 'This is an update',
+        },
+    },
+    {
+        name      => 'A User',
+        email     => 'problem_report_test@example.com',
+        title     => 'A different problem',
+        detail    => 'More detail on the different problem',
+        postcode  => 'EH99 1SP',
+        confirmed => '2011-05-03 13:24:28.145168',
+        anonymous => 1,
+        meta      => 'Reported anonymously at 13:24, Tue  3 May 2011',
+        update    => {
+            hidden => 1,
             name  => 'Different User',
             email => 'commenter@example.com',
             text  => 'This is an update',
@@ -58,7 +122,7 @@ for my $test (
                 confirmed => $test->{confirmed},
                 name      => $test->{name},
                 anonymous => $test->{anonymous},
-                state     => 'confirmed',
+                state     => $test->{hidden} ? 'hidden' : 'confirmed',
                 user      => $user,
                 latitude  => 0,
                 longitude => 0,
@@ -76,9 +140,9 @@ for my $test (
 
             $update = FixMyStreet::App->model('DB::Comment')->create(
                 {
-                    problem_id => $problem->id,
+                    problem_id => $update_info->{other_problem} ? $problem_main->id : $problem->id,
                     user        => $update_user,
-                    state       => 'confirmed',
+                    state       => $update_info->{hidden} ? 'hidden' : 'confirmed',
                     text        => $update_info->{text},
                     confirmed   => \'current_timestamp',
                     mark_fixed => 'f',
@@ -90,9 +154,20 @@ for my $test (
         ok $problem, 'succesfully create a problem';
 
         if ( $update ) {
-            $mech->get_ok( '/contact?id=' . $problem->id . '&update_id=' . $update->id );
-            $mech->content_contains('reporting the following update');
-            $mech->content_contains( $test->{update}->{text} );
+            if ( $test->{update}->{hidden} ) {
+                $mech->get( '/contact?id=' . $problem->id . '&update_id=' . $update->id );
+                is $mech->res->code, 404, 'cannot report a hidden update';
+            } elsif ( $test->{update}->{other_problem} ) {
+                $mech->get( '/contact?id=' . $problem->id . '&update_id=' . $update->id );
+                is $mech->res->code, 404, 'cannot view an update for another problem';
+            } else {
+                $mech->get_ok( '/contact?id=' . $problem->id . '&update_id=' . $update->id );
+                $mech->content_contains('reporting the following update');
+                $mech->content_contains( $test->{update}->{text} );
+            }
+        } elsif ( $test->{hidden} ) {
+            $mech->get( '/contact?id=' . $problem->id );
+            is $mech->res->code, 410, 'cannot report a hidden problem';
         } else {
             $mech->get_ok( '/contact?id=' . $problem->id );
             $mech->content_contains('reporting the following problem');
@@ -215,25 +290,16 @@ for my $test (
     };
 }
 
-for my $test (
-    {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-        },
-    },
-    {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            id      => $problem_main->id,
-        },
-    },
+my %common = (
+    em => 'test@example.com',
+    name => 'A name',
+    subject => 'A subject',
+    message => 'A message',
+);
 
+for my $test (
+    { fields => \%common },
+    { fields => { %common, id => $problem_main->id } },
   )
 {
     subtest 'check email sent correctly' => sub {
@@ -251,11 +317,11 @@ for my $test (
 
         my $email = $mech->get_email;
 
-        is $email->header('Subject'), 'FMS message: ' .  $test->{fields}->{subject}, 'subject';
+        is $email->header('Subject'), 'FixMyStreet message: ' .  $test->{fields}->{subject}, 'subject';
         is $email->header('From'), "\"$test->{fields}->{name}\" <$test->{fields}->{em}>", 'from';
         my $body = $mech->get_text_body_from_email($email);
         like $body, qr/$test->{fields}->{message}/, 'body';
-        like $body, qr/Sent by contact.cgi on \S+. IP address (?:\d{1,3}\.){3,}\d{1,3}/, 'body footer';
+        like $body, qr/Sent by contact form on \S+.\s+IP address (?:\d{1,3}\.){3,}\d{1,3}, user agent ./, 'body footer';
         my $problem_id = $test->{fields}{id};
         like $body, qr/Complaint about report $problem_id/, 'reporting a report'
             if $test->{fields}{id};
@@ -272,39 +338,22 @@ for my $test (
 
 for my $test (
     {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => undef,
-        },
+        fields => { %common, dest => undef },
         page_errors =>
           [ 'There were problems with your report. Please see below.',
             'Please enter who your message is for',
+            'You can only contact the team behind FixMyStreet using our contact form', # The JS-hidden one
         ]
     },
     {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => 'council',
-        },
+        fields => { %common, dest => 'council' },
         page_errors =>
           [ 'There were problems with your report. Please see below.',
             'You can only contact the team behind FixMyStreet using our contact form',
         ]
     },
     {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => 'update',
-        },
+        fields => { %common, dest => 'update' },
         page_errors =>
           [ 'There were problems with your report. Please see below.',
             'You can only contact the team behind FixMyStreet using our contact form',
@@ -327,44 +376,21 @@ for my $test (
             $test->{fields}->{'extra.phone'} = '';
             is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
 
+            # Ugh, but checking div not hidden; text always shown and hidden with CSS
             if ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'update' ) {
-                $mech->content_contains( 'www.writetothem.com', 'includes link to WTT if trying to update report' );
+                $mech->content_contains('<div class="form-error__box form-error--update">');
             } elsif ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'council' ) {
-                $mech->content_lacks( 'www.writetothem.com', 'does not include link to WTT if trying to contact council' );
-                $mech->content_contains( 'should find contact details', 'mentions checking council website for contact details' );
+                # Ugh, but checking div not hidden
+                $mech->content_contains('<div class="form-error__box form-error--council">');
             }
         }
     };
 }
 
 for my $test (
-    {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => 'help',
-        },
-    },
-    {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => 'feedback',
-        },
-    },
-    {
-        fields => {
-            em      => 'test@example.com',
-            name    => 'A name',
-            subject => 'A subject',
-            message => 'A message',
-            dest    => 'from_council',
-        },
-    },
+    { fields => { %common, dest => 'help' } },
+    { fields => { %common, dest => 'feedback' } },
+    { fields => { %common, dest => 'from_council' } },
   )
 {
     subtest 'check email sent correctly with dest field set to us' => sub {
@@ -382,24 +408,67 @@ for my $test (
 
 for my $test (
     {
+        fields => { %common, dest => undef },
+        page_errors =>
+          [ 'There were problems with your report. Please see below.',
+            'Please enter a topic of your message',
+            'You can only use this form to report inappropriate content', # The JS-hidden one
+        ]
+    },
+    {
+        fields => { %common, dest => 'council' },
+        page_errors =>
+          [ 'There were problems with your report. Please see below.',
+            'You can only use this form to report inappropriate content',
+        ]
+    },
+    {
+        fields => { %common, dest => 'update' },
+        page_errors =>
+          [ 'There were problems with your report. Please see below.',
+            'You can only use this form to report inappropriate content',
+        ]
+    },
+  )
+{
+    subtest 'check Bucks submit page incorrect destination handling' => sub {
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ 'buckinghamshire' ],
+        }, sub {
+            $mech->get_ok( '/contact?id=' . $problem_main->id, 'can visit for abuse report' );
+            $mech->submit_form_ok( { with_fields => $test->{fields} } );
+            is_deeply $mech->page_errors, $test->{page_errors}, 'page errors';
+
+            $test->{fields}->{'extra.phone'} = '';
+            is_deeply $mech->visible_form_values, $test->{fields}, 'form values';
+
+            if ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'update' ) {
+                $mech->content_contains('please leave an update');
+            } elsif ( $test->{fields}->{dest} and $test->{fields}->{dest} eq 'council' ) {
+                $mech->content_contains('should find other contact details');
+            }
+        }
+    };
+}
+
+for my $test (
+    {
         fields => {
-            em          => 'test@example.com',
-            name        => 'A name',
-            subject     => 'A subject',
-            message     => 'A message',
+            %common,
+            token => $csrf,
             dest        => 'from_council',
             success_url => '/faq',
+            s => "",
         },
         url_should_be => 'http://localhost/faq',
     },
     {
         fields => {
-            em          => 'test@example.com',
-            name        => 'A name',
-            subject     => 'A subject',
-            message     => 'A message',
+            %common,
+            token => $csrf,
             dest        => 'from_council',
             success_url => 'http://www.example.com',
+            s => "",
         },
         url_should_be => 'http://www.example.com',
     },
@@ -414,6 +483,45 @@ for my $test (
         }
     };
 }
+
+subtest 'check can limit contact to abuse reports' => sub {
+    FixMyStreet::override_config {
+        'ALLOWED_COBRANDS' => [ 'abuseonly' ],
+    }, sub {
+        $mech->get( '/contact' );
+        is $mech->res->code, 404, 'cannot visit contact page';
+        $mech->get_ok( '/contact?id=' . $problem_main->id, 'can visit for abuse report' );
+
+        my $token = FixMyStreet::App->model("DB::Token")->create({
+            scope => 'moderation',
+            data => { id => $problem_main->id }
+        });
+
+        $mech->get_ok( '/contact?m=' . $token->token, 'can visit for moderation complaint' );
+
+    }
+};
+
+subtest 'check redirected to correct form for general enquiries cobrand' => sub {
+    FixMyStreet::override_config {
+        'ALLOWED_COBRANDS' => [ 'generalenquiries' ],
+    }, sub {
+        $mech->get( '/contact' );
+        is $mech->res->code, 200, "got 200 for final destination";
+        is $mech->res->previous->code, 302, "got 302 for redirect";
+        is $mech->uri->path, '/contact/enquiry';
+
+        $mech->get_ok( '/contact?id=' . $problem_main->id, 'can visit for abuse report' );
+
+        my $token = FixMyStreet::App->model("DB::Token")->create({
+            scope => 'moderation',
+            data => { id => $problem_main->id }
+        });
+
+        $mech->get_ok( '/contact?m=' . $token->token, 'can visit for moderation complaint' );
+
+    }
+};
 
 $problem_main->delete;
 

@@ -1,4 +1,5 @@
 use FixMyStreet::TestMech;
+use Test::MockModule;
 
 my $mech = FixMyStreet::TestMech->new;
 
@@ -27,6 +28,13 @@ my $report_id = $report->id;
 ok $report, "created test report - $report_id";
 
 $mech->log_in_ok( $oxfordshireuser->email );
+
+my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Oxfordshire');
+$cobrand->mock('available_permissions', sub {
+    my $self = shift;
+
+    return FixMyStreet::Cobrand::Default->available_permissions;
+});
 
 subtest "Users can't edit report without report_edit permission" => sub {
     FixMyStreet::override_config {
@@ -91,7 +99,7 @@ FixMyStreet::override_config {
                 my $p = $perm ? 'with' : 'without';
                 my $r = $report->user eq $user2 ? 'with' : 'without';
                 subtest "User $u edit user for $b $p permission, $r cobrand relation" => sub {
-                    $mech->get("/admin/user_edit/$user2_id");
+                    $mech->get("/admin/users/$user2_id");
                     my $success = $mech->res->is_success();
                     ok $result == 200 ? $success : !$success, "got correct response";
                     is $mech->res->code, $result, "got $result";
@@ -100,13 +108,23 @@ FixMyStreet::override_config {
         }
     }
 
+    subtest "Users can't edit users of their own council without permission" => sub {
+        $mech->get_ok("/admin/users/$user2_id");
+        $mech->submit_form_ok( { with_fields => {
+            email => $user2->email,
+        } } );
+        $user2->discard_changes;
+        # Make sure we haven't lost the from_body info
+        is $user2->from_body->id, $oxfordshire->id;
+    };
+
     $oxfordshireuser->user_body_permissions->create({
         body => $oxfordshire,
         permission_type => 'user_assign_body',
     });
 
     subtest "Users can edit users of their own council" => sub {
-        $mech->get_ok("/admin/user_edit/$user2_id");
+        $mech->get_ok("/admin/users/$user2_id");
         $mech->content_contains( $user2->name );
 
         # We shouldn't be able to see the permissions tick boxes
@@ -131,7 +149,7 @@ FixMyStreet::override_config {
     subtest "Users can edit permissions" => sub {
         is $user2->user_body_permissions->count, 0, 'user2 has no permissions';
 
-        $mech->get_ok("/admin/user_edit/$user2_id");
+        $mech->get_ok("/admin/users/$user2_id");
         $mech->content_contains('Moderate report details');
 
         $mech->submit_form_ok( { with_fields => {
@@ -163,8 +181,9 @@ FixMyStreet::override_config {
 
     subtest "Unsetting user from_body removes all permissions and area " => sub {
         is $user2->user_body_permissions->count, 1, 'user2 has 1 permission';
+        $user2->update({ area_ids => [123] }); # Set to check cleared
 
-        $mech->get_ok("/admin/user_edit/$user2_id");
+        $mech->get_ok("/admin/users/$user2_id");
         $mech->content_contains('Moderate report details');
 
         $mech->submit_form_ok( { with_fields => {
@@ -186,8 +205,9 @@ FixMyStreet::override_config {
             "permissions[user_assign_areas]" => undef,
         } } );
 
+        $user2->discard_changes;
         is $user2->user_body_permissions->count, 0, 'user2 has had permissions removed';
-        is $user2->area_id, undef, 'user2 has had area removed';
+        is $user2->area_ids, undef, 'user2 has had area removed';
     };
 };
 

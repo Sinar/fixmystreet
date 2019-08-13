@@ -1,0 +1,22 @@
+[% scripts.push(
+    version('/cobrands/fixmystreet-uk-councils/council_validation_rules.js'),
+) %]
+[%~
+IF bodyclass.match('mappage');
+    scripts.push(
+        version('/vendor/OpenLayers.Projection.OrdnanceSurvey.js'),
+        version('/cobrands/fixmystreet/assets.js'),
+        version('/cobrands/fixmystreet-uk-councils/roadworks.js'),
+        version('/cobrands/bathnes/js.js'),
+        version('/cobrands/bathnes/assets.js'),
+    );
+END
+%]
+[%~
+SET council_area_id = c.cobrand.council_area_id;
+IF c.user_exists AND ((c.user.from_body AND c.user.from_body.areas.$council_area_id) OR c.user.is_superuser);
+    scripts.push(
+        version('/cobrands/bathnes/staff.js'),
+    );
+END
+%]

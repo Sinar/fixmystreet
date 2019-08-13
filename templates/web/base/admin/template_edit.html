@@ -13,7 +13,9 @@
         <p class="error">[% loc('Please correct the errors below') %]</p>
     [% END %]
 
-
+    [% IF errors.title %]
+        <div class="form-error">[% errors.title %]</div>
+    [% END %]
     <div class="admin-hint">
       <p>
         [% loc('This is a <strong>private</strong> name for this template so you can identify it when updating reports or editing in the admin.') %]
@@ -34,12 +36,7 @@
         <textarea class="form-control" name="text" class="required">[% rt.text | html %]</textarea>
     </p>
 
-    <div class="admin-hint">
-      <p>
-        [% loc('If you only want this template to be an option for specific categories, pick them here. By default they will show for all categories.') %]
-      </p>
-    </div>
-    [% INCLUDE 'admin/category-checkboxes.html' %]
+    [% INCLUDE 'admin/category-checkboxes.html' hint=loc('If you only want this template to be an option for specific categories, pick them here. By default they will show for all categories.') %]
 
     [% IF errors.state %]
         <div class="form-error">[% errors.state %]</div>

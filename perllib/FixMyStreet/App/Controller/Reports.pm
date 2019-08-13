@@ -6,7 +6,7 @@ use JSON::MaybeXS;
 use List::MoreUtils qw(any);
 use Path::Tiny;
 use RABX;
-use mySociety::MaPit;
+use FixMyStreet::MapIt;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
@@ -31,26 +31,7 @@ Show the summary page of all reports.
 sub index : Path : Args(0) {
     my ( $self, $c ) = @_;
 
-    # Zurich goes straight to map page, with all reports
-    if ( $c->cobrand->moniker eq 'zurich' ) {
-        $c->forward( 'stash_report_filter_status' );
-        $c->forward( 'load_and_group_problems' );
-        $c->stash->{body} = { id => 0 }; # So template can fetch the list
-
-        if ($c->get_param('ajax')) {
-            $c->detach('ajax', [ 'reports/_problem-list.html' ]);
-        }
-
-        my $pins = $c->stash->{pins};
-        $c->stash->{page} = 'reports';
-        FixMyStreet::Map::display_map(
-            $c,
-            latitude  => @$pins ? $pins->[0]{latitude} : 0,
-            longitude => @$pins ? $pins->[0]{longitude} : 0,
-            area      => 274456,
-            pins      => $pins,
-            any_zoom  => 1,
-        );
+    if ( $c->cobrand->call_hook('report_page_data') ) {
         return 1;
     }
 
@@ -59,14 +40,7 @@ sub index : Path : Args(0) {
         $c->detach( 'redirect_body' );
     }
 
-    if (my $body = $c->get_param('body')) {
-        $body = $c->model('DB::Body')->find( { id => $body } );
-        if ($body) {
-            $body = $c->cobrand->short_name($body);
-            $c->res->redirect("/reports/$body");
-            $c->detach;
-        }
-    }
+    $c->forward('display_body_stats');
 
     my $dashboard = $c->forward('load_dashboard_data');
 
@@ -92,13 +66,34 @@ sub index : Path : Args(0) {
             $c->stash->{children} = $children;
         }
     } else {
-        my @bodies = $c->model('DB::Body')->active->translated->with_area_count->all_sorted;
+        my @bodies = $c->model('DB::Body')->search(undef, {
+            columns => [ "id", "name" ],
+        })->active->translated->with_area_count->all_sorted;
         @bodies = @{$c->cobrand->call_hook('reports_hook_restrict_bodies_list', \@bodies) || \@bodies };
         $c->stash->{bodies} = \@bodies;
     }
 
     # Down here so that error pages aren't cached.
-    $c->response->header('Cache-Control' => 'max-age=3600');
+    my $max_age = FixMyStreet->config('CACHE_TIMEOUT') // 3600;
+    $c->response->header('Cache-Control' => 'max-age=' . $max_age);
+}
+
+=head2 display_body_stats
+
+Show the stats for a body if body param is set.
+
+=cut
+
+sub display_body_stats : Private {
+    my ( $self, $c ) = @_;
+    if (my $body = $c->get_param('body')) {
+        $body = $c->model('DB::Body')->find( { id => $body } );
+        if ($body) {
+            $body = $c->cobrand->short_name($body);
+            $c->res->redirect("/reports/$body");
+            $c->detach;
+        }
+    }
 }
 
 =head2 body
@@ -123,7 +118,7 @@ sub ward : Path : Args(2) {
 
     $c->forward('/auth/get_csrf_token');
 
-    my @wards = split /\|/, $ward || "";
+    my @wards = $c->get_param('wards') ? $c->get_param_list('wards', 1) : split /\|/, $ward || "";
     $c->forward( 'body_check', [ $body ] );
 
     # If viewing multiple wards, rewrite the url from
@@ -150,6 +145,8 @@ sub ward : Path : Args(2) {
         $c->go('index');
     }
 
+    $c->stash->{page} = 'reports'; # So the map knows to make clickable pins
+
     $c->forward( 'ward_check', [ @wards ] )
         if @wards;
     $c->forward( 'check_canonical_url', [ $body ] );
@@ -157,7 +154,8 @@ sub ward : Path : Args(2) {
     $c->forward( 'load_and_group_problems' );
 
     if ($c->get_param('ajax')) {
-        $c->detach('ajax', [ 'reports/_problem-list.html' ]);
+        my $ajax_template = $c->stash->{ajax_template} || 'reports/_problem-list.html';
+        $c->detach('ajax', [ $ajax_template ]);
     }
 
     $c->stash->{rss_url} = '/rss/reports/' . $body_short;
@@ -167,16 +165,15 @@ sub ward : Path : Args(2) {
     $c->stash->{stats} = $c->cobrand->get_report_stats();
 
     my @categories = $c->stash->{body}->contacts->not_deleted->search( undef, {
-        columns => [ 'category', 'extra' ],
+        columns => [ 'id', 'category', 'extra' ],
         distinct => 1,
         order_by => [ 'category' ],
     } )->all;
     $c->stash->{filter_categories} = \@categories;
     $c->stash->{filter_category} = { map { $_ => 1 } $c->get_param_list('filter_category', 1) };
 
-    my $pins = $c->stash->{pins};
+    my $pins = $c->stash->{pins} || [];
 
-    $c->stash->{page} = 'reports'; # So the map knows to make clickable pins
     my %map_params = (
         latitude  => @$pins ? $pins->[0]{latitude} : 0,
         longitude => @$pins ? $pins->[0]{longitude} : 0,
@@ -223,7 +220,7 @@ sub rss_area_ward : Path('/rss/area') : Args(2) {
     return if $c->cobrand->reports_body_check( $c, $area );
 
     # We must now have a string to check on mapit
-    my $areas = mySociety::MaPit::call( 'areas', $area,
+    my $areas = FixMyStreet::MapIt::call( 'areas', $area,
         type => $c->cobrand->area_types,
     );
 
@@ -290,12 +287,12 @@ sub rss_ward : Path('/rss/reports') : Args(2) {
     if ($c->stash->{ward}) {
         # Problems sent to a council, restricted to a ward
         $c->stash->{type} = 'ward_problems';
-        $c->stash->{title_params} = { COUNCIL => $c->stash->{body}->name, WARD => $c->stash->{ward}{name} };
+        $c->stash->{title_params} = { COUNCIL => $c->stash->{body}->cobrand_name, WARD => $c->stash->{ward}{name} };
         $c->stash->{db_params} = [ $c->stash->{body}->id, $c->stash->{ward}->{id} ];
     } else {
         # Problems sent to a council
         $c->stash->{type} = 'council_problems';
-        $c->stash->{title_params} = { COUNCIL => $c->stash->{body}->name };
+        $c->stash->{title_params} = { COUNCIL => $c->stash->{body}->cobrand_name };
         $c->stash->{db_params} = [ $c->stash->{body}->id ];
     }
 
@@ -394,13 +391,14 @@ sub ward_check : Private {
         $parent_id = $c->stash->{area}->{id};
     }
 
-    my $qw = mySociety::MaPit::call('area/children', [ $parent_id ],
+    my $qw = FixMyStreet::MapIt::call('area/children', [ $parent_id ],
         type => $c->cobrand->area_types_children,
     );
-    my %names = map { $_ => 1 } @wards;
+    my %names = map { $c->cobrand->short_name({ name => $_ }) => 1 } @wards;
     my @areas;
     foreach my $area (sort { $a->{name} cmp $b->{name} } values %$qw) {
-        push @areas, $area if $names{$area->{name}};
+        my $name = $c->cobrand->short_name($area);
+        push @areas, $area if $names{$name};
     }
     if (@areas) {
         $c->stash->{ward} = $areas[0] if @areas == 1;
@@ -453,7 +451,7 @@ sub summary : Private {
 
     # required to stop errors in generate_grouped_data
     $c->stash->{q_state} = '';
-    $c->stash->{ward} = $c->get_param('area');
+    $c->stash->{ward} = [ $c->get_param('area') || () ];
     $c->stash->{start_date} = $dtf->format_date($start_date);
     $c->stash->{end_date} = $c->get_param('end_date');
 
@@ -465,7 +463,7 @@ sub summary : Private {
     $c->forward('/admin/fetch_contacts');
     $c->stash->{contacts} = [ $c->stash->{contacts}->all ];
 
-    $c->forward('/dashboard/construct_rs_filter');
+    $c->forward('/dashboard/construct_rs_filter', []);
 
     if ( $c->get_param('csv') ) {
         $c->detach('export_summary_csv');
@@ -481,7 +479,7 @@ sub export_summary_csv : Private {
     my ( $self, $c ) = @_;
 
     $c->stash->{csv} = {
-        problems => $c->stash->{problems_rs}->search_rs({}, {
+        objects => $c->stash->{objects_rs}->search_rs({}, {
             rows => 100,
             order_by => { '-desc' => 'me.confirmed' },
         }),
@@ -557,19 +555,15 @@ sub load_and_group_problems : Private {
 
     my $states = $c->stash->{filter_problem_states};
     my $where = {
-        state      => [ keys %$states ]
+        'me.state' => [ keys %$states ]
     };
+
+    $c->forward('check_non_public_reports_permission', [ $where ] );
 
     my $body = $c->stash->{body}; # Might be undef
 
-    if ($c->user_exists && ($c->user->is_superuser || ($body && $c->user->has_permission_to('report_inspect', $body->id)))) {
-        # See all reports, no restriction
-    } else {
-        $where->{non_public} = 0;
-    }
-
     my $filter = {
-        order_by => $c->stash->{sort_order},
+        order_by => [ $c->stash->{sort_order}, { -desc => 'me.id' } ],
         rows => $c->cobrand->reports_per_page,
     };
     if ($c->user_exists && $body) {
@@ -620,12 +614,21 @@ sub load_and_group_problems : Private {
         $where->{longitude} = { '>=', $min_lon, '<', $max_lon };
     }
 
-    $problems = $problems->search(
-        $where,
-        $filter
-    )->include_comment_counts->page( $page );
+    my $cobrand_problems = $c->cobrand->call_hook('munge_load_and_group_problems', $where, $filter);
 
-    $c->stash->{pager} = $problems->pager;
+    # JS will request the same (or more) data client side
+    return if $c->get_param('js');
+
+    if ($cobrand_problems) {
+        $problems = $cobrand_problems;
+    } else {
+        $problems = $problems->search(
+            $where,
+            $filter
+        )->include_comment_counts->page( $page );
+
+        $c->stash->{pager} = $problems->pager;
+    }
 
     my ( %problems, @pins );
     while ( my $problem = $problems->next ) {
@@ -633,19 +636,11 @@ sub load_and_group_problems : Private {
             add_row( $c, $problem, 0, \%problems, \@pins );
             next;
         }
-        if ( !$problem->bodies_str ) {
-            # Problem was not sent to any body, add to all possible areas XXX
-            my $a = $problem->areas; # Store, as otherwise is looked up every iteration.
-            while ($a =~ /,(\d+)(?=,)/g) {
-                add_row( $c, $problem, $1, \%problems, \@pins );
-            }
-        } else {
-            # Add to bodies it was sent to
-            my $bodies = $problem->bodies_str_ids;
-            foreach ( @$bodies ) {
-                next if $_ != $body->id;
-                add_row( $c, $problem, $_, \%problems, \@pins );
-            }
+        # Add to bodies it was sent to
+        my $bodies = $problem->bodies_str_ids;
+        foreach ( @$bodies ) {
+            next if $_ != $body->id;
+            add_row( $c, $problem, $_, \%problems, \@pins );
         }
     }
 
@@ -655,6 +650,34 @@ sub load_and_group_problems : Private {
     );
 
     return 1;
+}
+
+
+sub check_non_public_reports_permission : Private {
+    my ($self, $c, $where) = @_;
+
+    if ( $c->user_exists ) {
+        my $user_has_permission;
+
+        if ( $c->user->is_superuser ) {
+            $user_has_permission = 1;
+        } else {
+            my $body = $c->stash->{body};
+
+            $user_has_permission = $body && (
+                $c->user->has_permission_to('report_inspect', $body->id) ||
+                $c->user->has_permission_to('report_mark_private', $body->id)
+            );
+        }
+
+        if ( $user_has_permission ) {
+            $where->{non_public} = 1 if $c->stash->{only_non_public};
+        } else {
+            $where->{non_public} = 0;
+        }
+    } else {
+        $where->{non_public} = 0;
+    }
 }
 
 sub redirect_index : Private {
@@ -678,7 +701,7 @@ sub stash_report_filter_status : Private {
     my ( $self, $c ) = @_;
 
     my @status = $c->get_param_list('status', 1);
-    @status = ($c->cobrand->on_map_default_status) unless @status;
+    @status = ($c->stash->{page} eq 'my' ? 'all' : $c->cobrand->on_map_default_status) unless @status;
     my %status = map { $_ => 1 } @status;
 
     my %filter_problem_states;
@@ -729,6 +752,10 @@ sub stash_report_filter_status : Private {
         }
     }
 
+    if ($status{non_public}) {
+        $c->stash->{only_non_public} = 1;
+    }
+
     if (keys %filter_problem_states == 0) {
       my $s = FixMyStreet::DB::Result::Problem->open_states();
       %filter_problem_states = (%filter_problem_states, %$s);
@@ -758,10 +785,13 @@ sub stash_report_sort : Private {
 
     $sort =~ /^(updated|created|comments)-(desc|asc)$/;
     my $order_by = $types{$1} || $1;
+    # field to use for report age cutoff
+    $c->stash->{report_age_field} = $order_by eq 'comment_count' ? 'lastupdate' : $order_by;
     my $dir = $2;
     $order_by = { -desc => $order_by } if $dir eq 'desc';
 
     $c->stash->{sort_order} = $order_by;
+
     return 1;
 }
 
@@ -779,7 +809,8 @@ sub ajax : Private {
 
     my @pins = map {
         my $p = $_;
-        [ $p->{latitude}, $p->{longitude}, $p->{colour}, $p->{id}, $p->{title} ]
+        # lat, lon, 'colour', ID, title, type/size, draggable
+        [ $p->{latitude}, $p->{longitude}, $p->{colour}, $p->{id}, $p->{title}, '', JSON->false ]
     } @{$c->stash->{pins}};
 
     my $list_html = $c->render_fragment($template);

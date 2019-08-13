@@ -36,8 +36,8 @@ sub generate {
         {
             columns => [
                 'id', 'bodies_str', 'state', 'areas', 'cobrand', 'category',
-                { duration => { extract => "epoch from current_timestamp-lastupdate" } },
-                { age      => { extract => "epoch from current_timestamp-$age_column"  } },
+                { duration => { extract => \"epoch from current_timestamp-lastupdate" } },
+                { age      => { extract => \"epoch from current_timestamp-$age_column"  } },
             ]
         }
     );
@@ -99,19 +99,35 @@ sub generate {
 }
 
 sub end_period {
-    my $period = shift;
-    FixMyStreet->set_time_zone(DateTime->now)->truncate(to => $period)->add($period . 's' => 1)->subtract(seconds => 1);
+    my ($period, $end) = @_;
+    $end ||= DateTime->now;
+    FixMyStreet->set_time_zone($end)->truncate(to => $period)->add($period . 's' => 1)->subtract(seconds => 1);
 }
 
 sub loop_period {
-    my ($date, $period, $extra) = @_;
-    my $end = end_period($period);
+    my ($date, $extra, $period, $end) = @_;
+    $end = end_period($period, $end);
     my @out;
     while ($date <= $end) {
         push @out, { n => $date->$period, $extra ? (d => $date->$extra) : () };
         $date->add($period . 's' => 1);
     }
     return @out;
+}
+
+sub get_period_group {
+    my ($start, $end) = @_;
+    my ($group_by, $extra);
+    if (DateTime::Duration->compare($end - $start, DateTime::Duration->new(months => 1)) < 0) {
+        $group_by = 'day';
+    } elsif (DateTime::Duration->compare($end - $start, DateTime::Duration->new(years => 1)) < 0) {
+        $group_by = 'month';
+        $extra = 'month_abbr';
+    } else {
+        $group_by = 'year';
+    }
+
+    return ($group_by, $extra);
 }
 
 sub generate_dashboard {
@@ -138,16 +154,8 @@ sub generate_dashboard {
         $min_confirmed = FixMyStreet->set_time_zone(DateTime->now)->truncate(to => 'day');
     }
 
-    my ($group_by, $extra);
-    if (DateTime::Duration->compare($end_today - $min_confirmed, DateTime::Duration->new(months => 1)) < 0) {
-        $group_by = 'day';
-    } elsif (DateTime::Duration->compare($end_today - $min_confirmed, DateTime::Duration->new(years => 1)) < 0) {
-        $group_by = 'month';
-        $extra = 'month_abbr';
-    } else {
-        $group_by = 'year';
-    }
-    my @problem_periods = loop_period($min_confirmed, $group_by, $extra);
+    my ($group_by, $extra) = get_period_group($min_confirmed, $end_today);
+    my @problem_periods = loop_period($min_confirmed, $extra, $group_by);
 
     my %problems_reported_by_period = stuff_by_day_or_year(
         $group_by, $rs,
@@ -261,7 +269,7 @@ sub calculate_top_five_bodies {
 
     my $bodies = FixMyStreet::DB->resultset('Body')->search;
     while (my $body = $bodies->next) {
-        my $avg = $body->calculate_average;
+        my $avg = $body->calculate_average($cobrand_cls->call_hook("body_responsiveness_threshold"));
         push @top_five_bodies, { name => $body->name, days => int($avg / 60 / 60 / 24 + 0.5) }
             if defined $avg;
     }

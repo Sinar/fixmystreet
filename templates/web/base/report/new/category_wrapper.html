@@ -1,9 +1,10 @@
 <div id="form_category_row">
 [% IF js %]
     <label for="form_category">[% loc('Category') %]</label>
-    <select class="form-control" name="category" id="form_category"
+    <select class="validCategory form-control" name="category" id="form_category"
     [%~ IF c.user.from_body =%]
-      data-role="[% c.user.has_body_permission_to('planned_reports') ? 'inspector' : 'user'  %]" data-body="[% c.user.from_body.name %]" data-prefill="[% c.cobrand.prefill_report_fields_for_inspector %]"
+      [%~ prefill_report = c.cobrand.prefill_report_fields_for_inspector || c.user.has_body_permission_to('report_prefill') %]
+      data-body="[% c.user.from_body.name %]" data-prefill="[% prefill_report %]"
     [%~ END =%]
     required><option>[% loc('Loading...') %]</option></select>
 [% ELSE %]
@@ -16,6 +17,12 @@
 [% END %]
 </div>
 
-[%- IF category_extras OR report_extra_fields %]
+[% PROCESS "report/new/duplicate_suggestions.html" %]
+
+<div id="js-post-category-messages" class="js-hide-if-invalid-category_extras">
+    [%# This section includes 'Pick an asset' text, roadworks info, extra category questions %]
+
+  [%- IF category_extras OR report_extra_fields %]
     [% PROCESS "report/new/category_extras.html" %]
-[%- END %]
+  [%- END %]
+</div>

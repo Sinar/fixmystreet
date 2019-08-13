@@ -2,13 +2,18 @@ package Open311::PopulateServiceList;
 
 use Moo;
 use Open311;
+use Text::CSV;
 
 has bodies => ( is => 'ro' );
 has found_contacts => ( is => 'rw', default => sub { [] } );
 has verbose => ( is => 'ro', default => 0 );
 has schema => ( is => 'ro', lazy => 1, default => sub { FixMyStreet::DB->schema->connect } );
 
-has _current_body => ( is => 'rw' );
+has _current_body => ( is => 'rw', trigger => sub {
+    my ($self, $body) = @_;
+    $self->_current_body_cobrand($body->get_cobrand_handler);
+} );
+has _current_body_cobrand => ( is => 'rw' );
 has _current_open311 => ( is => 'rw' );
 has _current_service => ( is => 'rw' );
 
@@ -160,10 +165,8 @@ sub _handle_existing_contact {
         $contact->update;
     }
 
-    if (my $group = $self->_current_service->{group}) {
-        $contact->set_extra_metadata(group => $group);
-        $contact->update;
-    }
+    $self->_set_contact_group($contact);
+    $self->_set_contact_non_public($contact);
 
     push @{ $self->found_contacts }, $self->_current_service->{service_code};
 }
@@ -188,12 +191,6 @@ sub _create_contact {
         );
     };
 
-    if (my $group = $self->_current_service->{group}) {
-        $contact->set_extra_metadata(group => $group);
-        $contact->update;
-    }
-
-
     if ( $@ ) {
         warn "Failed to create contact for service code " . $self->_current_service->{service_code} . " for body @{[$self->_current_body->id]}: $@\n"
             if $self->verbose >= 1;
@@ -204,6 +201,9 @@ sub _create_contact {
     if ( $contact and lc($metadata) eq 'true' ) {
         $self->_add_meta_to_contact( $contact );
     }
+
+    $self->_set_contact_group($contact);
+    $self->_set_contact_non_public($contact);
 
     if ( $contact ) {
         push @{ $self->found_contacts }, $self->_current_service->{service_code};
@@ -229,43 +229,17 @@ sub _add_meta_to_contact {
     # turn the data into something a bit more friendly to use
     my @meta =
         # remove trailing colon as we add this when we display so we don't want 2
-        map { $_->{description} =~ s/:\s*//; $_ }
+        map { $_->{description} =~ s/:\s*$//; $_ }
         # there is a display order and we only want to sort once
         sort { $a->{order} <=> $b->{order} }
         @{ $meta_data->{attributes} };
 
     # Some Open311 endpoints, such as Bromley and Warwickshire send <metadata>
     # for attributes which we *don't* want to display to the user (e.g. as
-    # fields in "category_extras"
-
-    if ($self->_current_body->name eq 'Bromley Council') {
-        $contact->set_extra_metadata( id_field => 'service_request_id_ext');
-    } elsif ($self->_current_body->name eq 'Warwickshire County Council') {
-        $contact->set_extra_metadata( id_field => 'external_id');
-    }
-
-    my %override = (
-        #2482
-        'Bromley Council' => [qw(
-            requested_datetime
-            report_url
-            title
-            last_name
-            email
-            report_title
-            public_anonymity_required
-            email_alerts_requested
-        ) ],
-        #2243,
-        'Warwickshire County Council' => [qw(
-            closest_address
-        ) ],
-    );
-
-    if (my $override = $override{ $self->_current_body->name }) {
-        my %ignore = map { $_ => 1 } @{ $override };
-        @meta = grep { ! $ignore{ $_->{ code } } } @meta;
-    }
+    # fields in "category_extras"), or need additional attributes adding not
+    # returned by the server for whatever reason.
+    $self->_current_body_cobrand && $self->_current_body_cobrand->call_hook(
+        open311_contact_meta_override => $self->_current_service, $contact, \@meta);
 
     $contact->set_extra_fields(@meta);
     $contact->update;
@@ -286,6 +260,73 @@ sub _normalize_service_name {
     return $service_name;
 }
 
+sub _set_contact_group {
+    my ($self, $contact) = @_;
+
+    my $groups_enabled = $self->_current_body_cobrand && $self->_current_body_cobrand->enable_category_groups;
+    my $multi_groups_enabled = $self->_current_body_cobrand && $self->_current_body_cobrand->enable_multiple_category_groups;
+    my $old_group = $contact->get_extra_metadata('group') || '';
+    my $new_group = $groups_enabled ? $self->_current_service->{group} || '' : '';
+
+    if ($multi_groups_enabled && $new_group =~ /,/) {
+        my $csv = Text::CSV->new;
+        if ( $csv->parse($new_group) ) {
+            $new_group = [ $csv->fields ];
+        } else {
+            warn "error parsing groups for " . $self->_current_body_cobrand->moniker . "contact " . $contact->category . ": $new_group\n";
+            $new_group = [ $new_group ];
+        }
+    }
+
+    if ($self->_groups_different($old_group, $new_group)) {
+        if ($new_group) {
+            $contact->set_extra_metadata(group => $new_group);
+            $contact->update({
+                editor => $0,
+                whenedited => \'current_timestamp',
+                note => 'group updated automatically by script',
+            });
+        } else {
+            $contact->unset_extra_metadata('group');
+            $contact->update({
+                editor => $0,
+                whenedited => \'current_timestamp',
+                note => 'group removed automatically by script',
+            });
+        }
+    }
+}
+
+sub _set_contact_non_public {
+    my ($self, $contact) = @_;
+
+    # We never want to make a private category unprivate.
+    return if $contact->non_public;
+
+    my %keywords = map { $_ => 1 } split /,/, ( $self->_current_service->{keywords} || '' );
+    $contact->update({
+        non_public => 1,
+        editor => $0,
+        whenedited => \'current_timestamp',
+        note => 'marked private automatically by script',
+    }) if $keywords{private};
+}
+
+sub _groups_different {
+    my ($self, $old, $new) = @_;
+
+    my $diff = 1;
+    if ($old && $new) {
+        $old = [ $old ] unless ref $old eq 'ARRAY';
+        $new = [ $new ] unless ref $new eq 'ARRAY';
+        $diff = join( ',', sort(@$old) ) ne join( ',', sort(@$new) );
+    } elsif (!$old && !$new) {
+        $diff = 0;
+    }
+
+    return $diff;
+}
+
 sub _delete_contacts_not_in_service_list {
     my $self = shift;
 
@@ -296,25 +337,15 @@ sub _delete_contacts_not_in_service_list {
         }
     );
 
-    # for Warwickshire/Bristol/BANES, which are mixed Open311 and email, don't delete
-    # the email addresses
-    if ($self->_current_body->name eq 'Warwickshire County Council' ||
-        $self->_current_body->name eq 'Bristol City Council' ||
-        $self->_current_body->name eq 'Bath and North East Somerset Council') {
+    if ($self->_current_body->can_be_devolved) {
+        # If the body has can_be_devolved switched on, it's most likely a
+        # combination of Open311/email, so ignore any email addresses.
         $found_contacts = $found_contacts->search(
-            {
-                email => { -not_like => '%@%' }
-            }
-        );
-    } elsif ($self->_current_body->name eq 'East Hertfordshire District Council') {
-        # For EHDC we need to leave the 'Other' category alone or reports made
-        # in this category will be sent only to Hertfordshire County Council.
-        $found_contacts = $found_contacts->search(
-            {
-                category => { '!=' => 'Other' }
-            }
+            { email => { -not_like => '%@%' } }
         );
     }
+
+    $found_contacts = $self->_delete_contacts_not_in_service_list_cobrand_overrides($found_contacts);
 
     $found_contacts->update(
         {
@@ -324,6 +355,12 @@ sub _delete_contacts_not_in_service_list {
             note => 'automatically marked as deleted by script'
         }
     );
+}
+
+sub _delete_contacts_not_in_service_list_cobrand_overrides {
+    my ( $self, $found_contacts ) = @_;
+
+    return $found_contacts;
 }
 
 1;

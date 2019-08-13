@@ -55,12 +55,26 @@ h1 {
 
 #main-nav {
   min-height: $mappage-header-height; // defaults to map header height; should be height of #site-header (eg: #site-logo + any vertical padding)
+  height: 1px; // flex `align-items: center` doesn't work in IE10 and IE11 unless flex container has an explicit height (even when min-height means this explicit height gets ignored!)
   @include flex-container();
   @include flex-align(center);
   float: $right; // we could use justify-content here, but float degrades better for non-flexbox browsers
   margin: 0;
   @if ($header-top-border) {
     margin-top: $header-top-border-width * -1; // visually compensate for border on #site-header
+  }
+
+  // No flexbox in IE9, so replace `align-items: center` with absolute positioning
+  .ie9 & {
+    position: relative;
+    float: none;
+
+    & > * {
+        position: absolute;
+        top: 50%;
+        #{$right}: 0;
+        -ms-transform: translate(0, -50%);
+    }
   }
 }
 
@@ -98,12 +112,12 @@ h1 {
   }
   a, span {
     display: block;
-    color: $nav_fg;
+    color: $nav_colour;
     background-color: transparent;
     border-bottom: none;
   }
   a:visited {
-    color: $nav_fg;
+    color: $nav_colour;
   }
 }
 .nav-menu--main {
@@ -112,12 +126,12 @@ h1 {
     font-size: 0.9em;
   }
   a:hover {
-    background-color: $nav_fg_hover;
+    background-color: $nav_hover_background_colour;
   }
   a.report-a-problem-btn {
     color: $primary_text;
     background-color: $primary;
-    padding:0.25em;
+    padding:0.25em 0.5em;
     margin:0.5em;
     @include border-radius(0.25em);
     &:hover {
@@ -184,12 +198,11 @@ body.mappage {
 //    padding: 0.5em;
 //    margin: 0.9em 0.25em 0.85em;
 //  }
+}
 
-  .banner {
-    p {
-      top: -2.1em; // a few pixels lower than default
-    }
-  }
+.box-warning,
+.extra-category-questions {
+  margin: 1em ($mappage-sidebar-padding * -1);
 }
 
 // Want to cover over the blue sidebar
@@ -260,19 +273,6 @@ body.mappage.admin {
       width: $mappage-sidebar-width--medium + $mappage-actions-width--medium;
     }
   }
-
-  // Chrome/Safari count padding-bottom as part of the scrollable content in
-  // an overflow:scroll element (technically in contravention of the spec),
-  // whereas Firefox/IE render the padding outside the scrollable area.
-  // We need padding at the bottom of the sidebar, to stop .shadow-wrap from
-  // obscuring content at the bottom of the sidebar. So we use an :after
-  // pseudo-element instead of padding.
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=748518
-  &:after {
-    content: "";
-    display: block;
-    height: 4em;
-  }
 }
 
 // This goes inside #map_sidebar, and establishes a flex container allowing
@@ -340,6 +340,10 @@ body.mappage.admin {
   }
 }
 
+.change_location {
+  display: block;
+}
+
 .category_meta_message {
   padding-top: 0.5em;
   font-size: 0.9em;
@@ -379,60 +383,47 @@ body.mappage.admin {
   }
 }
 
-body.twothirdswidthpage,
-body.fullwidthpage {
-    .container {
-        .content {
-            footer {
-                margin-top: 0em;
-                margin-bottom: -1em;
-                .tablewrapper {
-                    padding-top: 2em;
-                    padding-bottom: 3em;
-                    background: $base_bg;
-                    color: $base_fg;
-                    a:link,
-                    a:visited {
-                        color: $primary;
-                    }
-                    #footer-mobileapps {
-                        a {
-                            padding-#{$left}: 0.5em;
-                        }
-                    }
-                    h4 {
-                        font-weight: normal;
-                        padding-bottom: 0.5em;
-                    }
-                }
-
-                a.platform-logo {
-                    vertical-align: baseline;
-                    display: inline-block;
-                    background-position: top left;
-                    background-repeat: no-repeat;
-                    background-size: auto 1.5em;
-                    background-image: url(/cobrands/fixmystreet/images/fms-platform-logo.svg);
-                    text-indent: -1000%;
-                    height: 1.7em;
-                    width: 16em;
-                    padding-#{$right}: 0.25em;
-                }
+// Only want to capture footers that are inside .content
+// (like the one in base)
+.content {
+    footer {
+        margin-top: 0em;
+        margin-bottom: -1em;
+        .tablewrapper {
+            padding-top: 2em;
+            padding-bottom: 3em;
+            background: $base_bg;
+            color: $base_fg;
+            a:link,
+            a:visited {
+                color: $primary;
+            }
+            h4 {
+                font-weight: normal;
+                padding-bottom: 0.5em;
             }
         }
     }
-
 }
-.ie8 {
-  body.twothirdswidthpage,
-  body.fullwidthpage {
-    .container .content footer a.platform-logo {
-      color: #ffffff;
-      background: none;
-      text-indent: 0px;
-      height: auto;
+
+a.platform-logo {
+    vertical-align: baseline;
+    display: inline-block;
+    background-position: top left;
+    background-repeat: no-repeat;
+    background-size: auto 1.5em;
+    background-image: url(/cobrands/fixmystreet/images/fms-platform-logo.svg);
+    text-indent: -1000%;
+    height: 1.7em;
+    width: 16em;
+    padding-#{$right}: 0.25em;
+
+    .ie8 & {
+        color: #ffffff;
+        background: none;
+        text-indent: 0px;
+        height: auto;
     }
-  }
 }
 
 // two thirds width page, also has option for a sidebar which can be sticky or not
@@ -535,7 +526,10 @@ body.authpage {
     margin-top:0;
   }
   p {
-	  border-bottom:none;
+    border-bottom:none;
+  }
+  a {
+    padding-#{$left}: 0.5em;
   }
 }
 
@@ -657,7 +651,7 @@ body.authpage {
     top: 50%;
     margin-top: -6px;
     #{$left}: ((16px - 6px) / 2); // horizontally centre in 16px wide parent
-    background-size: 96px 12px;
+    background-size: 108px 12px;
     @include svg-background-image('/cobrands/fixmystreet/images/map-tools');
   }
 
@@ -749,38 +743,6 @@ body.authpage {
 .ie8 {
   .big-green-banner {
     background-image: url(/cobrands/fixmystreet/images/chevron-white-#{$right}-on-green.gif);
-  }
-}
-
-.banner {
-  // state banners
-  p {
-    top:-2.25em;
-    padding:1em;
-    &:before {
-      #{$left}: -0.75em;
-      border-#{$left}: 0.75em solid transparent;
-      border-bottom: 0.75em solid #888;
-    }
-  }
-
-  #fixed,
-  #closed {
-    padding-top: 48px;
-    padding-top: calc(1.5em + 32px);
-    background-image: url('/i/pin-flat-white-small.png');
-    background-size: 24px 32px;
-    background-position: 50% 1em;
-    background-repeat:no-repeat;
-    &:before {
-      border-bottom: 0.75em solid $col_fixed_label_dark;
-    }
-  }
-
-  #closed {
-    &:before {
-      border-bottom-color: #666;
-    }
   }
 }
 
@@ -879,6 +841,9 @@ textarea.form-error {
     label {
       margin:0.5em 0;
     }
+    .form-hint {
+        margin-top: -0.25em;
+    }
     div {
       display:block;
       margin:0 auto;
@@ -924,22 +889,23 @@ textarea.form-error {
 
 #front-howto {
   border-#{$right}: 1em solid transparent;
-  #front_stats {
-    background:none;
-    color: #222;
-    border-top:0.25em solid $primary;
-    padding-top:1em;
-    big {
-      color: $layout_front_stats_color;
-      font-size: 2em;
-      @media (min-width: 54em) {
-        // 54em roughly halfway between 48em and 62em
-        font-size: 2.5em;
-      }
-      @media (min-width: 62em) {
-        // container max-width 60em + 2em side padding
-        font-size: 3em;
-      }
+}
+
+#front_stats {
+  background:none;
+  color: #222;
+  border-top:0.25em solid $primary;
+  padding-top:1em;
+  big {
+    color: $layout_front_stats_color;
+    font-size: 2em;
+    @media (min-width: 54em) {
+      // 54em roughly halfway between 48em and 62em
+      font-size: 2.5em;
+    }
+    @media (min-width: 62em) {
+      // container max-width 60em + 2em side padding
+      font-size: 3em;
     }
   }
 }

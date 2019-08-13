@@ -1,7 +1,7 @@
 use Test::MockTime qw(:all);
 use FixMyStreet::TestMech;
 use mySociety::MaPit;
-use FixMyStreet::App;
+use FixMyStreet::DB;
 use FixMyStreet::Script::UpdateAllReports;
 use DateTime;
 
@@ -95,8 +95,19 @@ $fife_problems[10]->update( {
     state => 'hidden',
 });
 
-# Run the cron script old-data (for the table no longer used by default)
-FixMyStreet::Script::UpdateAllReports::generate(1);
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => 'fixmystreet',
+}, sub {
+    subtest 'Test the cron script old-data (for the table no longer used by default)' => sub {
+        FixMyStreet::Script::UpdateAllReports::generate(1);
+
+        # Old style page no longer exists in core, but let's just check the code works okay
+        my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker('fixmystreet')->new();
+        FixMyStreet::DB->schema->cobrand($cobrand);
+        my @bodies = FixMyStreet::DB->resultset('Body')->active->translated->all_sorted;
+        is $bodies[0]->{url}->(), '/reports/Birmingham';
+    };
+};
 
 # Run the cron script that makes the data for /reports so we don't get an error.
 my $data = FixMyStreet::Script::UpdateAllReports::generate_dashboard();
@@ -115,19 +126,20 @@ $mech->content_contains('5,9,10,22');
 $mech->content_contains('2,3,4,4');
 
 FixMyStreet::override_config {
+    ALLOWED_COBRANDS => 'fixmystreet',
     MAPIT_URL => 'http://mapit.uk/',
 }, sub {
     $mech->submit_form_ok( { with_fields => { body => $body_edin_id } }, 'Submitted dropdown okay' );
-    is $mech->uri->path, '/reports/City+of+Edinburgh+Council';
+    is $mech->uri->path, '/reports/City+of+Edinburgh';
 
     subtest "test ward pages" => sub {
         $mech->get_ok('/reports/Birmingham/Bad-Ward');
-        is $mech->uri->path, '/reports/Birmingham+City+Council';
-        $mech->get_ok('/reports/Birmingham/Aston');
-        is $mech->uri->path, '/reports/Birmingham+City+Council/Aston';
-        $mech->get_ok('/reports/Birmingham/Aston|Bournville');
-        is $mech->uri->path, '/reports/Birmingham+City+Council/Aston%7CBournville';
-        $mech->content_contains('Aston, Bournville');
+        is $mech->uri->path, '/reports/Birmingham';
+        $mech->get_ok('/reports/Birmingham/Bordesley+and+Highgate');
+        is $mech->uri->path, '/reports/Birmingham/Bordesley+and+Highgate';
+        $mech->get_ok('/reports/Birmingham/Bordesley+and+Highgate|Birchfield');
+        is $mech->uri->path, '/reports/Birmingham/Bordesley+and+Highgate%7CBirchfield';
+        $mech->content_contains('Birchfield, Bordesley & Highgate');
     };
 
     $mech->get_ok('/reports/Westminster');
@@ -203,6 +215,93 @@ is scalar @$problems, 4, 'only public problems are displayed';
 
 $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible');
 
+for my $permission( qw/ report_inspect report_mark_private / ) {
+    subtest "user with $permission permission can see non public reports" => sub {
+        my $body = FixMyStreet::DB->resultset('Body')->find( $body_west_id );
+        my $body2 = FixMyStreet::DB->resultset('Body')->find( $body_edin_id );
+        my $user = $mech->log_in_ok( 'test@example.com' );
+
+        # from body, no permission
+        $user->user_body_permissions->delete();
+        $user->update({ from_body => $body });
+
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 4, 'only public problems are displayed if no permission';
+        $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible if no permission');
+        $mech->content_lacks('<option value="non_public">Private only</option>');
+
+        # from body, no permission, limited to private in url
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster?status=non_public');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 4, 'only public problems are displayed if no permission, despite override';
+        $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible despite override');
+
+        # from body, has permission
+        $user->user_body_permissions->find_or_create({
+            body => $body,
+            permission_type => $permission,
+        });
+
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 5, 'public and non-public problems are displayed if permission';
+        $mech->content_contains('All reports Test 3 for ' . $body_west_id, 'non public problem is visible if permission');
+        $mech->content_contains('<option value="non_public">Private only</option>');
+
+        # From body, limited to private only
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster?status=non_public');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 1, 'only non-public problems are displayed with non_public filter';
+        $mech->content_contains('All reports Test 3 for ' . $body_west_id, 'non public problem is visible with non_public filter');
+        $mech->content_lacks('All reports Test 4 for ' . $body_west_id, 'public problem is not visible with non_public filter');
+
+        # from other body, has permission
+        $user->user_body_permissions->delete();
+        $user->update({ from_body => $body2 });
+        $user->user_body_permissions->find_or_create({
+            body => $body2,
+            permission_type => $permission,
+        });
+
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 4, 'only public problems are displayed for other body user';
+        $mech->content_contains('<option value="non_public">Private only</option>');
+        $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible for other body user');
+
+        # From other body, limited to private only
+        FixMyStreet::override_config {
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $mech->get_ok('/reports/Westminster?status=non_public');
+        };
+        $problems = $mech->extract_problem_list;
+        is scalar @$problems, 4, 'non-public problems are not displayed for other body with override';
+        $mech->content_lacks('All reports Test 3 for ' . $body_west_id, 'non public problem is not visible for other body with override');
+    };
+}
+
 # No change to numbers if report is non-public
 FixMyStreet::override_config {
     TEST_DASHBOARD_DATA => $data,
@@ -253,7 +352,7 @@ subtest "it lists shortlisted reports" => sub {
     FixMyStreet::override_config {
         MAPIT_URL => 'http://mapit.uk/'
     }, sub {
-        my $body = FixMyStreet::App->model('DB::Body')->find( $body_edin_id );
+        my $body = FixMyStreet::DB->resultset('Body')->find( $body_edin_id );
         my $user = $mech->log_in_ok( 'test@example.com' );
         $user->update({ from_body => $body });
         $user->user_body_permissions->find_or_create({
@@ -303,7 +402,7 @@ subtest "it allows body users to filter by subtypes" => sub {
     FixMyStreet::override_config {
         MAPIT_URL => 'http://mapit.uk/'
     }, sub {
-        my $body = FixMyStreet::App->model('DB::Body')->find( $body_edin_id );
+        my $body = FixMyStreet::DB->resultset('Body')->find( $body_edin_id );
         my $user = $mech->log_in_ok( 'test@example.com' );
         $user->update({ from_body => $body });
 
@@ -362,7 +461,7 @@ subtest "it does not allow body users to filter subcategories for other bodies" 
     FixMyStreet::override_config {
         MAPIT_URL => 'http://mapit.uk/'
     }, sub {
-        my $body = FixMyStreet::App->model('DB::Body')->find( $body_west_id );
+        my $body = FixMyStreet::DB->resultset('Body')->find( $body_west_id );
         my $user = $mech->log_in_ok( 'test@example.com' );
         $user->update({ from_body => $body });
 

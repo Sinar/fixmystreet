@@ -7,6 +7,7 @@ use RABX;
 use List::Util qw(min);
 use Scalar::Util 'blessed';
 use DateTime::Format::Pg;
+use Try::Tiny;
 
 use strict;
 use warnings;
@@ -86,8 +87,6 @@ sub example_places {
 
 sub languages { [ 'de-ch,Deutsch,de_CH' ] }
 sub language_override { 'de-ch' }
-
-sub default_link_zoom { 6 }
 
 sub prettify_dt {
     my $self = shift;
@@ -236,10 +235,12 @@ my %public_holidays = map { $_ => 1 } (
     '2019-01-01', '2019-01-02', '2019-04-19', '2019-04-22',
     '2019-04-08', '2019-05-01', '2019-05-30', '2019-06-10',
     '2019-08-01', '2019-09-09', '2019-12-25', '2019-12-26',
+    '2019-04-18', '2019-05-29', '2019-05-31', '2019-12-24', '2019-12-27', '2019-12-30', '2019-12-31',
 
     '2020-01-01', '2020-01-02', '2020-04-10', '2020-04-13',
     '2020-04-20', '2020-05-01', '2020-05-21', '2020-06-01',
     '2020-09-14', '2020-12-25',
+    '2020-05-20', '2020-05-22', '2020-12-24', '2020-12-28', '2020-12-29', '2020-12-30', '2020-12-31',
 
     '2021-01-01', '2021-04-02', '2021-04-05',
     '2021-04-19', '2021-05-13', '2021-05-24',
@@ -313,6 +314,31 @@ sub get_or_check_overdue {
     return $overdue if defined $overdue;
 
     return $self->overdue($problem);
+}
+
+sub report_page_data {
+    my $self = shift;
+    my $c = $self->{c};
+
+    $c->stash->{page} = 'reports';
+    $c->forward( 'stash_report_filter_status' );
+    $c->forward( 'load_and_group_problems' );
+    $c->stash->{body} = { id => 0 }; # So template can fetch the list
+
+    if ($c->get_param('ajax')) {
+        $c->detach('ajax', [ 'reports/_problem-list.html' ]);
+    }
+
+    my $pins = $c->stash->{pins};
+    FixMyStreet::Map::display_map(
+        $c,
+        latitude  => @$pins ? $pins->[0]{latitude} : 0,
+        longitude => @$pins ? $pins->[0]{longitude} : 0,
+        area      => 274456,
+        pins      => $pins,
+        any_zoom  => 1,
+    );
+    return 1;
 }
 
 =head1 C<set_problem_state>
@@ -434,7 +460,7 @@ sub admin {
         my $dir = defined $c->get_param('d') ? $c->get_param('d') : 1;
         $c->stash->{order} = $order;
         $c->stash->{dir} = $dir;
-        $order .= ' desc' if $dir;
+        $order = { -desc => $order } if $dir;
 
         # XXX No multiples or missing bodies
         $c->stash->{submitted} = $c->cobrand->problems->search({
@@ -468,7 +494,7 @@ sub admin {
         my $dir = defined $c->get_param('d') ? $c->get_param('d') : 1;
         $c->stash->{order} = $order;
         $c->stash->{dir} = $dir;
-        $order .= ' desc' if $dir;
+        $order = { -desc => $order } if $dir;
 
         # XXX No multiples or missing bodies
         $c->stash->{reports_new} = $c->cobrand->problems->search( {
@@ -625,7 +651,7 @@ sub admin_report_edit {
             && $new_cat
             && $new_cat ne $problem->category
         ) {
-            my $cat = $c->model('DB::Contact')->search({ category => $c->get_param('category') } )->first;
+            my $cat = $c->model('DB::Contact')->not_deleted->search({ category => $c->get_param('category') } )->first;
             my $old_cat = $problem->category;
             $problem->category( $new_cat );
             $problem->external_body( undef );
@@ -1037,7 +1063,7 @@ sub munge_sendreport_params {
 }
 
 sub admin_fetch_all_bodies {
-    my ( $self, @bodies ) = @_;
+    my ( $self ) = @_;
 
     sub tree_sort {
         my ( $level, $id, $sorted, $out ) = @_;
@@ -1047,26 +1073,30 @@ sub admin_fetch_all_bodies {
         if ( $level == 0 ) {
             @sorted = sort {
                 # Want Zurich itself at the top.
-                return -1 if $sorted->{$a->id};
-                return 1 if $sorted->{$b->id};
+                return -1 if $sorted->{$a->{id}};
+                return 1 if $sorted->{$b->{id}};
                 # Otherwise, by name
-                strcoll($a->name, $b->name)
+                strcoll($a->{name}, $b->{name})
             } @$array;
         } else {
-            @sorted = sort { strcoll($a->name, $b->name) } @$array;
+            @sorted = sort { strcoll($a->{name}, $b->{name}) } @$array;
         }
         foreach ( @sorted ) {
-            $_->api_key( $level ); # Misuse
+            $_->{indent_level} = $level;
             push @$out, $_;
-            if ($sorted->{$_->id}) {
-                tree_sort( $level+1, $_->id, $sorted, $out );
+            if ($sorted->{$_->{id}}) {
+                tree_sort( $level+1, $_->{id}, $sorted, $out );
             }
         }
     }
 
+    my @bodies = FixMyStreet::DB->resultset('Body')->search(undef, {
+        columns => [ "id", "name", "deleted", "parent", "endpoint" ],
+    })->translated->with_children_count->all_sorted;
+
     my %sorted;
     foreach (@bodies) {
-        my $p = $_->parent ? $_->parent->id : 0;
+        my $p = $_->{parent} ? $_->{parent}{id} : 0;
         push @{$sorted{$p}}, $_;
     }
 
@@ -1172,9 +1202,9 @@ sub admin_stats {
 
 sub export_as_csv {
     my ($self, $c, $params) = @_;
-    $c->model('DB')->schema->storage->sql_maker->quote_char('"');
+
     my $csv = $c->stash->{csv} = {
-        problems => $c->model('DB::Problem')->search_rs(
+        objects => $c->model('DB::Problem')->search_rs(
             $params,
             {
                 join => ['admin_log_entries', 'user'],
@@ -1260,7 +1290,6 @@ sub export_as_csv {
         filename => 'stats',
     };
     $c->forward('/dashboard/generate_csv');
-    $c->model('DB')->schema->storage->sql_maker->quote_char('');
 }
 
 sub problem_confirm_email_extras {

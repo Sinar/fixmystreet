@@ -8,6 +8,8 @@ use mySociety::Random;
 
 use constant COUNCIL_ID_BROMLEY => 2482;
 
+sub on_map_default_status { return 'open'; }
+
 # Special extra
 sub path_to_web_templates {
     my $self = shift;
@@ -35,6 +37,15 @@ sub restriction {
     return {};
 }
 
+sub munge_category_list {
+    my ($self, $options, $contacts, $extras) = @_;
+
+    # No TfL Traffic Lights category in Hounslow
+    my %bodies = map { $_->body->name => 1 } @$contacts;
+    return unless $bodies{'Hounslow Borough Council'};
+    @$options = grep { ($_->{category} || $_->category) !~ /^Traffic lights$/i } @$options;
+}
+
 sub title_list {
     my $self = shift;
     my $areas = shift;
@@ -47,9 +58,6 @@ sub title_list {
 sub extra_contact_validation {
     my $self = shift;
     my $c = shift;
-
-    # Don't care about dest if reporting abuse
-    return () if $c->stash->{problem};
 
     my %errors;
 
@@ -113,7 +121,7 @@ sub _email_to_body {
     foreach (@data) {
         chomp;
         my ($d, $b) = split /\|/;
-        if ($d eq $domain) {
+        if ($d eq $domain || $d eq $email) {
             $body = $b;
             last;
         }

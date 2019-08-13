@@ -1,3 +1,4 @@
+use utf8;
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new();
@@ -22,6 +23,8 @@ my $user3 =
   ->find_or_create( { email => 'bystander@example.com', name => 'Bystander' } );
 ok $user3, "created bystander";
 
+my $body = $mech->create_body_ok(2504, 'Westminster');
+
 my $dt = DateTime->new(
     year   => 2011,
     month  => 04,
@@ -34,7 +37,7 @@ my $dt = DateTime->new(
 my $report = FixMyStreet::DB->resultset('Problem')->find_or_create(
     {
         postcode           => 'SW1A 1AA',
-        bodies_str         => '2504',
+        bodies_str         => $body->id,
         areas              => ',105255,11806,11828,2247,2504,',
         category           => 'Other',
         title              => 'Test 2',
@@ -165,8 +168,8 @@ $report->update();
 my $council_alert = FixMyStreet::DB->resultset('Alert')->find_or_create(
     {
         user => $user2,
-        parameter => 2504,
-        parameter2 => 2504,
+        parameter => $body->id,
+        parameter2 => $body->id,
         alert_type => 'council_problems',
         whensubscribed => $dt->ymd . ' ' . $dt->hms,
         confirmed => 1,
@@ -251,7 +254,7 @@ $report->geocode(
                                 'estimatedTotal' => 1
                               }
                             ],
-          'copyright' => "Copyright \x{a9} 2011 Microsoft and its suppliers. All rights reserved. This API cannot be accessed and the content and any results may not be used, reproduced or transmitted in any manner without express written permission from Microsoft Corporation.",
+          'copyright' => "Copyright © 2011 Microsoft and its suppliers. All rights reserved. This API cannot be accessed and the content and any results may not be used, reproduced or transmitted in any manner without express written permission from Microsoft Corporation.",
           'statusCode' => 200,
           'authenticationResultCode' => 'ValidCredentials'
         }
@@ -483,7 +486,7 @@ subtest "correct i18n-ed summary for state of closed" => sub {
     $mech->clear_emails_ok;
 
     $report->update( { state => 'closed' } );
-    $alert->update( { lang => 'nb', cobrand => 'fiksgatami' } );
+    $alert->update( { lang => 'sv', cobrand => 'fixamingata' } );
 
     FixMyStreet::DB->resultset('AlertSent')->search( {
         alert_id => $alert->id,
@@ -491,14 +494,14 @@ subtest "correct i18n-ed summary for state of closed" => sub {
     } )->delete;
 
     FixMyStreet::override_config {
-        ALLOWED_COBRANDS => [ 'fiksgatami' ],
+        ALLOWED_COBRANDS => [ 'fixamingata' ],
     }, sub {
         FixMyStreet::DB->resultset('AlertType')->email_alerts();
     };
 
     my $body = $mech->get_text_body_from_email;
-    my $msg = 'Denne rapporten er for tiden markert som lukket';
-    like $body, qr/$msg/, 'email says problem is closed, in Norwegian';
+    my $msg = 'Den här rapporten är markerad som stängd';
+    like $body, qr/$msg/, 'email says problem is closed, in Swedish';
 };
 
 END {

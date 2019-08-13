@@ -1,4 +1,5 @@
-<div class="form-box" id="form-box--logged-in-name">
+<!-- report/new/form_user_loggedin.html -->
+[% PROCESS 'report/form/private_details.html' %]
 
 [% IF js %]
   <div style="display:none" id="js-contribute-as-wrapper">
@@ -16,7 +17,7 @@
 [% BLOCK form_as %]
     <label for="form_as">[% loc('Report as') %]</label>
     <select id="form_as" class="form-control js-contribute-as" name="form_as">
-        <option value="myself" [% c.user.has_body_permission_to('planned_reports') ? '' : 'selected'  %]>[% loc('Yourself') %]</option>
+        <option value="myself" [% c.user.from_body AND ( c.user.has_body_permission_to('planned_reports') || c.user.has_body_permission_to('default_to_body') ) ? '' : 'selected'  %]>[% loc('Yourself') %]</option>
       [% IF js || can_contribute_as_anonymous_user %]
         <option value="anonymous_user">[% loc('Anonymous user') %]</option>
       [% END %]
@@ -24,7 +25,7 @@
         <option value="another_user">[% loc('Another user') %]</option>
       [% END %]
       [% IF js || can_contribute_as_body %]
-        <option value="body" [% c.user.has_body_permission_to('planned_reports') ? 'selected' : ''  %]>[% c.user.from_body.name %]</option>
+      <option value="body" [% c.user.from_body AND ( c.user.has_body_permission_to('planned_reports') || c.user.has_body_permission_to('default_to_body') ) ? 'selected' : ''  %]>[% c.user.from_body.cobrand_name %]</option>
       [% END %]
     </select>
 [% END %]
@@ -45,26 +46,27 @@
 
     [% INCLUDE 'report/new/extra_name.html' %]
     [% PROCESS 'user/_anonymity.html' anonymous = report.anonymous %]
-    [% INCLUDE 'report/new/form_user_name.html' %]
+    [% INCLUDE 'report/form/user_name.html' object=report %]
     [% INCLUDE 'report/_show_name_label.html' %]
 
 [% IF NOT c.user.phone_verified AND NOT c.cobrand.call_hook('disable_phone_number_entry') %]
     <label for="form_phone">[% loc('Phone number (optional)') %]</label>
+    [% IF field_errors.phone %]
+      <p class='form-error'>[% field_errors.phone %]</p>
+    [% END %]
     <input class="form-control" type="text" value="[% report.user.phone_display | html %]" name="phone" id="form_phone">
 [% END %]
 [% IF NOT c.user.email_verified %]
-    <label for="form_username">[% loc('Email address (optional)') %]</label>
+    <label for="form_email">[% loc('Email address (optional)') %]</label>
     <input class="form-control" type="text" value="[% report.user.email | html %]" name="email" id="form_email">
 [% END %]
 
-[% IF c.user.has_permission_to("report_inspect", bodies.keys) %]
+[% IF c.user.has_permission_to("report_inspect", bodies.keys) OR c.user.has_permission_to("report_mark_private", bodies.keys) %]
     <div class="checkbox-group">
         <input type="checkbox" name="non_public" id="form_non_public" value="1"[% ' checked' IF report.non_public %]>
         <label class="inline" for="form_non_public">[% loc('Private') %] </label>
     </div>
 [% END %]
 
-    <div class="form-txt-submit-box">
-        <input class="green-btn js-submit_register" type="submit" name="submit_register" value="[% loc('Submit') %]">
-    </div>
-</div>
+<input class="btn btn--primary btn--block btn--final js-submit_register" type="submit" name="submit_register" value="[% loc('Submit') %]">
+<!-- /report/new/form_user_loggedin.html -->

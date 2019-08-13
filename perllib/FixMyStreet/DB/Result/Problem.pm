@@ -8,7 +8,11 @@ use strict;
 use warnings;
 
 use base 'DBIx::Class::Core';
-__PACKAGE__->load_components("FilterColumn", "InflateColumn::DateTime", "EncodedColumn");
+__PACKAGE__->load_components(
+  "FilterColumn",
+  "FixMyStreet::InflateColumn::DateTime",
+  "FixMyStreet::EncodedColumn",
+);
 __PACKAGE__->table("problem");
 __PACKAGE__->add_columns(
   "id",
@@ -20,14 +24,38 @@ __PACKAGE__->add_columns(
   },
   "postcode",
   { data_type => "text", is_nullable => 0 },
+  "latitude",
+  { data_type => "double precision", is_nullable => 0 },
+  "longitude",
+  { data_type => "double precision", is_nullable => 0 },
+  "bodies_str",
+  { data_type => "text", is_nullable => 1 },
+  "bodies_missing",
+  { data_type => "text", is_nullable => 1 },
+  "areas",
+  { data_type => "text", is_nullable => 0 },
+  "category",
+  { data_type => "text", default_value => "Other", is_nullable => 0 },
   "title",
   { data_type => "text", is_nullable => 0 },
   "detail",
   { data_type => "text", is_nullable => 0 },
   "photo",
   { data_type => "bytea", is_nullable => 1 },
+  "used_map",
+  { data_type => "boolean", is_nullable => 0 },
+  "user_id",
+  { data_type => "integer", is_foreign_key => 1, is_nullable => 0 },
   "name",
   { data_type => "text", is_nullable => 0 },
+  "anonymous",
+  { data_type => "boolean", is_nullable => 0 },
+  "external_id",
+  { data_type => "text", is_nullable => 1 },
+  "external_body",
+  { data_type => "text", is_nullable => 1 },
+  "external_team",
+  { data_type => "text", is_nullable => 1 },
   "created",
   {
     data_type     => "timestamp",
@@ -35,22 +63,18 @@ __PACKAGE__->add_columns(
     is_nullable   => 0,
     original      => { default_value => \"now()" },
   },
-  "state",
-  { data_type => "text", is_nullable => 0 },
-  "whensent",
-  { data_type => "timestamp", is_nullable => 1 },
-  "used_map",
-  { data_type => "boolean", is_nullable => 0 },
-  "bodies_str",
-  { data_type => "text", is_nullable => 1 },
-  "anonymous",
-  { data_type => "boolean", is_nullable => 0 },
-  "category",
-  { data_type => "text", default_value => "Other", is_nullable => 0 },
   "confirmed",
   { data_type => "timestamp", is_nullable => 1 },
-  "send_questionnaire",
-  { data_type => "boolean", default_value => \"true", is_nullable => 0 },
+  "state",
+  { data_type => "text", is_nullable => 0 },
+  "lang",
+  { data_type => "text", default_value => "en-gb", is_nullable => 0 },
+  "service",
+  { data_type => "text", default_value => "", is_nullable => 0 },
+  "cobrand",
+  { data_type => "text", default_value => "", is_nullable => 0 },
+  "cobrand_data",
+  { data_type => "text", default_value => "", is_nullable => 0 },
   "lastupdate",
   {
     data_type     => "timestamp",
@@ -58,34 +82,18 @@ __PACKAGE__->add_columns(
     is_nullable   => 0,
     original      => { default_value => \"now()" },
   },
-  "areas",
-  { data_type => "text", is_nullable => 0 },
-  "service",
-  { data_type => "text", default_value => "", is_nullable => 0 },
-  "lang",
-  { data_type => "text", default_value => "en-gb", is_nullable => 0 },
-  "cobrand",
-  { data_type => "text", default_value => "", is_nullable => 0 },
-  "cobrand_data",
-  { data_type => "text", default_value => "", is_nullable => 0 },
-  "latitude",
-  { data_type => "double precision", is_nullable => 0 },
-  "longitude",
-  { data_type => "double precision", is_nullable => 0 },
-  "external_id",
-  { data_type => "text", is_nullable => 1 },
-  "external_body",
-  { data_type => "text", is_nullable => 1 },
-  "external_team",
-  { data_type => "text", is_nullable => 1 },
-  "user_id",
-  { data_type => "integer", is_foreign_key => 1, is_nullable => 0 },
-  "flagged",
-  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "whensent",
+  { data_type => "timestamp", is_nullable => 1 },
+  "send_questionnaire",
+  { data_type => "boolean", default_value => \"true", is_nullable => 0 },
   "extra",
   { data_type => "text", is_nullable => 1 },
+  "flagged",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "geocode",
   { data_type => "bytea", is_nullable => 1 },
+  "response_priority_id",
+  { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
   "send_fail_count",
   { data_type => "integer", default_value => 0, is_nullable => 0 },
   "send_fail_reason",
@@ -104,10 +112,6 @@ __PACKAGE__->add_columns(
   { data_type => "integer", default_value => 0, is_nullable => 1 },
   "subcategory",
   { data_type => "text", is_nullable => 1 },
-  "bodies_missing",
-  { data_type => "text", is_nullable => 1 },
-  "response_priority_id",
-  { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
   "defect_type_id",
   { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
 );
@@ -166,8 +170,8 @@ __PACKAGE__->has_many(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2017-02-13 15:11:11
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:8zzWlJX7OQOdvrGxKuZUmg
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2019-04-25 12:06:39
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:hUXle+TtlkDkxkBrVa/u+g
 
 # Add fake relationship to stored procedure table
 __PACKAGE__->has_one(
@@ -177,11 +181,15 @@ __PACKAGE__->has_one(
   { cascade_copy => 0, cascade_delete => 0 },
 );
 
+# This will return the oldest moderation_original_data, if any.
+# The plural can be used to return all entries.
 __PACKAGE__->might_have(
   "moderation_original_data",
   "FixMyStreet::DB::Result::ModerationOriginalData",
   { "foreign.problem_id" => "self.id" },
   { where => { 'comment_id' => undef },
+    order_by => 'id',
+    rows => 1,
     cascade_copy => 0, cascade_delete => 1 },
 );
 
@@ -206,6 +214,7 @@ my $IM = eval {
 
 with 'FixMyStreet::Roles::Abuser',
      'FixMyStreet::Roles::Extra',
+     'FixMyStreet::Roles::Moderation',
      'FixMyStreet::Roles::Translatable',
      'FixMyStreet::Roles::PhotoSet';
 
@@ -318,19 +327,6 @@ sub visible_states_remove {
     }
 }
 
-my $stz = sub {
-    my ( $orig, $self ) = ( shift, shift );
-    my $s = $self->$orig(@_);
-    return $s unless $s && UNIVERSAL::isa($s, "DateTime");
-    FixMyStreet->set_time_zone($s);
-    return $s;
-};
-
-around created => $stz;
-around confirmed => $stz;
-around whensent => $stz;
-around lastupdate => $stz;
-
 around service => sub {
     my ( $orig, $self ) = ( shift, shift );
     # service might be undef if e.g. unsaved code report
@@ -365,6 +361,9 @@ sub check_for_errors {
 
     $errors{title} = _('Please enter a subject')
       unless $self->title =~ m/\S/;
+
+    $errors{title} = _('Please make sure you are not including an email address')
+        if mySociety::EmailUtil::is_valid_email($self->title);
 
     $errors{detail} = _('Please enter some details')
       unless $self->detail =~ m/\S/;
@@ -663,7 +662,7 @@ sub body {
         my @body_names = sort map {
             my $name = $_->name;
             if ($c and FixMyStreet->config('AREA_LINKS_FROM_PROBLEMS')) {
-                '<a href="' . $_->url($c) . '">' . $name . '</a>';
+                '<a href="' . $_->url . '">' . $name . '</a>';
             } else {
                 $name;
             }
@@ -759,7 +758,7 @@ sub defect_types {
 #     Note:   this only makes sense when called on a problem that has been sent!
 sub can_display_external_id {
     my $self = shift;
-    if ($self->external_id && $self->send_method_used && $self->to_body_named('Oxfordshire|Angus')) {
+    if ($self->external_id && $self->to_body_named('Oxfordshire|Lincolnshire')) {
         return 1;
     }
     return 0;
@@ -780,7 +779,7 @@ sub duration_string {
 
 sub local_coords {
     my $self = shift;
-    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($self->cobrand)->new;
+    my $cobrand = $self->get_cobrand_logged;
     if ($cobrand->moniker eq 'zurich') {
         my ($x, $y) = Geo::Coordinates::CH1903Plus::from_latlon($self->latitude, $self->longitude);
         return ( int($x+0.5), int($y+0.5) );
@@ -893,11 +892,12 @@ bodies by some mechanism. Right now that mechanism is Open311.
 
 sub updates_sent_to_body {
     my $self = shift;
-    return unless $self->send_method_used && $self->send_method_used eq 'Open311';
+    return unless $self->send_method_used && $self->send_method_used =~ /Open311/;
 
     # Some bodies only send updates *to* FMS, they don't receive updates.
-    # NB See also the list in bin/send-comments
-    my $excluded = qr{Lewisham|Oxfordshire};
+    my $cobrand = $self->get_cobrand_logged;
+    my $handler = $cobrand->call_hook(get_body_handler_for_problem => $self);
+    return 0 if $handler && $handler->call_hook('open311_post_update_skip');
 
     my @bodies = values %{ $self->bodies };
     my @updates_sent = grep {
@@ -905,8 +905,7 @@ sub updates_sent_to_body {
         (
             $_->send_method eq 'Open311' ||
             $_->send_method eq 'Noop' # Sending might be temporarily disabled
-        ) &&
-        !($_->name =~ /$excluded/)
+        )
     } @bodies;
     return scalar @updates_sent;
 }
@@ -920,6 +919,12 @@ sub add_send_method {
     } else {
         $self->send_method_used($sender);
     }
+}
+
+sub resend {
+    my $self = shift;
+    $self->whensent(undef);
+    $self->send_method_used(undef);
 }
 
 sub as_hashref {
@@ -952,17 +957,6 @@ sub as_hashref {
     return $out;
 }
 
-=head2 latest_moderation_log_entry
-
-Return most recent ModerationLog object
-
-=cut
-
-sub latest_moderation_log_entry {
-    my $self = shift;
-    return $self->admin_log_entries->search({ action => 'moderation' }, { order_by => { -desc => 'id' } })->first;
-}
-
 __PACKAGE__->has_many(
   "admin_log_entries",
   "FixMyStreet::DB::Result::AdminLog",
@@ -972,6 +966,11 @@ __PACKAGE__->has_many(
       where => { 'object_type' => 'problem' },
   }
 );
+
+sub moderation_filter {
+    my $self = shift;
+    { comment_id => undef };
+}
 
 sub get_time_spent {
     my $self = shift;
@@ -1017,6 +1016,7 @@ sub pin_data {
         id => $self->id,
         title => $title,
         problem => $self,
+        draggable => $opts{draggable},
         type => $opts{type},
     }
 };

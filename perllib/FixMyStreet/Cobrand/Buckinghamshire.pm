@@ -1,38 +1,22 @@
 package FixMyStreet::Cobrand::Buckinghamshire;
-use parent 'FixMyStreet::Cobrand::UKCouncils';
+use parent 'FixMyStreet::Cobrand::Whitelabel';
 
 use strict;
 use warnings;
 
-use LWP::Simple;
-use URI;
-use Try::Tiny;
-use JSON::MaybeXS;
+use Moo;
+with 'FixMyStreet::Roles::ConfirmValidation';
 
 sub council_area_id { return 2217; }
 sub council_area { return 'Buckinghamshire'; }
 sub council_name { return 'Buckinghamshire County Council'; }
 sub council_url { return 'buckinghamshire'; }
 
-sub example_places {
-    return ( 'HP19 7QF', "Walton Road" );
-}
-
-sub base_url {
-    my $self = shift;
-    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
-    return 'https://fixmystreet.buckscc.gov.uk';
-}
-
 sub disambiguate_location {
     my $self    = shift;
     my $string  = shift;
 
     my $town = 'Buckinghamshire';
-
-    # The geocoder returns two results for 'Aylesbury', so force the better
-    # result to be used.
-    $town = "$town, HP20 2NH" if $string =~ /[\s]*aylesbury[\s]*/i;
 
     return {
         %{ $self->SUPER::disambiguate_location() },
@@ -43,18 +27,17 @@ sub disambiguate_location {
     };
 }
 
+sub on_map_default_status { 'open' }
+
 sub pin_colour {
     my ( $self, $p, $context ) = @_;
-    return 'grey' if $p->state eq 'not responsible';
+    return 'grey' if $p->state eq 'not responsible' || !$self->owns_problem( $p );
     return 'green' if $p->is_fixed || $p->is_closed;
     return 'red' if $p->state eq 'confirmed';
     return 'yellow';
 }
 
-sub contact_email {
-    my $self = shift;
-    return join( '@', 'fixmystreetbs', 'email.buckscc.gov.uk' );
-}
+sub admin_user_domain { 'buckscc.gov.uk' }
 
 sub send_questionnaires {
     return 0;
@@ -87,11 +70,149 @@ sub open311_config {
     $row->set_extra_fields(@$extra);
 }
 
+sub open311_pre_send {
+    my ($self, $row, $open311) = @_;
+
+    return unless $row->extra;
+    my $extra = $row->get_extra_fields;
+    if (@$extra) {
+        @$extra = grep { $_->{name} ne 'road-placement' } @$extra;
+        $row->set_extra_fields(@$extra);
+    }
+}
+
+sub open311_post_send {
+    my ($self, $row, $h) = @_;
+
+    # Check Open311 was successful
+    return unless $row->external_id;
+
+    # For certain categories, send an email also
+    my $addresses = {
+        'Flytipping' => [ join('@', 'illegaldumpingcosts', $self->admin_user_domain), "TfB" ],
+        'Blocked drain' => [ join('@', 'floodmanagement', $self->admin_user_domain), "Flood Management" ],
+        'Ditch issue' => [ join('@', 'floodmanagement', $self->admin_user_domain), "Flood Management" ],
+        'Flooded subway' => [ join('@', 'floodmanagement', $self->admin_user_domain), "Flood Management" ],
+    };
+    my $dest = $addresses->{$row->category};
+    return unless $dest;
+
+    my $sender = FixMyStreet::SendReport::Email->new( to => [ $dest ] );
+    $sender->send($row, $h);
+}
+
+sub open311_config_updates {
+    my ($self, $params) = @_;
+    $params->{mark_reopen} = 1;
+}
+
+sub open311_contact_meta_override {
+    my ($self, $service, $contact, $meta) = @_;
+
+    push @$meta, {
+        code => 'road-placement',
+        datatype => 'singlevaluelist',
+        description => 'Is the fly-tip located on',
+        order => 100,
+        required => 'true',
+        variable => 'true',
+        values => [
+            { key => 'road', name => 'The road' },
+            { key => 'off-road', name => 'Off the road/on a verge' },
+        ],
+    } if $service->{service_name} eq 'Flytipping';
+}
+
+sub process_open311_extras {
+    my ($self, $c, $body, $extra) = @_;
+
+    return unless $c->stash->{report}; # Don't care about updates
+
+    $self->flytipping_body_fix(
+        $c->stash->{report},
+        $c->get_param('road-placement'),
+        $c->stash->{field_errors},
+    );
+}
+
+sub flytipping_body_fix {
+    my ($self, $report, $road_placement, $errors) = @_;
+
+    return unless $report->category eq 'Flytipping';
+
+    if ($report->bodies_str =~ /,/) {
+        # Sent to both councils in the area
+        my @bodies = values %{$report->bodies};
+        my $county = (grep { $_->name =~ /^Buckinghamshire/ } @bodies)[0];
+        my $district = (grep { $_->name !~ /^Buckinghamshire/ } @bodies)[0];
+        # Decide which to send to based upon the answer to the extra question:
+        if ($road_placement eq 'road') {
+            $report->bodies_str($county->id);
+        } elsif ($road_placement eq 'off-road') {
+            $report->bodies_str($district->id);
+        }
+    } else {
+        # If the report is only being sent to the district, we do
+        # not care about the road question, if it is missing
+        if (!$report->to_body_named('Buckinghamshire')) {
+            delete $errors->{'road-placement'};
+        }
+    }
+}
+
+sub filter_report_description {
+    my ($self, $description) = @_;
+
+    # this allows _ in the domain name but I figure it's unlikely to
+    # generate false positives so lets go with that for the same of
+    # a simpler regex
+    $description =~ s/\b[\w.!#$%&'*+\-\/=?^_{|}~]+\@[\w\-]+\.[^ ]+\b//g;
+    $description =~ s/ (?: \+ \d{2} \s? | \b 0 ) (?:
+        \d{2} \s? \d{4} \s? \d{4}   # 0xx( )xxxx( )xxxx
+      | \d{3} \s \d{3} \s? \d{4}    # 0xxx xxx( )xxxx
+      | \d{3} \s? \d{2} \s \d{4,5}  # 0xxx( )xx xxxx(x)
+      | \d{4} \s \d{5,6}            # 0xxxx xxxxx(x)
+    ) \b //gx;
+
+    return $description;
+}
+
 sub map_type { 'Buckinghamshire' }
 
 sub default_map_zoom { 3 }
 
-sub enable_category_groups { 1 }
+sub _dashboard_export_add_columns {
+    my $self = shift;
+    my $c = $self->{c};
+
+    push @{$c->stash->{csv}->{headers}}, "Staff User";
+    push @{$c->stash->{csv}->{columns}}, "staff_user";
+
+    # All staff users, for contributed_by lookup
+    my @user_ids = $c->model('DB::User')->search(
+        { from_body => $self->body->id },
+        { columns => [ 'id', 'email', ] })->all;
+    my %user_lookup = map { $_->id => $_->email } @user_ids;
+
+    $c->stash->{csv}->{extra_data} = sub {
+        my $report = shift;
+        my $staff_user = '';
+        if (my $contributed_by = $report->get_extra_metadata('contributed_by')) {
+            $staff_user = $user_lookup{$contributed_by};
+        }
+        return {
+            staff_user => $staff_user,
+        };
+    };
+}
+
+sub dashboard_export_updates_add_columns {
+    shift->_dashboard_export_add_columns;
+}
+
+sub dashboard_export_problems_add_columns {
+    shift->_dashboard_export_add_columns;
+}
 
 # Enable adding/editing of parish councils in the admin
 sub add_extra_areas {
@@ -304,7 +425,7 @@ sub should_skip_sending_update {
 
 sub disable_phone_number_entry { 1 }
 
-sub report_sent_confirmation_email { 1 }
+sub report_sent_confirmation_email { 'external_id' }
 
 sub is_council_with_case_management { 1 }
 
@@ -313,90 +434,33 @@ sub get_geocoder { 'OSM' }
 
 sub categories_restriction {
     my ($self, $rs) = @_;
-    # Buckinghamshire is a two-tier council, but only want to display
+    # Buckinghamshire is a two-tier council, but mostly want to display
     # county-level categories on their cobrand.
-    return $rs->search( { 'body.id' => 2217 } );
-}
-
-sub lookup_site_code {
-    my $self = shift;
-    my $row = shift;
-
-    my $buffer = 200; # metres
-    my ($x, $y) = $row->local_coords;
-    my ($w, $s, $e, $n) = ($x-$buffer, $y-$buffer, $x+$buffer, $y+$buffer);
-
-    my $uri = URI->new("https://tilma.mysociety.org/mapserver/bucks");
-    $uri->query_form(
-        REQUEST => "GetFeature",
-        SERVICE => "WFS",
-        SRSNAME => "urn:ogc:def:crs:EPSG::27700",
-        TYPENAME => "Whole_Street",
-        VERSION => "1.1.0",
-        outputformat => "geojson",
-        BBOX => "$w,$s,$e,$n"
+    return $rs->search(
+        [
+            { 'body_areas.area_id' => 2217 },
+            { category => [ 'Flytipping', 'Car Parks' ] },
+        ],
+        { join => { body => 'body_areas' } }
     );
+}
 
-    my $response = get($uri);
+sub lookup_site_code_config { {
+    buffer => 200, # metres
+    url => "https://tilma.mysociety.org/mapserver/bucks",
+    srsname => "urn:ogc:def:crs:EPSG::27700",
+    typename => "Whole_Street",
+    property => "site_code",
+    accept_feature => sub {
+        my $feature = shift;
 
-    my $j = JSON->new->utf8->allow_nonref;
-    try {
-        $j = $j->decode($response);
-    } catch {
-        # There was either no asset found, or an error with the WFS
-        # call - in either case let's just proceed without the USRN.
-        return '';
-    };
-
-    # We have a list of features, and we want to find the one closest to the
-    # report location.
-    my $site_code = '';
-    my $nearest;
-
-    # There are only certain features we care about, the rest can be ignored.
-    my @valid_types = ( "2", "3A", "3B", "4A", "4B", "HE", "HWOA", "HWSA", "P" );
-    my %valid_types = map { $_ => 1 } @valid_types;
-
-    for my $feature ( @{ $j->{features} } ) {
+        # There are only certain features we care about, the rest can be ignored.
+        my @valid_types = ( "2", "3A", "3B", "4A", "4B", "HE", "HWOA", "HWSA", "P" );
+        my %valid_types = map { $_ => 1 } @valid_types;
         my $type = $feature->{properties}->{feature_ty};
-        next unless $valid_types{$type};
 
-        # We shouldn't receive anything aside from these two geometry types, but belt and braces.
-        next unless $feature->{geometry}->{type} eq 'MultiLineString' || $feature->{geometry}->{type} eq 'LineString';
-
-        my @coordinates = @{ $feature->{geometry}->{coordinates} };
-        if ( $feature->{geometry}->{type} eq 'MultiLineString') {
-            # The coordinates are stored as a list of lists, so flatten 'em out
-            @coordinates = map { @{ $_ } } @coordinates;
-        }
-
-        # If any of this feature's points are closer than those we've seen so
-        # far then use the site_code from this feature.
-        for my $coords ( @coordinates ) {
-            my ($fx, $fy) = @$coords;
-            my $distance = $self->_distance($x, $y, $fx, $fy);
-            if ( !defined $nearest || $distance < $nearest ) {
-                $site_code = $feature->{properties}->{site_code};
-                $nearest = $distance;
-            }
-        }
+        return $valid_types{$type};
     }
-
-    return $site_code;
-}
-
-
-=head2 _distance
-
-Returns the cartesian distance between two coordinates.
-This is not a general-purpose distance function, it's intended for use with
-fairly nearby coordinates in EPSG:27700 where a spheroid doesn't need to be
-taken into account.
-
-=cut
-sub _distance {
-    my ($self, $ax, $ay, $bx, $by) = @_;
-    return sqrt( (($ax - $bx) ** 2) + (($ay - $by) ** 2) );
-}
+} }
 
 1;

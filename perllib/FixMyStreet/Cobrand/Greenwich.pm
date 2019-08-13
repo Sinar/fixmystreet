@@ -5,19 +5,9 @@ use strict;
 use warnings;
 
 sub council_area_id { return 2493; }
-sub council_area { return 'Greenwich'; }
+sub council_area { return 'Royal Borough of Greenwich'; }
 sub council_name { return 'Royal Borough of Greenwich'; }
 sub council_url { return 'greenwich'; }
-
-sub base_url {
-    my $self = shift;
-    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
-    return 'https://fix.royalgreenwich.gov.uk';
-}
-
-sub example_places {
-    return ( 'SE18 6HQ', "Woolwich Road" );
-}
 
 sub enter_postcode_text {
     my ($self) = @_;
@@ -50,12 +40,9 @@ sub pin_colour {
     return 'yellow';
 }
 
-sub contact_email {
-    my $self = shift;
-    return join( '@', 'fixmystreet', 'royalgreenwich.gov.uk' );
-}
-
 sub reports_per_page { return 20; }
+
+sub admin_user_domain { 'royalgreenwich.gov.uk' }
 
 sub open311_config {
     my ($self, $row, $h, $params) = @_;
@@ -64,6 +51,15 @@ sub open311_config {
     # Greenwich doesn't have category metadata to fill this
     push @$extra, { name => 'external_id', value => $row->id };
     $row->set_extra_fields( @$extra );
+}
+
+sub open311_contact_meta_override {
+    my ($self, $service, $contact, $meta) = @_;
+
+    my %server_set = (easting => 1, northing => 1, closest_address => 1);
+    foreach (@$meta) {
+        $_->{automated} = 'server_set' if $server_set{$_->{code}};
+    }
 }
 
 1;

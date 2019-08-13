@@ -68,10 +68,30 @@ LANGUAGES:
 # from the server, you can set the time zone here (standard time zone string)
 TIME_ZONE: ""
 
-# File locations for uploaded photos and cached geocoding results.
-# Absolute paths, or relative to the project's root directory
-UPLOAD_DIR: '../upload/'
+# File locations for cached geocoding results.
 GEO_CACHE: '../cache/'
+
+# Photo storage options.
+# Which storage backend to use. Options are 'FileSystem' and 'S3'.
+PHOTO_STORAGE_BACKEND: 'FileSystem'
+
+# FileSystem-specific options
+PHOTO_STORAGE_OPTIONS:
+  # Where uploaded photos will be stored
+  UPLOAD_DIR: '../upload/'
+
+# If using the S3 backend, you'll need to set the following options instead:
+#PHOTO_STORAGE_OPTIONS:
+#  BUCKET: 'fixmystreet-photos'
+#  ACCESS_KEY: ''
+#  SECRET_KEY: ''
+#  PREFIX: '' # optional prefix for key names in bucket, e.g. if you
+              # have multiple FMS sites storing photos in the same bucket.
+#  CREATE_BUCKET: 0 # optional, set to 1 if the S3 bucket should be created if
+                    # it doesn't already exist. Requires the appropriate AWS
+                    # permissions.
+#  REGION: 'eu-west-1' # optional, only used if CREATE_BUCKET is set. Controls
+                       # which AWS region the S3 bucket will be created in.
 
 # Location of MapIt, to map points to administrative areas, and what types of
 # area from it you want to use. If left blank, a default area will be used
@@ -172,6 +192,14 @@ ALLOWED_COBRANDS:
 # the admin interface. Defaults to BASE_URL with "/admin" on the end.
 ADMIN_BASE_URL: ''
 
+# If your site has many cobrands, you may want to have per-cobrand settings. To
+# do this, make a hash of feature keys, each of which is a hash of monikers, eg
+#   COBRAND_FEATURES:
+#     suggest_duplicates:
+#       buckinghamshire: 1
+#       oxfordshire: 1
+COBRAND_FEATURES: ''
+
 # How many items are returned in the GeoRSS and Open311 feeds by default
 RSS_LIMIT: '20'
 OPEN311_LIMIT: 1000
@@ -196,6 +224,14 @@ SMTP_PASSWORD: ''
 # Gaze is a world-wide service for population density lookups. You can leave
 # this as is.
 GAZE_URL: 'https://gaze.mysociety.org/gaze'
+
+# Memcached host
+# This can be safely left out and will default to '127.0.0.1' even if not present.
+MEMCACHED_HOST: '127.0.0.1'
+
+# Cache timeout - integer, optional, default 3600s (1 hour)
+# Used for cache of front page stats/recent list, and /reports max-age.
+CACHE_TIMEOUT: 3600
 
 # Should problem reports link to the council summary pages?
 AREA_LINKS_FROM_PROBLEMS: '0'

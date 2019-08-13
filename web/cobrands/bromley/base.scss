@@ -26,37 +26,33 @@
 // can't understand a selector it will invalidate the whole line.
 ::-webkit-input-placeholder {
   color: #999;
-  font: {
-    style:normal;
-    size:0.9375em;
-  }
+  font-style: normal;
+  font-size: 0.9375em;
 }
 :-moz-placeholder {
   color: #999;
-  font: {
-    style:normal;
-    size:0.9375em;
-  }
+  font-style: normal;
+  font-size: 0.9375em;
 }
 :-ms-placeholder {
   color: #999;
-  font: {
-    style:normal;
-    size:0.9375em;
-  }
+  font-style: normal;
+  font-size: 0.9375em;
 }
 //this only gets used when the browser doesn't support @placeholder
 .placeholder {
   color: #999;
-  font: {
-    style:normal;
-    size:0.9375em;
-  }
+  font-style: normal;
+  font-size: 0.9375em;
 }
 
 // Reset body line height on front page
 body.frontpage.fullwidthpage {
   line-height: normal;
+}
+
+#front-main #postcodeForm .form-hint {
+  color: mix($primary, $primary_text, 30%);
 }
 
 .bromley-header {
@@ -67,17 +63,15 @@ body.frontpage.fullwidthpage {
 
 // Override the links to match Bromley's
 a {
-  text-decoration:none;
-  color: $bromley_green;
   opacity: 1;
 }
+
 a:hover {
   opacity: 0.8;
-  text-decoration:underline;
 }
-a:visited,
+
 a:active {
-  color: $bromley_dark_green;
+  color: $link-visited-color;
 }
 
 // The map page header looks a bit high for some reason

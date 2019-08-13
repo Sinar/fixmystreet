@@ -3,6 +3,7 @@ package Open311::GetServiceRequests;
 use Moo;
 use Open311;
 use FixMyStreet::DB;
+use FixMyStreet::MapIt;
 use FixMyStreet::App::Model::PhotoSet;
 use DateTime::Format::W3CDTF;
 
@@ -89,18 +90,13 @@ sub create_problems {
         }
         my $request_id = $request->{service_request_id};
 
-        my %params;
-        $params{generation} = mySociety::Config::get('MAPIT_GENERATION')
-            if mySociety::Config::get('MAPIT_GENERATION');
-
         my ($latitude, $longitude) = ( $request->{lat}, $request->{long} );
 
         ($latitude, $longitude) = Utils::convert_en_to_latlon_truncated( $longitude, $latitude )
             if $self->convert_latlong;
 
         my $all_areas =
-          mySociety::MaPit::call( 'point',
-            "4326/$longitude,$latitude", %params );
+          FixMyStreet::MapIt::call('point', "4326/$longitude,$latitude");
 
         # skip if it doesn't look like it's for this body
         my @areas = grep { $all_areas->{$_->area_id} } $body->body_areas;
@@ -113,19 +109,36 @@ sub create_problems {
         my $updated_time = eval {
             DateTime::Format::W3CDTF->parse_datetime(
                 $request->{updated_datetime} || ""
-            )->set_time_zone(
-                FixMyStreet->time_zone || FixMyStreet->local_time_zone
-            );
+            )->set_time_zone(FixMyStreet->local_time_zone);
         };
         if ($@) {
             warn "Not creating problem $request_id for @{[$body->name]}, bad update time"
                 if $self->verbose;
             next;
         }
-
         my $updated = DateTime::Format::W3CDTF->format_datetime(
             $updated_time->clone->set_time_zone('UTC')
         );
+
+        my $created_time = eval {
+            DateTime::Format::W3CDTF->parse_datetime(
+                $request->{requested_datetime} || ""
+            )->set_time_zone(FixMyStreet->local_time_zone);
+        };
+        $created_time = $updated_time if $@;
+
+        # Updated time must not be before created time, check and adjust as necessary.
+        # (This has happened with some fetched reports, oddly.)
+        $updated_time = $created_time if $updated_time lt $created_time;
+
+        my $problems;
+        my $criteria = {
+            external_id => $request_id,
+        };
+
+        # Skip if this problem already exists (e.g. it may have originated from FMS and is being mirrored back!)
+        next if $self->schema->resultset('Problem')->to_body($body)->search( $criteria )->count;
+
         if ($args->{start_date} && $args->{end_date} && ($updated lt $args->{start_date} || $updated gt $args->{end_date}) ) {
             warn "Problem id $request_id for @{[$body->name]} has an invalid time, not creating: "
                 . "$updated either less than $args->{start_date} or greater than $args->{end_date}"
@@ -133,56 +146,52 @@ sub create_problems {
             next;
         }
 
-        my $created_time = eval {
-            DateTime::Format::W3CDTF->parse_datetime(
-                $request->{requested_datetime} || ""
-            )->set_time_zone(
-                FixMyStreet->time_zone || FixMyStreet->local_time_zone
-            );
-        };
-        $created_time = $updated_time if $@;
-
-        my $problems;
-        my $criteria = {
-            external_id => $request_id,
-        };
-        $problems = $self->schema->resultset('Problem')->to_body($body)->search( $criteria );
+        my $cobrand = $body->get_cobrand_handler;
+        if ( $cobrand ) {
+            my $filtered = $cobrand->call_hook('filter_report_description', $request->{description});
+            $request->{description} = $filtered if defined $filtered;
+        }
 
         my @contacts = grep { $request->{service_code} eq $_->email } $contacts->all;
         my $contact = $contacts[0] ? $contacts[0]->category : 'Other';
 
         my $state = $open311->map_state($request->{status});
 
-        unless (my $p = $problems->first) {
-            my $problem = $self->schema->resultset('Problem')->new(
-                {
-                    user => $self->system_user,
-                    external_id => $request_id,
-                    detail => $request->{description},
-                    title => $request->{title} || $request->{service_name} . ' problem',
-                    anonymous => 0,
-                    name => $self->system_user->name,
-                    confirmed => $created_time,
-                    created => $created_time,
-                    lastupdate => $updated_time,
-                    whensent => $created_time,
-                    state => $state,
-                    postcode => '',
-                    used_map => 1,
-                    latitude => $latitude,
-                    longitude => $longitude,
-                    areas => ',' . $body->id . ',',
-                    bodies_str => $body->id,
-                    send_method_used => 'Open311',
-                    category => $contact,
-                }
-            );
+        my $non_public = $request->{non_public} ? 1 : 0;
+        $non_public ||= $contacts[0] ? $contacts[0]->non_public : 0;
 
-            $open311->add_media($request->{media_url}, $problem)
-                if $request->{media_url};
+        my $problem = $self->schema->resultset('Problem')->new(
+            {
+                user => $self->system_user,
+                external_id => $request_id,
+                detail => $request->{description} || $request->{service_name} . ' problem',
+                title => $request->{title} || $request->{service_name} . ' problem',
+                anonymous => 0,
+                name => $self->system_user->name,
+                confirmed => $created_time,
+                created => $created_time,
+                lastupdate => $updated_time,
+                whensent => $created_time,
+                state => $state,
+                postcode => '',
+                used_map => 1,
+                latitude => $latitude,
+                longitude => $longitude,
+                areas => ',' . $body->id . ',',
+                bodies_str => $body->id,
+                send_method_used => 'Open311',
+                category => $contact,
+                send_questionnaire => 0,
+                non_public => $non_public,
+            }
+        );
 
-            $problem->insert();
-        }
+        next if $cobrand && $cobrand->call_hook(open311_skip_report_fetch => $problem);
+
+        $open311->add_media($request->{media_url}, $problem)
+            if $request->{media_url};
+
+        $problem->insert();
     }
 
     return 1;

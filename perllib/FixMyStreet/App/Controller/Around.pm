@@ -9,6 +9,7 @@ use Encode;
 use JSON::MaybeXS;
 use Utils;
 use Try::Tiny;
+use Text::CSV;
 
 =head1 NAME
 
@@ -54,6 +55,9 @@ sub index : Path : Args(0) {
         || $c->forward('/location/determine_location_from_pc');
     unless ($ret) {
         return $c->res->redirect('/') unless $c->get_param('pc') || $partial_report;
+        # Cobrand may want to perform custom searching at this point,
+        # e.g. presenting a list of reports matching the user's query.
+        $c->cobrand->call_hook("around_custom_search");
         return;
     }
 
@@ -227,6 +231,10 @@ sub check_and_stash_category : Private {
     my $all_areas = $c->stash->{all_areas};
     my @bodies = $c->model('DB::Body')->active->for_areas(keys %$all_areas)->all;
     my %bodies = map { $_->id => $_ } @bodies;
+    my @list_of_names = map { $_->name } values %bodies;
+    my $csv = Text::CSV->new();
+    $csv->combine(@list_of_names);
+    $c->{stash}->{list_of_names_as_string} = $csv->string;
 
     my @categories = $c->model('DB::Contact')->not_deleted->search(
         {
@@ -250,16 +258,18 @@ sub map_features : Private {
     my ($self, $c, $extra) = @_;
 
     $c->stash->{page} = 'around'; # Needed by _item.html / so the map knows to make clickable pins, update on pan
+    $c->stash->{num_old_reports} = 0;
 
     $c->forward( '/reports/stash_report_filter_status' );
     $c->forward( '/reports/stash_report_sort', [ 'created-desc' ]);
+    $c->stash->{show_old_reports} = $c->get_param('show_old_reports');
 
     return if $c->get_param('js'); # JS will request the same (or more) data client side
 
     # Allow the cobrand to add in any additional query parameters
     my $extra_params = $c->cobrand->call_hook('display_location_extra_params');
 
-    my ( $on_map, $nearby, $distance ) =
+    my ( $on_map, $nearby ) =
       FixMyStreet::Map::map_features(
         $c, %$extra,
         categories => [ keys %{$c->stash->{filter_category}} ],
@@ -280,7 +290,6 @@ sub map_features : Private {
     $c->stash->{pins} = \@pins;
     $c->stash->{on_map} = $on_map;
     $c->stash->{around_map} = $nearby;
-    $c->stash->{distance} = $distance;
 }
 
 =head2 ajax
@@ -306,6 +315,18 @@ sub ajax : Path('/ajax') {
 
     $c->forward('map_features', [ { bbox => $c->stash->{bbox} } ]);
     $c->forward('/reports/ajax', [ 'around/on_map_list_items.html' ]);
+}
+
+sub nearby : Path {
+    my ($self, $c) = @_;
+
+    my $states = FixMyStreet::DB::Result::Problem->open_states();
+    $c->forward('/report/_nearby_json', [ {
+        latitude => $c->get_param('latitude'),
+        longitude => $c->get_param('longitude'),
+        categories => [ $c->get_param('filter_category') || () ],
+        states => $states,
+    } ]);
 }
 
 sub location_closest_address : Path('/ajax/closest') {
@@ -389,10 +410,13 @@ sub _geocode : Private {
 sub lookup_by_ref : Private {
     my ( $self, $c, $ref ) = @_;
 
-    my $problems = $c->cobrand->problems->search([
-        id => $ref,
-        external_id => $ref
-    ]);
+    my $criteria = $c->cobrand->call_hook("lookup_by_ref", $ref) ||
+        [
+            id => $ref,
+            external_id => $ref
+        ];
+
+    my $problems = $c->cobrand->problems->search({ non_public => 0, -or => $criteria });
 
     my $count = try {
         $problems->count;

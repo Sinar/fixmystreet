@@ -54,9 +54,18 @@ sub general : Path : Args(0) {
 
 }
 
-sub general_test : Path('_test_') : Args(0) {
+sub create : Path('create') : Args(0) {
     my ( $self, $c ) = @_;
-    $c->stash->{template} = 'auth/token.html';
+    return unless $c->req->method eq 'POST';
+    $c->detach('code_sign_in');
+}
+
+sub forgot : Path('forgot') : Args(0) {
+    my ( $self, $c ) = @_;
+    $c->stash->{forgotten} = 1;
+    $c->stash->{template} = 'auth/create.html';
+    return unless $c->req->method eq 'POST';
+    $c->detach('code_sign_in');
 }
 
 sub authenticate : Private {
@@ -77,7 +86,6 @@ sub sign_in : Private {
 
     $username ||= '';
     my $password = $c->get_param('password_sign_in') || '';
-    my $remember_me = $c->get_param('remember_me') || 0;
 
     # Sign out just in case
     $c->logout();
@@ -91,10 +99,6 @@ sub sign_in : Private {
             $c->user->update({ password => $password });
         }
 
-        # unless user asked to be remembered limit the session to browser
-        $c->set_session_cookie_expire(0)
-          unless $remember_me;
-
         # Regenerate CSRF token as session ID changed
         $c->forward('get_csrf_token');
 
@@ -104,7 +108,6 @@ sub sign_in : Private {
     $c->stash(
         sign_in_error => 1,
         username => $username,
-        remember_me => $remember_me,
     );
     return;
 }
@@ -224,7 +227,8 @@ sub token : Path('/M') : Args(1) {
     my $data = $c->forward('get_token', [ $url_token, 'email_sign_in' ]) || return;
 
     $c->stash->{token_not_found} = 1, return
-        if $data->{old_user_id} && (!$c->user_exists || $c->user->id ne $data->{old_user_id});
+        if $data->{old_user_id} && $data->{r} && $data->{r} eq 'auth/change_email/success'
+            && (!$c->user_exists || $c->user->id ne $data->{old_user_id});
 
     my $type = $data->{login_type} || 'email';
     $c->detach( '/auth/process_login', [ $data, $type ] );
@@ -314,7 +318,7 @@ categories this user has been assigned to.
 sub redirect_to_categories : Private {
     my ( $self, $c ) = @_;
 
-    my $categories = join(',', @{ $c->user->categories });
+    my $categories = $c->user->categories_string;
     my $body_short = $c->cobrand->short_name( $c->user->from_body );
 
     $c->res->redirect( $c->uri_for( "/reports/" . $body_short, { filter_category => $categories } ) );

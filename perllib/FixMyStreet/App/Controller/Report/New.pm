@@ -6,13 +6,14 @@ BEGIN { extends 'Catalyst::Controller'; }
 
 use Encode;
 use List::MoreUtils qw(uniq);
+use List::Util 'first';
 use POSIX 'strcoll';
 use HTML::Entities;
-use mySociety::MaPit;
 use Path::Class;
 use Utils;
 use mySociety::EmailUtil;
 use JSON::MaybeXS;
+use Text::CSV;
 use FixMyStreet::SMS;
 
 =head1 NAME
@@ -95,7 +96,7 @@ sub report_new : Path : Args(0) {
     # work out the location for this report and do some checks
     # Also show map if we're just updating the filters
     return $c->forward('redirect_to_around')
-      if !$c->forward('determine_location') || $c->get_param('filter_update');
+      if !$c->forward('determine_location') || $c->get_param('pc_override') || $c->get_param('filter_update');
 
     # create a problem from the submitted details
     $c->stash->{template} = "report/new/fill_in_details.html";
@@ -103,6 +104,7 @@ sub report_new : Path : Args(0) {
     $c->forward('setup_report_extra_fields');
     $c->forward('generate_map');
     $c->forward('check_for_category');
+    $c->forward('setup_report_extras');
 
     # deal with the user and report and check both are happy
 
@@ -115,12 +117,6 @@ sub report_new : Path : Args(0) {
     return unless $c->forward('check_for_errors');
     $c->forward('save_user_and_report');
     $c->forward('redirect_or_confirm_creation');
-}
-
-sub report_new_test : Path('_test_') : Args(0) {
-    my ( $self, $c ) = @_;
-    $c->stash->{template}   = 'email_sent.html';
-    $c->stash->{email_type} = $c->get_param('email_type');
 }
 
 # This is for the new phonegap versions of the app. It looks a lot like
@@ -187,10 +183,8 @@ sub report_form_ajax : Path('ajax') : Args(0) {
 
     # work out the location for this report and do some checks
     if ( ! $c->forward('determine_location') ) {
-        my $body = encode_json({ error => $c->stash->{location_error} });
-        $c->res->content_type('application/json; charset=utf-8');
-        $c->res->body($body);
-        return;
+        $c->stash->{json_response} = { error => $c->stash->{location_error} };
+        $c->detach('send_json_response');
     }
 
     $c->forward('setup_categories_and_bodies');
@@ -207,6 +201,11 @@ sub report_form_ajax : Path('ajax') : Args(0) {
 
     my $extra_titles_list = $c->cobrand->title_list($c->stash->{all_areas});
 
+    my @list_of_names = map { $_->name } values %{$c->stash->{bodies}};
+    my %display_names = map {
+        my $name = $_->cobrand_name;
+        ( $_->name ne $name ) ? ( $_->name => $name ) : ();
+    } values %{$c->stash->{bodies}};
     my $contribute_as = {};
     if ($c->user_exists) {
         my @bodies = keys %{$c->stash->{bodies}};
@@ -218,20 +217,28 @@ sub report_form_ajax : Path('ajax') : Args(0) {
         $contribute_as->{body} = $ca_body if $ca_body;
     }
 
-    my $body = encode_json(
-        {
-            councils_text   => $councils_text,
-            councils_text_private => $councils_text_private,
-            category        => $category,
-            extra_name_info => $extra_name_info,
-            titles_list     => $extra_titles_list,
-            %$contribute_as ? (contribute_as => $contribute_as) : (),
-            $top_message ? (top_message => $top_message) : (),
-        }
-    );
+    my %by_category;
+    foreach my $contact (@{$c->stash->{category_options}}) {
+        next if ref $contact eq 'HASH'; # Ignore the 'Pick a category' line
+        my $cat = $c->stash->{category} = $contact->category;
+        my $body = $c->forward('by_category_ajax_data', [ 'all', $cat ]);
+        $by_category{$cat} = $body;
+    }
 
-    $c->res->content_type('application/json; charset=utf-8');
-    $c->res->body($body);
+    $c->stash->{json_response} = {
+        bodies          => \@list_of_names,
+        councils_text   => $councils_text,
+        councils_text_private => $councils_text_private,
+        category        => $category,
+        extra_name_info => $extra_name_info,
+        titles_list     => $extra_titles_list,
+        %display_names ? (display_names   => \%display_names) : (),
+        %$contribute_as ? (contribute_as => $contribute_as) : (),
+        $top_message ? (top_message => $top_message) : (),
+        unresponsive => $c->stash->{unresponsive}->{ALL} || '',
+        by_category => \%by_category,
+    };
+    $c->detach('send_json_response');
 }
 
 sub category_extras_ajax : Path('category_extras') : Args(0) {
@@ -239,53 +246,61 @@ sub category_extras_ajax : Path('category_extras') : Args(0) {
 
     $c->forward('initialize_report');
     if ( ! $c->forward('determine_location') ) {
-        my $body = encode_json({ error => _("Sorry, we could not find that location.") });
-        $c->res->content_type('application/json; charset=utf-8');
-        $c->res->body($body);
-        return 1;
+        $c->stash->{json_response} = { error => _("Sorry, we could not find that location.") };
+        $c->detach('send_json_response');
     }
     $c->forward('setup_categories_and_bodies');
     $c->forward('setup_report_extra_fields');
-    $c->forward('check_for_category');
 
+    $c->forward('check_for_category');
     my $category = $c->stash->{category} || "";
     $category = '' if $category eq _('-- Pick a category --');
 
+    $c->stash->{json_response} = $c->forward('by_category_ajax_data', [ 'one', $category ]);
+    $c->forward('send_json_response');
+}
+
+sub by_category_ajax_data : Private {
+    my ($self, $c, $type, $category) = @_;
+
     my $bodies = $c->forward('contacts_to_bodies', [ $category ]);
+    my $list_of_names = [ map { $_->name } ($category ? @$bodies : values %{$c->stash->{bodies_to_list}}) ];
     my $vars = {
-        $category ? (list_of_names => [ map { $_->name } @$bodies ]) : (),
+        $category ? (list_of_names => $list_of_names) : (),
     };
 
-    my $category_extra = '';
-    my $category_extra_json = [];
-    my $generate;
-    if ( $c->stash->{category_extras}->{$category} && @{ $c->stash->{category_extras}->{$category} } >= 1 ) {
-        $c->stash->{category_extras} = { $category => $c->stash->{category_extras}->{$category} };
-        $generate = 1;
-    }
-    if ($c->stash->{unresponsive}->{$category}) {
-        $generate = 1;
-    }
-    if ($c->stash->{report_extra_fields}) {
-        $generate = 1;
-    }
-    if ($generate) {
-        $category_extra = $c->render_fragment('report/new/category_extras.html', $vars);
-        $category_extra_json = $c->forward('generate_category_extra_json');
+    my $non_public = $c->stash->{non_public_categories}->{$category};
+    my $body = {
+        bodies => $list_of_names,
+        $non_public ? ( non_public => JSON->true ) : (),
+    };
+
+    if (($c->stash->{category_extras}->{$category} && @{ $c->stash->{category_extras}->{$category} } >= 1) or
+            $c->stash->{unresponsive}->{$category} or $c->stash->{report_extra_fields}) {
+        $body->{category_extra} = $c->render_fragment('report/new/category_extras.html', $vars);
+        $body->{category_extra_json} = $c->forward('generate_category_extra_json');
     }
 
-    my $councils_text = $c->render_fragment( 'report/new/councils_text.html', $vars);
-    my $councils_text_private = $c->render_fragment( 'report/new/councils_text_private.html');
+    my $unresponsive = $c->stash->{unresponsive}->{$category};
+    $unresponsive ||= $c->stash->{unresponsive}->{ALL} || '' if $type eq 'one';
 
-    my $body = encode_json({
-        category_extra => $category_extra,
-        councils_text => $councils_text,
-        councils_text_private => $councils_text_private,
-        category_extra_json => $category_extra_json,
-    });
+    # unresponsive must return empty string if okay, as that's what mobile app checks
+    # councils_text.html must be rendered if it differs from the default output,
+    # which currently means for unresponsive and non_public categories.
+    if ($type eq 'one' || ($type eq 'all' && $unresponsive)) {
+        $body->{unresponsive} = $unresponsive;
+        # Check for no bodies here, because if there are any (say one
+        # unresponsive, one not), can use default display code for that.
+        if ($type eq 'all' && !@$bodies) {
+            $body->{councils_text} = $c->render_fragment( 'report/new/councils_text.html', $vars);
+            $body->{councils_text_private} = $c->render_fragment( 'report/new/councils_text_private.html');
+        }
+    }
+    if ($non_public) {
+        $body->{councils_text} = $c->render_fragment( 'report/new/councils_text.html', $vars);
+    }
 
-    $c->res->content_type('application/json; charset=utf-8');
-    $c->res->body($body);
+    return $body;
 }
 
 =head2 report_import
@@ -412,6 +427,12 @@ sub report_import : Path('/import') {
 
     $c->send_email( 'partial.txt', { to => $report->user->email, } );
 
+    if ( $c->get_param('web') ) {
+        $c->res->content_type('text/html; charset=utf-8');
+        $c->stash->{template}   = 'email_sent.html';
+        $c->stash->{email_type} = 'problem';
+        return 1;
+    }
     $c->res->body('SUCCESS');
     return 1;
 }
@@ -468,6 +489,9 @@ sub initialize_report : Private {
 
                 # save the token to delete at the end
                 $c->stash->{partial_token} = $token if $report;
+
+                $c->stash->{email} = $report->user->email;
+                $c->stash->{phone} = $report->user->phone_display;
 
             } else {
                 # no point keeping it if it is done.
@@ -619,13 +643,12 @@ sub setup_categories_and_bodies : Private {
 
     my @bodies = $c->model('DB::Body')->active->for_areas(keys %$all_areas)->all;
     my %bodies = map { $_->id => $_ } @bodies;
-    my $first_body = ( values %bodies )[0];
 
     my $contacts                #
       = $c                      #
       ->model('DB::Contact')    #
       ->active
-      ->search( { body_id => [ keys %bodies ] }, { prefetch => 'body' } );
+      ->search( { 'me.body_id' => [ keys %bodies ] }, { prefetch => 'body' } );
     my @contacts = $c->cobrand->categories_restriction($contacts)->all;
 
     # variables to populate
@@ -638,17 +661,18 @@ sub setup_categories_and_bodies : Private {
       ();    # categories for which the reports are not public
     $c->stash->{unresponsive} = {};
 
-    if (keys %bodies == 1 && $first_body->send_method && $first_body->send_method eq 'Refused') {
-        # If there's only one body, and it's set to refused, we can show the
+    my @refused_bodies = grep { ($_->send_method || "") eq 'Refused' } values %bodies;
+    if (@refused_bodies && @refused_bodies == values %bodies) {
+        # If all bodies are set to Refused, we can show the
         # message immediately, before they select a category.
+        my $k = 'ALL';
         if ($c->action->name eq 'category_extras_ajax' && $c->req->method eq 'POST') {
             # The mobile app doesn't currently use this, in which case make
             # sure the message is output, either below with a category, or when
             # a blank category call is made.
-            $c->stash->{unresponsive}{""} = $first_body->id;
-        } else {
-            $c->stash->{unresponsive}{ALL} = $first_body->id;
+            $k = "";
         }
+        $c->stash->{unresponsive}{$k} = { map { $_ => 1 } keys %bodies };
     }
 
     # keysort does not appear to obey locale so use strcoll (see i18n.t)
@@ -665,20 +689,25 @@ sub setup_categories_and_bodies : Private {
 
         $bodies_to_list{ $contact->body_id } = $contact->body;
 
-        unless ( $seen{$contact->category} ) {
-            push @category_options, $contact;
-
-            my $metas = $contact->get_metadata_for_input;
-            $category_extras{$contact->category} = $metas if @$metas;
-            $category_extras_hidden{$contact->category} = (grep { !$c->cobrand->category_extra_hidden($_) } @$metas) ? 0 : 1;
-
-            my $body_send_method = $bodies{$contact->body_id}->send_method || '';
-            $c->stash->{unresponsive}{$contact->category} = $contact->body_id
-                if !$c->stash->{unresponsive}{ALL} &&
-                    ($contact->email =~ /^REFUSED$/i || $body_send_method eq 'Refused');
-
-            $non_public_categories{ $contact->category } = 1 if $contact->non_public;
+        my $metas = $contact->get_metadata_for_input;
+        if (@$metas) {
+            push @{$category_extras{$contact->category}}, @$metas;
+            my $all_hidden = (grep { !$c->cobrand->category_extra_hidden($_) } @$metas) ? 0 : 1;
+            if (exists($category_extras_hidden{$contact->category})) {
+                $category_extras_hidden{$contact->category} &&= $all_hidden;
+            } else {
+                $category_extras_hidden{$contact->category} = $all_hidden;
+            }
         }
+
+        $non_public_categories{ $contact->category } = 1 if $contact->non_public;
+
+        my $body_send_method = $contact->body->send_method || '';
+        $c->stash->{unresponsive}{$contact->category}{$contact->body_id} = 1
+            if !$c->stash->{unresponsive}{ALL} &&
+                ($contact->email =~ /^REFUSED$/i || $body_send_method eq 'Refused');
+
+        push @category_options, $contact unless $seen{$contact->category};
         $seen{$contact->category} = $contact;
     }
 
@@ -702,17 +731,25 @@ sub setup_categories_and_bodies : Private {
     $c->stash->{non_public_categories}  = \%non_public_categories;
     $c->stash->{extra_name_info} = $first_area->{id} == COUNCIL_ID_BROMLEY ? 1 : 0;
 
+    # escape these so we can then split on , cleanly in the template.
+    my @list_of_names = map { $_->name } values %bodies_to_list;
+    my $csv = Text::CSV->new();
+    $csv->combine(@list_of_names);
+    $c->stash->{list_of_names_as_string} = $csv->string;
+
     my @missing_details_bodies = grep { !$bodies_to_list{$_->id} } values %bodies;
     my @missing_details_body_names = map { $_->name } @missing_details_bodies;
 
     $c->stash->{missing_details_bodies} = \@missing_details_bodies;
     $c->stash->{missing_details_body_names} = \@missing_details_body_names;
 
-    if ( $c->cobrand->call_hook('enable_category_groups') ) {
+    if ( $c->cobrand->enable_category_groups ) {
         my %category_groups = ();
         for my $category (@category_options) {
-            my $group = $category->{group} // $category->get_extra_metadata('group') // '';
-            push @{$category_groups{$group}}, $category;
+            my $group = $category->{group} // $category->get_extra_metadata('group') // [''];
+            # this could be an array ref or a string
+            my @groups = ref $group eq 'ARRAY' ? @$group : ($group);
+            push( @{$category_groups{$_}}, $category ) for @groups;
         }
 
         my @category_groups = ();
@@ -729,7 +766,7 @@ sub setup_report_extra_fields : Private {
 
     return unless $c->cobrand->allow_report_extra_fields;
 
-    my @extras = $c->model('DB::ReportExtraFields')->for_cobrand($c->cobrand)->for_language($c->stash->{lang_code})->all;
+    my @extras = $c->model('DB::ReportExtraField')->for_cobrand($c->cobrand)->for_language($c->stash->{lang_code})->all;
     $c->stash->{report_extra_fields} = \@extras;
 }
 
@@ -761,14 +798,15 @@ sub process_user : Private {
 
     # Extract all the params to a hash to make them easier to work with
     my %params = map { $_ => $c->get_param($_) }
-      ( 'username', 'email', 'name', 'phone', 'password_register', 'fms_extra_title' );
+      ( 'email', 'name', 'phone', 'password_register', 'fms_extra_title' );
+
+    # Report form includes two username fields: #form_username_register and #form_username_sign_in
+    $params{username} = (first { $_ } $c->get_param_list('username')) || '';
 
     if ( $c->cobrand->allow_anonymous_reports ) {
         my $anon_details = $c->cobrand->anonymous_account;
-
-        for my $key ( qw( username email name ) ) {
-            $params{ $key } ||= $anon_details->{ $key };
-        }
+        $params{username} ||= $anon_details->{email};
+        $params{name} ||= $anon_details->{name};
     }
 
     # The user is already signed in. Extra bare block for 'last'.
@@ -784,9 +822,13 @@ sub process_user : Private {
         $report->user( $user );
         $c->forward('update_user', [ \%params ]);
 
+        $c->stash->{phone} = $report->user->phone_display;
+        $c->stash->{email} = $report->user->email;
+
         if ($c->stash->{contributing_as_body} or $c->stash->{contributing_as_anonymous_user}) {
-            $report->name($user->from_body->name);
-            $user->name($user->from_body->name) unless $user->name;
+            my $name = $user->moderating_user_name;
+            $report->name($name);
+            $user->name($name) unless $user->name;
             $c->stash->{no_reporter_alert} = 1;
         }
 
@@ -806,6 +848,12 @@ sub process_user : Private {
         unless $report->user;
 
     $c->stash->{phone_may_be_mobile} = $type eq 'phone' && $parsed->{may_be_mobile};
+
+    $c->forward('update_user', [ \%params ]);
+
+    $c->stash->{phone} = Utils::trim_text( $type eq 'phone' ? $report->user->phone_display : $params{phone} );
+    $c->stash->{email} = Utils::trim_text( $type eq 'email' ? $report->user->email : $params{email} );
+
 
     # The user is trying to sign in. We only care about username from the params.
     if ( $c->get_param('submit_sign_in') || $c->get_param('password_sign_in') ) {
@@ -827,7 +875,6 @@ sub process_user : Private {
         return 1;
     }
 
-    $c->forward('update_user', [ \%params ]);
     if ($params{password_register}) {
         $c->forward('/auth/test_password', [ $params{password_register} ]);
         $report->user->password($params{password_register});
@@ -874,7 +921,6 @@ sub process_report : Private {
         'partial',                               #
         'service',                               #
         'non_public',
-        'single_body_only'
       );
 
     # load the report
@@ -933,8 +979,20 @@ sub process_report : Private {
             return 1;
         }
 
-        my $bodies = $c->forward('contacts_to_bodies', [ $report->category, $params{single_body_only} ]);
-        my $body_string = join(',', map { $_->id } @$bodies) || '-1';
+        # check that we've not indicated we only want to sent to a single body
+        # and if we find a matching one then only send to that. e.g. if we clicked
+        # on a TfL road on the map.
+        my $body_string = do {
+            if (my $single_body_only = $c->get_param('single_body_only')) {
+                my $body = $c->model('DB::Body')->search({ name => $single_body_only })->first;
+                $body ? $body->id : '-1';
+            } else {
+                my $contact_options = {};
+                $contact_options->{do_not_send} = [ $c->get_param_list('do_not_send', 1) ];
+                my $bodies = $c->forward('contacts_to_bodies', [ $report->category, $contact_options ]);
+                join(',', map { $_->id } @$bodies) || '-1';
+            }
+        };
 
         $report->bodies_str($body_string);
         # Record any body IDs which might have meant to match, but had no contact
@@ -990,59 +1048,54 @@ sub process_report : Private {
 }
 
 sub contacts_to_bodies : Private {
-    my ($self, $c, $category, $single_body_only) = @_;
+    my ($self, $c, $category, $options) = @_;
 
     my @contacts = grep { $_->category eq $category } @{$c->stash->{contacts}};
 
-    # check that we've not indicated we only want to sent to a single body
-    # and if we find a matching one then only send to that. e.g. if we clicked
-    # on a TfL road on the map.
-    if ($single_body_only) {
-        my @contacts_filtered = grep { $_->body->name eq $single_body_only } @contacts;
+    # check that the front end has not indicated that we should not send to a
+    # body. This is usually because the asset code thinks it's not near enough
+    # to a road.
+    if ($options->{do_not_send}) {
+        my %do_not_send_check = map { $_ => 1 } @{$options->{do_not_send}};
+        my @contacts_filtered = grep { !$do_not_send_check{$_->body->name} } @contacts;
         @contacts = @contacts_filtered if scalar @contacts_filtered;
     }
 
-    if ($c->stash->{unresponsive}{$category} || $c->stash->{unresponsive}{ALL} || !@contacts) {
-        [];
-    } else {
+    my $unresponsive = $c->stash->{unresponsive}{$category} || $c->stash->{unresponsive}{ALL};
+    if ($unresponsive) {
+        @contacts = grep { !$unresponsive->{$_->body_id} } @contacts;
+    } elsif (@contacts) {
         if ( $c->cobrand->call_hook('singleton_bodies_str') ) {
             # Cobrands like Zurich can only ever have a single body: 'x', because some functionality
             # relies on string comparison against bodies_str.
-            [ $contacts[0]->body ];
-        } else {
-            [ map { $_->body } @contacts ];
+            @contacts = ($contacts[0]);
         }
     }
+    [ map { $_->body } @contacts ];
+}
+
+sub setup_report_extras : Private {
+    my ($self, $c) = @_;
+
+    # report_meta is used by the templates to fill in the extra field values
+    my $extra = $c->stash->{report}->get_extra_fields;
+    $c->stash->{report_meta} = { map { 'x' . $_->{name} => $_ } @$extra };
 }
 
 sub set_report_extras : Private {
     my ($self, $c, $contacts, $param_prefix) = @_;
 
     $param_prefix ||= "";
-    my @extra;
-    foreach my $contact (@$contacts) {
-        my $metas = $contact->get_metadata_for_input;
-        foreach my $field ( @$metas ) {
-            if ( lc( $field->{required} ) eq 'true' && !$c->cobrand->category_extra_hidden($field)) {
-                unless ( $c->get_param($param_prefix . $field->{code}) ) {
-                    $c->stash->{field_errors}->{ $field->{code} } = _('This information is required');
-                }
-            }
-            push @extra, {
-                name => $field->{code},
-                description => $field->{description},
-                value => $c->get_param($param_prefix . $field->{code}) || '',
-            };
-        }
-    }
+    my @metalist = map { [ $_->get_metadata_for_storage, $param_prefix ] } @$contacts;
+    push @metalist, map { [ $_->get_extra_fields, "extra[" . $_->id . "]" ] } @{$c->stash->{report_extra_fields}};
 
-    foreach my $extra_fields (@{ $c->stash->{report_extra_fields} }) {
-        my $metas = $extra_fields->get_extra_fields;
-        $param_prefix = "extra[" . $extra_fields->id . "]";
+    my @extra;
+    foreach my $item (@metalist) {
+        my ($metas, $param_prefix) = @$item;
         foreach my $field ( @$metas ) {
             if ( lc( $field->{required} ) eq 'true' && !$c->cobrand->category_extra_hidden($field)) {
                 unless ( $c->get_param($param_prefix . $field->{code}) ) {
-                    $c->stash->{field_errors}->{ $field->{code} } = _('This information is required');
+                    $c->stash->{field_errors}->{ 'x' . $field->{code} } = _('This information is required');
                 }
             }
             push @extra, {
@@ -1057,7 +1110,7 @@ sub set_report_extras : Private {
         if ( scalar @$contacts );
 
     if ( @extra ) {
-        $c->stash->{report_meta} = { map { $_->{name} => $_ } @extra };
+        $c->stash->{report_meta} = { map { 'x' . $_->{name} => $_ } @extra };
         $c->stash->{report}->set_extra_fields( @extra );
     }
 }
@@ -1123,6 +1176,13 @@ sub check_for_errors : Private {
     return 1 unless scalar keys %field_errors || $c->stash->{login_success};
 
     $c->stash->{field_errors} = \%field_errors;
+
+    if ( $c->cobrand->allow_anonymous_reports ) {
+        my $anon_details = $c->cobrand->anonymous_account;
+        my $report = $c->stash->{report};
+        $report->user->email(undef) if $report->user->email eq $anon_details->{email};
+        $report->name(undef) if $report->name eq $anon_details->{name};
+    }
 
     return;
 }
@@ -1227,10 +1287,9 @@ sub process_confirmation : Private {
     }
 
     # We have an unconfirmed problem
+    $problem->confirm;
     $problem->update(
         {
-            state      => 'confirmed',
-            confirmed  => \'current_timestamp',
             lastupdate => \'current_timestamp',
         }
     );
@@ -1396,7 +1455,8 @@ sub generate_map : Private {
             pins      => [ {
                 latitude  => $latitude,
                 longitude => $longitude,
-                colour    => 'green', # 'yellow',
+                draggable => 1,
+                colour    => $c->cobrand->pin_new_report_colour,
             } ],
         );
     }
@@ -1407,7 +1467,7 @@ sub generate_map : Private {
 sub check_for_category : Private {
     my ( $self, $c ) = @_;
 
-    $c->stash->{category} = $c->get_param('category');
+    $c->stash->{category} = $c->get_param('category') || $c->stash->{report}->category;
 
     return 1;
 }
@@ -1499,8 +1559,17 @@ sub redirect_to_around : Private {
     foreach (qw(pc zoom)) {
         $params->{$_} = $c->get_param($_);
     }
+
+    if (my $pc_override = $c->get_param('pc_override')) {
+        delete $params->{lat};
+        delete $params->{lon};
+        $params->{pc} = $pc_override;
+    }
+
+    my $csv = Text::CSV->new;
     foreach (qw(status filter_category)) {
-        $params->{$_} = join(',', $c->get_param_list($_, 1));
+        $csv->combine($c->get_param_list($_, 1));
+        $params->{$_} = $csv->string;
     }
 
     # delete empty values
@@ -1526,9 +1595,9 @@ sub generate_category_extra_json : Private {
     my @fields = map {
         {
             %$_,
-            required => $_->{required} eq "true" ? $true : $false,
-            variable => $_->{variable} eq "true" ? $true : $false,
-            order => int($_->{order}),
+            required => ($_->{required} || '') eq "true" ? $true : $false,
+            variable => ($_->{variable} || '') eq "true" ? $true : $false,
+            order => int($_->{order} || 0),
         }
     } @{ $c->stash->{category_extras}->{$c->stash->{category}} };
 

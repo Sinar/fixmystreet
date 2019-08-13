@@ -19,7 +19,10 @@ package main;
 
 use FixMyStreet::TestMech;
 
-my $c = FixMyStreet::App->new;
+use Catalyst::Test 'FixMyStreet::App';
+
+my ($res, $c) = ctx_request('/');
+
 my $cobrand = FixMyStreet::Cobrand::Tester->new({c => $c});
 $c->stash->{cobrand} = $cobrand;
 
@@ -47,7 +50,7 @@ is($c->model('DB::Problem')->count, 4, 'Four reports in database');
 is($cobrand->problems->count, 2, 'Two reports in the right cobrand');
 is($cobrand->updates->count, 1, 'One update in the right cobrand');
 
-my $nearby = $c->model('DB::Nearby')->nearby($c, 5, [], 10, 0.003, 0.004);
+my $nearby = $c->model('DB::Nearby')->nearby($c, distance => 5, ids => [], limit => 10, latitude => 0.003, longitude => 0.004);
 is(@$nearby, 1, 'One report close to the origin point');
 
 done_testing();

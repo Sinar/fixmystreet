@@ -25,9 +25,9 @@ $primary_text: #0b0c0c;
 $base_bg: white;
 $base_fg: #0b0c0c;
 
-$map_nav_bg: #fff;
-$nav_fg: #000;
-$nav_fg_hover: #eee;
+$nav_background_colour: #fff;
+$nav_colour: #000;
+$nav_hover_background_colour: #eee;
 
 // Colour used for front page 'how to report a problem' steps
 $col_big_numbers: $bathnes-primary;
@@ -35,7 +35,6 @@ $col_big_numbers: $bathnes-primary;
 $col_click_map: $bathnes-secondary;
 
 $col_fixed_label: $bathnes-secondary;
-$col_fixed_label_dark: $button-colour;
 
 $front_main_background: $bathnes-primary;
 

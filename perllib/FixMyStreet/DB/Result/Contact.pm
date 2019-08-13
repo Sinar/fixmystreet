@@ -8,7 +8,11 @@ use strict;
 use warnings;
 
 use base 'DBIx::Class::Core';
-__PACKAGE__->load_components("FilterColumn", "InflateColumn::DateTime", "EncodedColumn");
+__PACKAGE__->load_components(
+  "FilterColumn",
+  "FixMyStreet::InflateColumn::DateTime",
+  "FixMyStreet::EncodedColumn",
+);
 __PACKAGE__->table("contacts");
 __PACKAGE__->add_columns(
   "id",
@@ -23,6 +27,8 @@ __PACKAGE__->add_columns(
   "category",
   { data_type => "text", default_value => "Other", is_nullable => 0 },
   "email",
+  { data_type => "text", is_nullable => 0 },
+  "state",
   { data_type => "text", is_nullable => 0 },
   "editor",
   { data_type => "text", is_nullable => 0 },
@@ -42,8 +48,6 @@ __PACKAGE__->add_columns(
   { data_type => "text", default_value => "", is_nullable => 1 },
   "send_method",
   { data_type => "text", is_nullable => 1 },
-  "state",
-  { data_type => "text", is_nullable => 0 },
 );
 __PACKAGE__->set_primary_key("id");
 __PACKAGE__->add_unique_constraint("contacts_body_id_category_idx", ["body_id", "category"]);
@@ -73,8 +77,8 @@ __PACKAGE__->has_many(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2017-07-08 20:45:04
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:t/VtPP11R8bbqPZdEVXffw
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2019-04-25 12:06:39
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:f7XjQj4iABikbR4EZrjL3g
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
@@ -94,14 +98,9 @@ sub category_display {
     $self->translate_column('category');
 }
 
-sub get_metadata_for_input {
+sub get_metadata_for_editing {
     my $self = shift;
-    my $id_field = $self->id_field;
     my @metadata = @{$self->get_extra_fields};
-    # First, ones we always want to ignore (hard-coded, old system)
-    @metadata = grep { $_->{code} !~ /^(easting|northing|closest_address|$id_field)$/ } @metadata;
-    # Also ignore any we have with a 'server_set' automated attribute
-    @metadata = grep { !$_->{automated} || $_->{automated} ne 'server_set' } @metadata;
 
     # Just in case the extra data is in an old parsed format
     foreach (@metadata) {
@@ -109,6 +108,26 @@ sub get_metadata_for_input {
             $_->{values} = [ map { { name => $_->{name}[0], key => $_->{key}[0] } } @{$_->{values}->{value}} ];
         }
     }
+    return \@metadata;
+}
+
+sub get_metadata_for_input {
+    my $self = shift;
+    my $metadata = $self->get_metadata_for_editing;
+
+    # Also ignore any we have with a 'server_set' automated attribute
+    my @metadata = grep { !$_->{automated} || $_->{automated} ne 'server_set' } @$metadata;
+
+    return \@metadata;
+}
+
+sub get_metadata_for_storage {
+    my $self = shift;
+    my $metadata = $self->get_metadata_for_input;
+
+    # Also ignore any that were only for textual display
+    my @metadata = grep { ($_->{variable} || '') ne 'false' } @$metadata;
+
     return \@metadata;
 }
 

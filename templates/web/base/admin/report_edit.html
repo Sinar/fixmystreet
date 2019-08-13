@@ -47,7 +47,7 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 [% END %]
 
 <small>([%
-    SET postcode_safe = problem.postcode | html;
+    postcode_safe = problem.postcode | html;
     tprintf( loc('originally entered: &ldquo;%s&rdquo;'), postcode_safe )
 %],
 [% IF problem.used_map %][% loc('used map') %][% ELSE %][% loc("didn't use map") %][% END %])</small>
@@ -81,13 +81,19 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
   [% IF problem.send_method_used %]
     ([% problem.send_method_used %])
   [% END %]
-  [% IF problem.state == 'confirmed' AND problem.whensent %]
+  [% IF problem.state == 'confirmed' AND problem.whensent AND NOT c.cobrand.disable_resend %]
     <input data-confirm="[% loc('Are you sure?') %]" class="btn" type="submit" name="resend" value="[% loc('Resend report') %]">
   [% ELSIF NOT problem.whensent %]
     <input type="submit" class="btn" name="mark_sent" value="[% loc('Mark as sent') %]">
   [% END %]
 </li>
+[% IF c.user.is_superuser AND problem.send_fail_count > 0 %]
+<li class="sm">[% loc('Send Fail Count:') %] [% problem.send_fail_count %]</li>
+<li class="sm">[% loc('Last failure:') %] [% PROCESS format_time time=problem.send_fail_timestamp %]</li>
+<li class="sm truncate_height">[% loc('Reason:') %] [% problem.send_fail_reason | html %]</li>
+[% END %]
 <li class="sm">[% loc('Last update:') %] [% PROCESS format_time time=problem.lastupdate %]</li>
+<li>[% loc('Alerts:') %] [% alert_count %]</li>
 <li>[% loc('Service:') %] [% problem.service OR '<em>' _ loc('None') _ '</em>' %]</li>
 <li>[% loc('Cobrand:') %] [% problem.cobrand %]
 <br><small>[% loc('Cobrand data:') %] [% cobrand_data OR '<em>' _ loc('None') _ '</em>' %]</small>
@@ -110,7 +116,7 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 </ul>
 </div>
 
-[% status_message %]
+[% INCLUDE status_message %]
 
 <ul class="plain-list">
 <li><label for='title'>[% loc('Subject:') %]</label>
@@ -180,6 +186,22 @@ class="admin-offsite-link">[% problem.latitude %], [% problem.longitude %]</a>
 </form>
 
 </div>
+
+[% moderation_history = problem.moderation_history %]
+[% IF moderation_history %]
+<div class="full-width" style="margin-bottom:-2em; padding-bottom: 2em">
+    <h2>[% loc('Moderation history') %]</h2>
+    [% last_history = problem %]
+    <ul>
+      [% FOR history IN moderation_history %]
+        <li><i>[% INCLUDE 'report/update/moderation_meta.html' %]</i>
+            [% INCLUDE 'report/update/moderation_diff.html' diff=history.compare_with(last_history) %]
+        </li>
+        [% last_history = history %]
+      [% END %]
+    </ul>
+</div>
+[% END %]
 
 <div class="full-width full-width--bottom">
 [% INCLUDE 'admin/list_updates.html' %]

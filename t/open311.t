@@ -70,6 +70,8 @@ my $problem = FixMyStreet::DB->resultset('Problem')->new( {
     cobrand => 'fixmystreet',
 } );
 
+my $bromley = FixMyStreet::DB->resultset('Body')->new({ name => 'Bromley' });
+
 subtest 'posting service request' => sub {
     my $extra = {
         url => 'http://example.com/report/1',
@@ -261,44 +263,70 @@ for my $test (
     };
 }
 
+subtest 'test always_send_email' => sub {
+    my $email = $user->email;
+    $user->email(undef);
+    my $extra = { url => 'http://example.com/report/1', };
 
-my $comment = FixMyStreet::DB->resultset('Comment')->new( {
-    id => 38362,
-    user => $user,
-    problem => $problem,
-    anonymous => 0,
-    text => 'this is a comment',
-    confirmed => $dt,
-    problem_state => 'confirmed',
-    extra => { title => 'Mr', email_alerts_requested => 0 },
-} );
+    my $results = make_service_req(
+        $problem, $extra, $problem->category,
+        '<?xml version="1.0" encoding="utf-8"?><service_requests><request><service_request_id>248</service_request_id></request></service_requests>',
+        { always_send_email => 1 }
+    );
+    my $c = CGI::Simple->new( $results->{req}->content );
+
+    is $c->param('email'), 'do-not-reply@example.org', 'correct email';
+    $user->email($email);
+};
+
+sub make_comment {
+    my $cobrand = shift;
+    FixMyStreet::DB->resultset('Comment')->new( {
+        id => 38362,
+        user => $user,
+        problem => $problem,
+        anonymous => 0,
+        text => 'this is a comment',
+        confirmed => $dt,
+        problem_state => 'confirmed',
+        cobrand => $cobrand || 'default',
+        extra => { title => 'Mr', email_alerts_requested => 0 },
+    } );
+}
 
 subtest 'basic request update post parameters' => sub {
+    my $comment = make_comment();
     my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
     is $results->{ res }, 248, 'got update id';
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
-    is $c->param('description'), 'this is a comment', 'email correct';
+    is $c->param('description'), 'this is a comment', 'description correct';
     is $c->param('email'), 'test@example.com', 'email correct';
     is $c->param('status'), 'OPEN', 'status correct';
     is $c->param('service_request_id'), 81, 'request id correct';
     is $c->param('updated_datetime'), DateTime::Format::W3CDTF->format_datetime($dt), 'correct date';
     is $c->param('title'), 'Mr', 'correct title';
-    is $c->param('last_name'), 'User', 'correct first name';
-    is $c->param('first_name'), 'Test', 'correct second name';
+    is $c->param('first_name'), 'Test', 'correct first name';
+    is $c->param('last_name'), 'User', 'correct second name';
     is $c->param('media_url'), undef, 'no media url';
 };
 
 subtest 'extended request update post parameters' => sub {
-    my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>', { use_extended_updates => 1 } );
+    my $comment = make_comment('bromley');
+    my $results;
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'bromley',
+    }, sub {
+        $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
+    };
 
     is $results->{ res }, 248, 'got update id';
 
     my $c = CGI::Simple->new( $results->{ req }->content );
 
-    is $c->param('description'), 'this is a comment', 'email correct';
+    is $c->param('description'), 'this is a comment', 'description correct';
     is $c->param('email'), 'test@example.com', 'email correct';
     is $c->param('status'), 'OPEN', 'status correct';
     is $c->param('service_request_id_ext'), 80, 'external request id correct';
@@ -306,9 +334,63 @@ subtest 'extended request update post parameters' => sub {
     is $c->param('public_anonymity_required'), 'FALSE', 'anon status correct';
     is $c->param('updated_datetime'), DateTime::Format::W3CDTF->format_datetime($dt), 'correct date';
     is $c->param('title'), 'Mr', 'correct title';
-    is $c->param('last_name'), 'User', 'correct first name';
-    is $c->param('first_name'), 'Test', 'correct second name';
+    is $c->param('first_name'), 'Test', 'correct first name';
+    is $c->param('last_name'), 'User', 'correct second name';
     is $c->param('email_alerts_requested'), 'FALSE', 'email alerts flag correct';
+    is $c->param('media_url'), undef, 'no media url';
+};
+
+subtest 'Hounslow update description is correct for same user' => sub {
+    my $comment = make_comment('hounslow');
+    my $results;
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'hounslow',
+    }, sub {
+        $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
+    };
+
+    is $results->{ res }, 248, 'got update id';
+
+    my $c = CGI::Simple->new( $results->{ req }->content );
+
+    is $c->param('description'), 'this is a comment', 'description correct';
+    is $c->param('email'), 'test@example.com', 'email correct';
+    is $c->param('status'), 'OPEN', 'status correct';
+    is $c->param('service_request_id'), 81, 'request id correct';
+    is $c->param('updated_datetime'), DateTime::Format::W3CDTF->format_datetime($dt), 'correct date';
+    is $c->param('title'), 'Mr', 'correct title';
+    is $c->param('first_name'), 'Test', 'correct first name';
+    is $c->param('last_name'), 'User', 'correct second name';
+    is $c->param('media_url'), undef, 'no media url';
+};
+
+subtest 'Hounslow update description is correct for a different user' => sub {
+    my $user2 = FixMyStreet::DB->resultset('User')->new( {
+        name => 'Another User',
+        email => 'another@example.org',
+    } );
+
+    my $comment = make_comment('hounslow');
+    $comment->user($user2);
+    my $results;
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'hounslow',
+    }, sub {
+        $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
+    };
+
+    is $results->{ res }, 248, 'got update id';
+
+    my $c = CGI::Simple->new( $results->{ req }->content );
+
+    is $c->param('description'), "[This comment was not left by the original problem reporter] this is a comment", 'description correct';
+    is $c->param('email'), 'another@example.org', 'email correct';
+    is $c->param('status'), 'OPEN', 'status correct';
+    is $c->param('service_request_id'), 81, 'request id correct';
+    is $c->param('updated_datetime'), DateTime::Format::W3CDTF->format_datetime($dt), 'correct date';
+    is $c->param('title'), 'Mr', 'correct title';
+    is $c->param('first_name'), 'Another', 'correct first name';
+    is $c->param('last_name'), 'User', 'correct second name';
     is $c->param('media_url'), undef, 'no media url';
 };
 
@@ -318,11 +400,14 @@ subtest 'check media url set' => sub {
     my $image_path = path('t/app/controller/sample.jpg');
     $image_path->copy( path( $UPLOAD_DIR, '0123456789012345678901234567890123456789.jpeg' ) );
 
+    my $comment = make_comment('fixmystreet');
     $comment->photo("0123456789012345678901234567890123456789");
-    $comment->cobrand('fixmystreet');
 
     FixMyStreet::override_config {
-        UPLOAD_DIR => $UPLOAD_DIR,
+        PHOTO_STORAGE_BACKEND => 'FileSystem',
+        PHOTO_STORAGE_OPTIONS => {
+            UPLOAD_DIR => $UPLOAD_DIR,
+        },
     }, sub {
         my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
@@ -332,7 +417,6 @@ subtest 'check media url set' => sub {
         my $expected_path = '/c/' . $comment->id . '.0.full.jpeg';
         like $c->param('media_url'), qr/$expected_path/, 'image url included';
     };
-    $comment->photo(undef);
 };
 
 foreach my $test (
@@ -412,10 +496,27 @@ foreach my $test (
         status => 'OPEN',
         extended => 'IN_PROGRESS',
     },
+    {
+        desc => 'comment that marks problem open sends OPEN if not mark_reopen',
+        state => 'confirmed',
+        status => 'OPEN',
+        extended => 'OPEN',
+        mark_open => 1,
+    },
+    {
+        desc => 'comment that marks problem open sends REOPEN if mark_reopen',
+        state => 'confirmed',
+        status => 'OPEN',
+        extended => 'REOPEN',
+        mark_open => 1,
+        mark_reopen => 1,
+    },
 ) {
     subtest $test->{desc} => sub {
+        my $comment = make_comment();
         $comment->problem_state( $test->{state} );
         $comment->problem->state( $test->{state} );
+        $comment->mark_open(1) if $test->{mark_open};
 
         my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
 
@@ -423,7 +524,9 @@ foreach my $test (
         is $c->param('status'), $test->{status}, 'correct status';
 
         if ( $test->{extended} ) {
-            my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>', { extended_statuses => 1 } );
+            my $params = { extended_statuses => 1 };
+            $params->{mark_reopen} = 1 if $test->{mark_reopen};
+            my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>', $params );
             my $c = CGI::Simple->new( $results->{ req }->content );
             is $c->param('status'), $test->{extended}, 'correct extended status';
         }
@@ -445,11 +548,17 @@ for my $test (
     },
 ) {
     subtest $test->{desc} => sub {
+        my $comment = make_comment('bromley');
         $comment->problem_state( $test->{state} );
         $comment->problem->state( $test->{state} );
         $comment->anonymous( $test->{anon} );
 
-        my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>', { use_extended_updates => 1 } );
+        my $results;
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => 'bromley',
+        }, sub {
+            $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
+        };
 
         my $c = CGI::Simple->new( $results->{ req }->content );
         is $c->param('public_anonymity_required'), $test->{anon} ? 'TRUE' : 'FALSE', 'correct anonymity';
@@ -458,17 +567,6 @@ for my $test (
 
 my $dt2 = $dt->clone;
 $dt2->add( 'minutes' => 1 );
-
-my $comment2 = FixMyStreet::DB->resultset('Comment')->new( {
-    id => 38363,
-    user => $user,
-    problem => $problem,
-    anonymous => 0,
-    text => 'this is a comment',
-    confirmed => $dt,
-    problem_state => 'confirmed',
-    extra => { title => 'Mr', email_alerts_requested => 0 },
-} );
 
 for my $test (
     {
@@ -494,6 +592,7 @@ for my $test (
     },
 ) {
     subtest $test->{desc} => sub {
+        my $comment = make_comment();
         $comment->problem_state( $test->{state} );
         $comment->problem->state( $test->{problem_state} );
         my $results = make_update_req( $comment, '<?xml version="1.0" encoding="utf-8"?><service_request_updates><request_update><update_id>248</update_id></request_update></service_request_updates>' );
@@ -538,6 +637,7 @@ for my $test (
   )
 {
     subtest $test->{desc} => sub {
+        my $comment = make_comment();
         $comment->name( $test->{comment_name} );
         $user->name( $test->{user_name} );
         $comment->extra( $test->{ extra } );
@@ -626,6 +726,7 @@ for my $test (
 }
 
 $problem->send_fail_count(1);
+my $comment = make_comment();
 $comment->send_fail_count(1);
 
 subtest 'No request id in reponse' => sub {
@@ -791,6 +892,7 @@ sub _make_req {
 
     $open311_conf{'test_mode'} = 1;
     $open311_conf{'end_point'} = 'http://localhost/o311';
+    $open311_conf{fixmystreet_body} = $bromley;
     my $o =
       Open311->new( %open311_conf );
 

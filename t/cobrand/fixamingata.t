@@ -5,7 +5,6 @@ use FixMyStreet::TestMech;
 my $mech = FixMyStreet::TestMech->new;
 
 use t::Mock::Nominatim;
-LWP::Protocol::PSGI->register(t::Mock::Nominatim->to_psgi_app, host => 'nominatim.openstreetmap.org');
 
 # Front page test
 
@@ -104,6 +103,18 @@ subtest "Test ajax decimal points" => sub {
 
         $mech->get_ok('/ajax/lookup_location?term=high+street');
         $mech->content_contains("Ed\xc3\xadnburgh");
+    };
+};
+
+subtest "check user details always shown" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'fixamingata' ],
+    }, sub {
+        $user2->update({ from_body => $body });
+        $mech->get_ok('/report/' . $report->id);
+        my $update_meta = $mech->extract_update_metas;
+        like $update_meta->[0], qr/Body \(Commenter\) /;
+        $user2->update({ from_body => undef });
     };
 };
 

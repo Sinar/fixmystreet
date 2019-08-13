@@ -113,12 +113,14 @@ sub override_config($&) {
     );
 
     FixMyStreet::Map::reload_allowed_maps() if $config->{MAP_TYPE};
+    $FixMyStreet::PhotoStorage::instance = undef if $config->{PHOTO_STORAGE_BACKEND};
 
     $code->();
 
     $override_guard->restore();
     mySociety::MaPit::configure() if $config->{MAPIT_URL};
     FixMyStreet::Map::reload_allowed_maps() if $config->{MAP_TYPE};
+    $FixMyStreet::PhotoStorage::instance = undef if $config->{PHOTO_STORAGE_BACKEND};
 }
 
 =head2 dbic_connect_info
@@ -152,10 +154,10 @@ sub dbic_connect_info {
 
     my $dbi_args = {
         AutoCommit     => 1,
-        pg_enable_utf8 => 1,
     };
     my $local_time_zone = local_time_zone();
     my $dbic_args = {
+        quote_names => 1,
         on_connect_do => [
             "SET TIME ZONE '" . $local_time_zone->name . "'",
         ],

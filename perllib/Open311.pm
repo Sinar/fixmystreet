@@ -8,10 +8,12 @@ use XML::Simple;
 use LWP::Simple;
 use LWP::UserAgent;
 use DateTime::Format::W3CDTF;
-use HTTP::Request::Common qw(POST);
+use Encode;
+use HTTP::Request::Common qw(GET POST);
 use FixMyStreet::Cobrand;
 use FixMyStreet::DB;
 use Utils;
+use Path::Tiny 'path';
 
 has jurisdiction => ( is => 'ro', isa => Str );;
 has api_key => ( is => 'ro', isa => Str );
@@ -29,10 +31,13 @@ has always_send_latlong => ( is => 'ro', isa => Bool, default => 1 );
 has send_notpinpointed => ( is => 'ro', isa => Bool, default => 0 );
 has extended_description => ( is => 'ro', isa => Str, default => 1 );
 has use_service_as_deviceid => ( is => 'ro', isa => Bool, default => 0 );
-has use_extended_updates => ( is => 'ro', isa => Bool, default => 0 );
 has extended_statuses => ( is => 'ro', isa => Bool, default => 0 );
 has always_send_email => ( is => 'ro', isa => Bool, default => 0 );
 has multi_photos => ( is => 'ro', isa => Bool, default => 0 );
+has upload_files => ( is => 'ro', isa => Bool, default => 0 );
+has use_customer_reference => ( is => 'ro', isa => Bool, default => 0 );
+has mark_reopen => ( is => 'ro', isa => Bool, default => 0 );
+has fixmystreet_body => ( is => 'ro', isa => InstanceOf['FixMyStreet::DB::Result::Body'] );
 
 before [
     qw/get_service_list get_service_meta_info get_service_requests get_service_request_updates
@@ -88,8 +93,9 @@ sub send_service_request {
     my $params = $self->_populate_service_request_params(
         $problem, $extra, $service_code
     );
+    my $uploads = $self->_populate_service_request_uploads($problem, $params);
 
-    my $response = $self->_post( $self->endpoints->{requests}, $params );
+    my $response = $self->_post( $self->endpoints->{requests}, $params, $uploads );
 
     if ( $response ) {
         my $obj = $self->_get_xml_object( $response );
@@ -189,6 +195,43 @@ sub _populate_service_request_params {
     return $params;
 }
 
+sub _populate_service_request_uploads {
+    my $self = shift;
+    my $problem = shift;
+    my $params = shift;
+
+    return unless $self->upload_files;
+
+    my $uploads = {};
+
+    if ( $problem->get_extra_metadata('enquiry_files') ) {
+        my $cfg = FixMyStreet->config('PHOTO_STORAGE_OPTIONS');
+        my $dir = $cfg ? $cfg->{UPLOAD_DIR} : FixMyStreet->config('UPLOAD_DIR');
+        $dir = path($dir, "enquiry_files")->absolute(FixMyStreet->path_to());
+
+        my $files = $problem->get_extra_metadata('enquiry_files') || {};
+        for my $key (keys %$files) {
+            my $name = $files->{$key};
+            $uploads->{"file_$key"} = [ path($dir, $key)->canonpath, $name ];
+        }
+    }
+
+    if ( $problem->photo && $problem->non_public ) {
+        # open311-adapter won't be able to download any photos if they're on
+        # a private report, so instead of sending the media_url parameter
+        # send the actual photo content with the POST request.
+        my $i = 0;
+        my $photoset = $problem->get_photoset;
+        for ( $photoset->all_ids ) {
+            my $photo = $photoset->get_image_data( num => $i++, size => 'full' );
+            $uploads->{"photo$i"} = [ undef, $_, Content_Type => $photo->{content_type}, Content => $photo->{data} ];
+        }
+        delete $params->{media_url};
+    }
+
+    return $uploads;
+}
+
 sub _generate_service_request_description {
     my $self = shift;
     my $problem = shift;
@@ -199,9 +242,7 @@ sub _generate_service_request_description {
         $description .= "detail: " . $problem->detail . "\n\n";
         $description .= "url: " . $extra->{url} . "\n\n";
         $description .= "Submitted via FixMyStreet\n";
-        if ($self->extended_description ne 'oxfordshire') {
-            $description = "title: " . $problem->title . "\n\n$description";
-        }
+        $description = "title: " . $problem->title . "\n\n$description";
     } elsif ($problem->cobrand eq 'fixamingata') {
         $description .= "Titel: " . $problem->title . "\n\n";
         $description .= "Beskrivning: " . $problem->detail . "\n\n";
@@ -327,7 +368,7 @@ sub map_state {
         'not councils responsibility' => 'not responsible',
         'no further action'           => 'unable to fix',
         open                          => 'confirmed',
-        closed                        => 'fixed - council',
+        closed                        => $self->extended_statuses ? 'closed' : 'fixed - council',
     );
 
     return $state_map{$incoming_state} || $incoming_state;
@@ -363,6 +404,8 @@ sub _populate_service_request_update_params {
             $status = 'NO_FURTHER_ACTION';
         } elsif ( $state eq 'internal referral' ) {
             $status = 'INTERNAL_REFERRAL';
+        } elsif ($comment->mark_open && $self->mark_reopen) {
+            $status = 'REOPEN';
         }
     } else {
         if ( !FixMyStreet::DB::Result::Problem->open_states()->{$state} ) {
@@ -370,9 +413,13 @@ sub _populate_service_request_update_params {
         }
     }
 
+    my $service_request_id = $comment->problem->external_id;
+    if ( $self->use_customer_reference ) {
+        $service_request_id = $comment->problem->get_extra_metadata('customer_reference');
+    }
     my $params = {
         updated_datetime => DateTime::Format::W3CDTF->format_datetime($comment->confirmed->set_nanosecond(0)),
-        service_request_id => $comment->problem->external_id,
+        service_request_id => $service_request_id,
         status => $status,
         description => $comment->text,
         last_name => $lastname,
@@ -381,17 +428,13 @@ sub _populate_service_request_update_params {
 
     $params->{phone} = $comment->user->phone if $comment->user->phone;
     $params->{email} = $comment->user->email if $comment->user->email;
+    $params->{update_id} = $comment->id;
 
-    if ( $self->use_extended_updates ) {
-        $params->{public_anonymity_required} = $comment->anonymous ? 'TRUE' : 'FALSE',
-        $params->{update_id_ext} = $comment->id;
-        $params->{service_request_id_ext} = $comment->problem->id;
-    } else {
-        $params->{update_id} = $comment->id;
-    }
+    my $cobrand = $self->fixmystreet_body->get_cobrand_handler || $comment->get_cobrand_logged;
+    $cobrand->call_hook(open311_munge_update_params => $params, $comment, $self->fixmystreet_body);
 
     if ( $comment->photo ) {
-        my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($comment->cobrand)->new();
+        my $cobrand = $comment->get_cobrand_logged;
         my $email_base_url = $cobrand->base_url($comment->cobrand_data);
         my $url = $email_base_url . $comment->photos->[0]->{url_full};
         $params->{media_url} = $url;
@@ -435,57 +478,12 @@ sub _params_to_string {
     return $string;
 }
 
-sub _get {
-    my $self   = shift;
-    my $path   = shift;
-    my $params = shift || {};
-
-    my $uri = URI->new( $self->endpoint );
-
-    $params->{ jurisdiction_id } = $self->jurisdiction
-        if $self->jurisdiction;
-    $uri->path( $uri->path . $path );
-    my $base_uri = $uri->clone;
-    $uri->query_form( $params );
-
-    my $debug_request = "GET " . $base_uri->as_string . "\n\n";
-    $debug_request .= $self->_params_to_string($params, $debug_request);
-    $self->debug_details( $self->debug_details . $debug_request );
-
-    my $content;
-    if ( $self->test_mode ) {
-        $self->success(1);
-        $content = $self->test_get_returns->{ $path };
-        $self->test_uri_used( $uri->as_string );
-    } else {
-        my $ua = LWP::UserAgent->new;
-
-        my $req = HTTP::Request->new(
-            GET => $uri->as_string
-        );
-
-        my $res = $ua->request( $req );
-
-        if ( $res->is_success ) {
-            $content = $res->decoded_content;
-            $self->success(1);
-        } else {
-            $self->success(0);
-            $self->error( sprintf(
-                "request failed: %s\n%s\n",
-                $res->status_line,
-                $uri->as_string
-            ) );
-        }
-    }
-
-    return $content;
-}
-
-sub _post {
+sub _request {
     my $self = shift;
-    my $path   = shift;
-    my $params = shift;
+    my $method = shift;
+    my $path = shift;
+    my $params = shift || {};
+    my $uploads = shift;
 
     my $uri = URI->new( $self->endpoint );
     $uri->path( $uri->path . $path );
@@ -493,22 +491,70 @@ sub _post {
     $params->{jurisdiction_id} = $self->jurisdiction
         if $self->jurisdiction;
     $params->{api_key} = ($self->api_key || '')
-        if $self->api_key;
-    my $req = POST $uri->as_string, $params;
+        if $method eq 'POST' && $self->api_key;
 
-    my $debug_request = $req->method . ' ' . $uri->as_string . "\n\n";
+    my $debug_request = $method . ' ' . $uri->as_string . "\n\n";
+
+    my $req = do {
+        $params = {
+            map {
+                my $value = $params->{$_};
+                $_ => ref $value eq 'ARRAY'
+                        ? [ map { encode('UTF-8', $_) } @$value ]
+                        : encode('UTF-8', $value)
+            } keys %$params
+        };
+        if ($method eq 'GET') {
+            $uri->query_form( $params );
+            GET $uri->as_string;
+        } elsif ($method eq 'POST') {
+            if ($uploads && %$uploads) {
+                # HTTP::Request::Common needs to be constructed slightly
+                # differently if there are files to upload.
+
+                my @media_urls = ();
+                # HTTP::Request::Common treats an arrayref as a filespec,
+                # so we need to rejig the media_url parameter so it doesn't
+                # get confused...
+                # https://stackoverflow.com/questions/50705344/perl-httprequestcommon-post-file-and-array
+                if ($self->multi_photos) {
+                    my $media_urls = $params->{media_url};
+                    @media_urls = map { ( media_url => $_ ) } @$media_urls;
+                    delete $params->{media_url};
+                }
+                $params = {
+                    Content_Type => 'form-data',
+                    Content => [
+                        %$params,
+                        @media_urls,
+                        %$uploads
+                    ]
+                };
+                POST $uri->as_string, %$params;
+            } else {
+                POST $uri->as_string, $params;
+            }
+        }
+    };
+
     $debug_request .= $self->_params_to_string($params, $debug_request);
     $self->debug_details( $self->debug_details . $debug_request );
 
-    my $ua = LWP::UserAgent->new();
-    my $res;
-
-    if ( $self->test_mode ) {
-        $res = $self->test_get_returns->{ $path };
-        $self->test_req_used( $req );
-    } else {
-        $res = $ua->request( $req );
+    if ( $self->test_mode && $req->method eq 'GET') {
+        $self->success(1);
+        $self->test_uri_used( $uri->as_string );
+        return $self->test_get_returns->{ $path };
     }
+
+    my $res = do {
+        if ( $self->test_mode ) {
+            $self->test_req_used( $req );
+            $self->test_get_returns->{ $path };
+        } else {
+            my $ua = LWP::UserAgent->new;
+            $ua->request( $req );
+        }
+    };
 
     if ( $res->is_success ) {
         $self->success(1);
@@ -521,8 +567,18 @@ sub _post {
             $self->_process_error( $res->decoded_content ),
             $self->debug_details
         ) );
-        return 0;
+        return;
     }
+}
+
+sub _get {
+    my $self = shift;
+    return $self->_request(GET => @_);
+}
+
+sub _post {
+    my $self = shift;
+    return $self->_request(POST => @_);
 }
 
 sub _process_error {
@@ -533,8 +589,11 @@ sub _process_error {
 
     my $msg = '';
     if ( ref $obj && exists $obj->{error} ) {
-        my $errors = $obj->{error};
-        $msg .= sprintf( "%s: %s\n", $_->{code}, $_->{description} ) for @{ $errors };
+        for (@{ $obj->{error} }) {
+            my $code = $_->{code} || '???';
+            my $desc = $_->{description} || 'unknown error';
+            $msg .= sprintf("%s: %s\n", $code, $desc);
+        }
     }
 
     return $msg || 'unknown error';

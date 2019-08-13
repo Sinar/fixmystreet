@@ -9,14 +9,6 @@ use base 'FixMyStreet::Map::FMS';
 
 use strict;
 
-sub map_javascript { [
-    '/vendor/OpenLayers/OpenLayers.fixmystreet.js',
-    '/js/map-OpenLayers.js',
-    '/js/map-bing-ol.js',
-    '/js/map-fms.js',
-    '/cobrands/bromley/map.js',
-] }
-
 sub map_tile_base {
     '-', "https://%sfix.bromley.gov.uk/tilma/%d/%d/%d.png";
 }

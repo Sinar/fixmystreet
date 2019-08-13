@@ -5,6 +5,7 @@ use namespace::autoclean;
 BEGIN { extends 'Catalyst::Controller'; }
 
 use Path::Class;
+use List::Util 'first';
 use Utils;
 
 =head1 NAME
@@ -23,14 +24,14 @@ sub report_update : Path : Args(0) {
     $c->forward('initialize_update');
     $c->forward('load_problem');
     $c->forward('check_form_submitted')
-      or $c->go( '/report/display', [ $c->stash->{problem}->id ] );
+      or $c->go( '/report/display', [ $c->stash->{problem}->id ], [] );
 
     $c->forward('/auth/check_csrf_token');
     $c->forward('process_update');
     $c->forward('process_user');
     $c->forward('/photo/process_photo');
     $c->forward('check_for_errors')
-      or $c->go( '/report/display', [ $c->stash->{problem}->id ] );
+      or $c->go( '/report/display', [ $c->stash->{problem}->id ], [] );
 
     $c->forward('save_update');
     $c->forward('redirect_or_confirm_creation');
@@ -99,7 +100,10 @@ sub process_user : Private {
 
     # Extract all the params to a hash to make them easier to work with
     my %params = map { $_ => $c->get_param($_) }
-      ( 'username', 'name', 'password_register', 'fms_extra_title' );
+      ( 'name', 'password_register', 'fms_extra_title' );
+
+    # Update form includes two username fields: #form_username_register and #form_username_sign_in
+    $params{username} = (first { $_ } $c->get_param_list('username')) || '';
 
     # Extra block to use 'last'
     if ( $c->user_exists ) { {
@@ -241,6 +245,7 @@ This makes sure we only proceed to processing if we've had the form submitted
 sub check_form_submitted : Private {
     my ( $self, $c ) = @_;
     return if $c->stash->{problem}->get_extra_metadata('closed_updates');
+    return if $c->cobrand->call_hook(updates_disallowed => $c->stash->{problem});
     return $c->get_param('submit_update') || '';
 }
 
@@ -342,7 +347,7 @@ sub check_for_errors : Private {
     my $state = $c->get_param('state');
     if ( $state && $state ne $c->stash->{update}->problem->state ) {
         my $error = 0;
-        $error = 1 unless $c->user && $c->user->belongs_to_body( $c->stash->{update}->problem->bodies_str );
+        $error = 1 unless $c->user && ($c->user->is_superuser || $c->user->belongs_to_body($c->stash->{update}->problem->bodies_str));
         $error = 1 unless grep { $state eq $_ } FixMyStreet::DB::Result::Problem->visible_states();
         if ( $error ) {
             $c->stash->{errors} ||= [];

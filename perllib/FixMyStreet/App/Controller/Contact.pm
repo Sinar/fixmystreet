@@ -4,6 +4,7 @@ use namespace::autoclean;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
+use MIME::Base64;
 use mySociety::EmailUtil;
 use FixMyStreet::Email;
 
@@ -17,7 +18,23 @@ Contact us page
 
 =head1 METHODS
 
+=head2 auto
+
+Functions to run on both GET and POST contact requests.
+
 =cut
+
+sub auto : Private {
+    my ($self, $c) = @_;
+    $c->forward('/auth/get_csrf_token');
+}
+
+sub begin : Private {
+    my ($self, $c) = @_;
+    $c->forward('/begin');
+    $c->forward('setup_request');
+    $c->forward('determine_contact_type');
+}
 
 =head2 index
 
@@ -27,10 +44,6 @@ Display contact us page
 
 sub index : Path : Args(0) {
     my ( $self, $c ) = @_;
-
-    return
-      unless $c->forward('setup_request')
-          && $c->forward('determine_contact_type');
 }
 
 =head2 submit
@@ -42,20 +55,12 @@ Handle contact us form submission
 sub submit : Path('submit') : Args(0) {
     my ( $self, $c ) = @_;
 
-    if (my $testing = $c->get_param('_test_')) {
-        $c->stash->{success} = $c->get_param('success');
-        return;
-    }
-
     $c->res->redirect( '/contact' ) and return unless $c->req->method eq 'POST';
 
-    return
-      unless $c->forward('setup_request')
-          && $c->forward('determine_contact_type')
-          && $c->forward('validate')
-          && $c->forward('prepare_params_for_email')
-          && $c->forward('send_email')
-          && $c->forward('redirect_on_success');
+    $c->go('index') unless $c->forward('validate');
+    $c->forward('prepare_params_for_email');
+    $c->forward('send_email');
+    $c->forward('redirect_on_success');
 }
 
 =head2 determine_contact_type
@@ -87,15 +92,32 @@ sub determine_contact_type : Private {
     } elsif ($id) {
         $c->forward( '/report/load_problem_or_display_error', [ $id ] );
         if ($update_id) {
-            my $update = $c->model('DB::Comment')->find(
-                { id => $update_id }
-            );
+            my $update = $c->model('DB::Comment')->search(
+                {
+                    id => $update_id,
+                    problem_id => $id,
+                    state => 'confirmed',
+                }
+            )->first;
+
+            unless ($update) {
+                $c->detach( '/page_error_404_not_found', [ _('Unknown update ID') ] );
+            }
 
             $c->stash->{update} = $update;
         }
 
         if ( $c->get_param("reject") && $c->user->has_permission_to(report_reject => $c->stash->{problem}->bodies_str_ids) ) {
             $c->stash->{rejecting_report} = 1;
+        }
+    } elsif ( $c->cobrand->abuse_reports_only ) {
+        # General enquiries replaces contact form if enabled
+        if ( $c->cobrand->can('setup_general_enquiries_stash') ) {
+            $c->res->redirect( '/contact/enquiry' );
+            $c->detach;
+            return 1;
+        } else {
+            $c->detach( '/page_error_404_not_found' );
         }
     }
 
@@ -111,6 +133,10 @@ to index page if errors.
 
 sub validate : Private {
     my ( $self, $c ) = @_;
+
+    $c->forward('/auth/check_csrf_token');
+    my $s = $c->stash->{s} = unpack("N", decode_base64($c->get_param('s')));
+    return if !FixMyStreet->test_mode && time() < $s; # uncoverable statement
 
     my ( %field_errors, @errors );
     my %required = (
@@ -149,7 +175,7 @@ sub validate : Private {
     if ( @errors or scalar keys %field_errors ) {
         $c->stash->{errors}       = \@errors;
         $c->stash->{field_errors} = \%field_errors;
-        $c->go('index');
+        return 0;
     }
 
     return 1;
@@ -225,6 +251,10 @@ sub setup_request : Private {
     # name is already used in the stash for the app class name
     $c->stash->{form_name} = $c->get_param('name');
 
+    my $s = encode_base64(pack("N", time() + 10), '');
+    $s =~ s/=+$//;
+    $c->stash->{s} = $s;
+
     return 1;
 }
 
@@ -254,6 +284,7 @@ sub send_email : Private {
     my $from = [ $c->stash->{em}, $c->stash->{form_name} ];
     my $params = {
         to => [ [ $recipient, _($recipient_name) ] ],
+        user_agent => $c->req->user_agent,
     };
     if (FixMyStreet::Email::test_dmarc($c->stash->{em})) {
         $params->{'Reply-To'} = [ $from ];

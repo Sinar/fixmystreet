@@ -1,3 +1,14 @@
+use strict;
+use warnings;
+
+package FixMyStreet::Cobrand::NoUpdates;
+
+use parent 'FixMyStreet::Cobrand::FixMyStreet';
+
+sub updates_disallowed { 1 }
+
+package main;
+
 use FixMyStreet::TestMech;
 use Web::Scraper;
 use Path::Class;
@@ -175,6 +186,20 @@ subtest "several updates shown in correct order" => sub {
             old_state => 'confirmed',
             new_state => 'fixed - user',
         },
+        { # One reopening, no associated update
+            problem_id => $report_id,
+            whensent => '2011-03-16 08:12:36',
+            whenanswered => '2011-03-16 08:12:36',
+            old_state => 'fixed - user',
+            new_state => 'confirmed',
+        },
+        { # One marking fixed, no associated update
+            problem_id => $report_id,
+            whensent => '2011-03-17 08:12:36',
+            whenanswered => '2011-03-17 08:12:36',
+            old_state => 'confirmed',
+            new_state => 'fixed - user',
+        },
     ) {
         my $q = FixMyStreet::App->model('DB::Questionnaire')->find_or_create(
             $fields
@@ -229,13 +254,15 @@ subtest "several updates shown in correct order" => sub {
     $mech->get_ok("/report/$report_id");
 
     my $meta = $mech->extract_update_metas;
-    is scalar @$meta, 6, 'number of updates';
+    is scalar @$meta, 8, 'number of updates';
     is $meta->[0], 'Posted by Other User at 12:23, Thu 10 March 2011', 'first update';
     is $meta->[1], 'Posted by Main User at 12:23, Thu 10 March 2011 Still open, via questionnaire', 'second update';
     is $meta->[2], 'Still open, via questionnaire, 12:23, Fri 11 March 2011', 'questionnaire';
     is $meta->[3], 'Still open, via questionnaire, 12:23, Sat 12 March 2011', 'questionnaire';
     is $meta->[4], 'State changed to: Fixed', 'third update, part 1';
     is $meta->[5], 'Posted anonymously at 08:12, Tue 15 March 2011', 'third update, part 2';
+    is $meta->[6], 'Still open, via questionnaire, 08:12, Wed 16 March 2011', 'reopen questionnaire';
+    is $meta->[7], 'Questionnaire filled in by problem reporter; State changed to: Fixed, 08:12, Thu 17 March 2011', 'fix questionnaire';
     $report->questionnaires->delete;
 };
 
@@ -252,7 +279,6 @@ for my $test (
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -271,7 +297,6 @@ for my $test (
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
-            remember_me => undef,
             password_sign_in => '',
             password_register => '',
         },
@@ -290,7 +315,6 @@ for my $test (
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -311,7 +335,6 @@ for my $test (
             fixed  => undef,
             add_alert => 1,
             may_show_name => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -345,14 +368,13 @@ for my $test (
         initial_values => {
             name          => '',
             username => '',
-            may_show_name => 1,
+            may_show_name => undef,
             add_alert     => 1,
             photo1 => '',
             photo2 => '',
             photo3 => '',
             update        => '',
             fixed         => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -371,14 +393,13 @@ for my $test (
         initial_values => {
             name          => '',
             username => '',
-            may_show_name => 1,
+            may_show_name => undef,
             add_alert     => 1,
             photo1 => '',
             photo2 => '',
             photo3 => '',
             update        => '',
             fixed         => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -475,14 +496,13 @@ for my $test (
         initial_values => {
             name          => '',
             username => '',
-            may_show_name => 1,
+            may_show_name => undef,
             add_alert     => 1,
             photo1 => '',
             photo2 => '',
             photo3 => '',
             update        => '',
             fixed         => undef,
-            remember_me => undef,
             password_register => '',
             password_sign_in => '',
         },
@@ -577,7 +597,6 @@ subtest 'check non authority user cannot change set state' => sub {
 
 for my $state ( qw/unconfirmed hidden partial/ ) {
     subtest "check that update cannot set state to $state" => sub {
-        $mech->log_in_ok( $user->email );
         $user->from_body( $body->id );
         $user->update;
 
@@ -726,8 +745,6 @@ for my $test (
             $report->update;
         }
 
-        $mech->log_in_ok( $user->email );
-
         if ($test->{view_username}) {
           ok $user->user_body_permissions->create({
             body => $body,
@@ -809,7 +826,6 @@ subtest 'check meta correct for comments marked confirmed but not marked open' =
 };
 
 subtest "check first comment with no status change has no status in meta" => sub {
-    $mech->log_in_ok( $user->email );
     $user->from_body( undef );
     $user->update;
 
@@ -823,7 +839,6 @@ subtest "check first comment with no status change has no status in meta" => sub
 };
 
 subtest "check comment with no status change has not status in meta" => sub {
-        $mech->log_in_ok( $user->email );
         $user->from_body( undef );
         $user->update;
 
@@ -1066,8 +1081,6 @@ subtest $test->{desc} => sub {
             extra         => $extra,
         }
     );
-    $mech->log_in_ok( $user->email );
-
 
     ok $user->user_body_permissions->search({
       body_id => $body->id,
@@ -1132,7 +1145,6 @@ subtest $test->{desc} => sub {
             extra         => $extra,
         }
     );
-    $mech->log_in_ok( $user->email );
     $mech->get_ok("/report/$report_id");
 
     my $update_meta = $mech->extract_update_metas;
@@ -1186,7 +1198,6 @@ subtest $test->{desc} => sub {
             }
         );
     }
-    $mech->log_in_ok( $user->email );
     $mech->get_ok("/report/$report_id");
 
     my $update_meta = $mech->extract_update_metas;
@@ -2148,6 +2159,22 @@ subtest 'check cannot answer other user\'s creator fixed questionnaire' => sub {
     is $mech->res->code, 400, "got 400";
 
     $mech->content_contains( "I'm afraid we couldn't locate your problem in the database." )
+};
+
+subtest 'updates can be provided' => sub {
+    $mech->log_out_ok();
+    $mech->get( "/report/$report_id" );
+    $mech->content_contains("Provide an update");
+};
+
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => [ { 'noupdates' => '.' } ],
+}, sub {
+    subtest 'test cobrand updates_disallowed' => sub {
+        $mech->log_out_ok();
+        $mech->get( "/report/$report_id" );
+        $mech->content_lacks("Provide an update");
+    };
 };
 
 done_testing();

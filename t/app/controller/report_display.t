@@ -78,7 +78,7 @@ subtest "change report to non_public and check for 403 status" => sub {
     ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
     is $mech->res->code, 403, "access denied";
     is $mech->uri->path, "/report/$report_id", "at /report/$report_id";
-    $mech->content_contains('That report cannot be viewed on FixMyStreet.');
+    $mech->content_contains('permission to do that. If you are the problem reporter');
     ok $report->update( { non_public => 0 } ), 'make report public';
 };
 
@@ -94,7 +94,7 @@ subtest "check owner of report can view non public reports" => sub {
     ok $mech->get("/report/$report_id"), "get '/report/$report_id'";
     is $mech->res->code, 403, "access denied to user who is not report creator";
     is $mech->uri->path, "/report/$report_id", "at /report/$report_id";
-    $mech->content_contains('That report cannot be viewed on FixMyStreet.');
+    $mech->content_contains('permission to do that. If you are the problem reporter');
     $mech->log_out_ok;
     ok $report->update( { non_public => 0 } ), 'make report public';
 };
@@ -129,6 +129,7 @@ subtest "test a good report" => sub {
       'Reported by Test User at 15:47, Sat 16 April 2011',
       'correct problem meta information';
     $mech->content_contains('Test 2 Detail');
+    $mech->content_lacks('Sent to');
 
     my $update_form = $mech->form_name('updateForm');
 
@@ -140,6 +141,18 @@ subtest "test a good report" => sub {
         fixed     => undef
     );
     is $update_form->value($_), $fields{$_}, "$_ value" for keys %fields;
+};
+
+subtest "test duration string" => sub {
+    $report->update({ whensent => \'current_timestamp' });
+    $mech->get_ok("/report/$report_id");
+    $mech->content_contains('Sent to Westminster');
+    FixMyStreet::override_config {
+        AREA_LINKS_FROM_PROBLEMS => 1,
+    }, sub {
+        $mech->get_ok("/report/$report_id");
+        $mech->content_contains('Sent to <a href="/reports/Westminster+City+Council">Westminster');
+    };
 };
 
 foreach my $meta (
@@ -361,7 +374,12 @@ for my $test (
             $banner->{text} =~ s/ $//g;
         }
 
-        is $banner->{id}, $test->{banner_id}, 'banner id';
+        if ( $test->{banner_id} ) {
+            ok $banner->{class} =~ /banner--$test->{banner_id}/i, 'banner class';
+        } else {
+            is $banner->{class}, $test->{banner_id}, 'banner class';
+        }
+
         if ($test->{banner_text}) {
             ok $banner->{text} =~ /$test->{banner_text}/i, 'banner text';
         } else {

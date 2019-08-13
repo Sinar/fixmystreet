@@ -35,7 +35,7 @@ create table users (
     title           text,
     twitter_id      bigint  unique,
     facebook_id     bigint  unique,
-    area_id         integer,
+    area_ids        integer ARRAY,
     extra           text
 );
 CREATE UNIQUE INDEX users_email_verified_unique ON users (email) WHERE email_verified;
@@ -72,6 +72,22 @@ create unique index body_areas_body_id_area_id_idx on body_areas(body_id, area_i
 -- Now can create reference from users to body
 ALTER TABLE users ADD CONSTRAINT users_from_body_fkey
     FOREIGN KEY (from_body) REFERENCES body(id);
+
+-- roles table
+create table roles (
+    id              serial  not null primary key,
+    body_id         integer not null references body(id) ON DELETE CASCADE,
+    name            text,
+    permissions     text ARRAY,
+    unique(body_id, name)
+);
+
+-- Record which role(s) each user holds
+create table user_roles (
+    id              serial  not null primary key,
+    role_id         integer not null references roles(id) ON DELETE CASCADE,
+    user_id         integer not null references users(id) ON DELETE CASCADE
+);
 
 -- The contact for a category within a particular body
 create table contacts (
@@ -427,6 +443,7 @@ create table admin_log (
       object_type = 'problem'
       or object_type = 'update'
       or object_type = 'user'
+      or object_type = 'moderation'
     ),
     object_id integer not null,
     action text not null,
@@ -441,7 +458,7 @@ create table moderation_original_data (
 
     -- Problem details
     problem_id int references problem(id) ON DELETE CASCADE not null,
-    comment_id int references comment(id) ON DELETE CASCADE unique,
+    comment_id int references comment(id) ON DELETE CASCADE,
 
     title text null,
     detail text null, -- or text for comment
@@ -449,8 +466,14 @@ create table moderation_original_data (
     anonymous bool not null,
 
     -- Metadata
-    created timestamp not null default current_timestamp
+    created timestamp not null default current_timestamp,
+
+    extra text,
+    category text,
+    latitude double precision,
+    longitude double precision
 );
+create index moderation_original_data_problem_id_comment_id_idx on moderation_original_data(problem_id, comment_id);
 
 create table user_body_permissions (
     id serial not null primary key,

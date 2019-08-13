@@ -30,6 +30,9 @@ $(function(){
 
         var lasty = 0;
         $.each(chart.config.data.datasets, function(datasetIndex, dataset){
+            if (dataset.data.length == 0) {
+                return;
+            }
             var $label = $('.label[data-datasetIndex="' + datasetIndex + '"]', $parent);
             var latestPoint = chart.getDatasetMeta(datasetIndex).data[ dataset.data.length - 1 ];
             var y = latestPoint._model.y;
@@ -136,21 +139,26 @@ $(function(){
             data0 = $allReports.data('values-reports'),
             data1 = $allReports.data('values-fixed');
 
-        window.chartAllReports = new Chart($allReports, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: data0,
-                    pointRadius: pointRadiusFinalDot(data0.length, 4),
-                    pointBackgroundColor: colours[1],
-                    borderColor: colours[1]
-                }, {
+        var data = [{
+              data: data0,
+              pointRadius: pointRadiusFinalDot(data0.length, 4),
+              pointBackgroundColor: colours[1],
+              borderColor: colours[1]
+        }];
+        if ( data1 ) {
+            data.push({
                     data: data1,
                     pointRadius: pointRadiusFinalDot(data1.length, 4),
                     pointBackgroundColor: colours[3],
                     borderColor: colours[3]
-                }]
+            });
+        }
+
+        window.chartAllReports = new Chart($allReports, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: data
             },
             options: {
                 animation: {
@@ -193,9 +201,11 @@ $(function(){
         var $table = $(this);
         var $trs = $table.find('tr');
         var $wrapper = $('<div>').addClass('responsive-bar-chart').insertBefore($table);
+        var canvasWidth = $table.attr('data-canvas-width') || 600;
+        var rowHeight = $table.attr('data-row-height') || 30;
         var $canvas = $('<canvas>').attr({
-            'width': 600,
-            'height': 30 * $trs.length
+            'width': canvasWidth,
+            'height': rowHeight * $trs.length
         }).appendTo($wrapper);
         var rowLabels = [];
         var rowValues = [];

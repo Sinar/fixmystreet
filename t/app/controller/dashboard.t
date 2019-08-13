@@ -1,4 +1,17 @@
 use Test::MockTime ':all';
+
+package FixMyStreet::Cobrand::Tester;
+use parent 'FixMyStreet::Cobrand::Default';
+# Allow access if CSV export for a body, otherwise deny
+sub dashboard_permission {
+    my $self = shift;
+    my $c = $self->{c};
+    return 0 unless $c->get_param('export');
+    return $c->get_param('body') || 0;
+}
+
+package main;
+
 use strict;
 use warnings;
 
@@ -43,9 +56,13 @@ foreach my $problem (@fixed_problems) {
     $mech->create_comment_for_problem($problem, $counciluser, 'Title', 'text', 0, 'confirmed', 'fixed');
 }
 
+my $first_problem_id;
+my $first_update_id;
 foreach my $problem (@closed_problems) {
     $problem->update({ state => 'closed' });
-    $mech->create_comment_for_problem($problem, $counciluser, 'Title', 'text', 0, 'confirmed', 'closed', { confirmed => \'current_timestamp' });
+    my ($update) = $mech->create_comment_for_problem($problem, $counciluser, 'Title', 'text', 0, 'confirmed', 'closed', { confirmed => \'current_timestamp' });
+    $first_problem_id = $problem->id unless $first_problem_id;
+    $first_update_id = $update->id unless $first_update_id;
 }
 
 my $categories = scraper {
@@ -96,7 +113,7 @@ FixMyStreet::override_config {
     };
 
     subtest 'area user can only see their area' => sub {
-        $counciluser->update({area_id => $area_id});
+        $counciluser->update({area_ids => [ $area_id ]});
 
         $mech->get_ok("/dashboard");
         $mech->content_contains('<h1>Trowbridge</h1>');
@@ -105,7 +122,11 @@ FixMyStreet::override_config {
         $mech->get_ok("/dashboard?ward=$alt_area_id");
         $mech->content_contains('<h1>Trowbridge</h1>');
 
-        $counciluser->update({area_id => undef});
+        $counciluser->update({area_ids => [ $area_id, $alt_area_id ]});
+        $mech->get_ok("/dashboard");
+        $mech->content_contains('<h1>Bradford-on-Avon / Trowbridge</h1>');
+
+        $counciluser->update({area_ids => undef});
     };
 
     subtest 'The correct categories and totals shown by default' => sub {
@@ -146,15 +167,10 @@ FixMyStreet::override_config {
             areas => ",$alt_area_id,2651,",
         });
         $mech->get_ok('/dashboard?export=1');
-        open my $data_handle, '<', \$mech->content;
-        my $csv = Text::CSV->new( { binary => 1 } );
-        my @rows;
-        while ( my $row = $csv->getline( $data_handle ) ) {
-            push @rows, $row;
-        }
+        my @rows = $mech->content_as_csv;
         is scalar @rows, 19, '1 (header) + 18 (reports) = 19 lines';
 
-        is scalar @{$rows[0]}, 18, '18 columns present';
+        is scalar @{$rows[0]}, 20, '20 columns present';
 
         is_deeply $rows[0],
             [
@@ -176,12 +192,35 @@ FixMyStreet::override_config {
                 'Easting',
                 'Northing',
                 'Report URL',
+                'Site Used',
+                'Reported As',
             ],
             'Column headers look correct';
 
         is $rows[5]->[14], 'Trowbridge', 'Ward column is name not ID';
         is $rows[5]->[15], '529025', 'Correct Easting conversion';
         is $rows[5]->[16], '179716', 'Correct Northing conversion';
+    };
+
+    subtest 'export updates as csv' => sub {
+        $mech->get_ok('/dashboard?updates=1&export=1');
+        my @rows = $mech->content_as_csv;
+        is scalar @rows, 15, '1 (header) + 14 (updates) = 15 lines';
+        is scalar @{$rows[0]}, 8, '8 columns present';
+
+        is_deeply $rows[0],
+            [
+                'Report ID', 'Update ID', 'Date', 'Status', 'Problem state',
+                'Text', 'User Name', 'Reported As',
+            ],
+            'Column headers look correct';
+
+        is $rows[1]->[0], $first_problem_id, 'Correct report ID';
+        is $rows[1]->[1], $first_update_id, 'Correct update ID';
+        is $rows[1]->[3], 'confirmed', 'Correct state';
+        is $rows[1]->[4], 'closed', 'Correct problem state';
+        is $rows[1]->[5], 'text', 'Correct text';
+        is $rows[1]->[6], 'Title', 'Correct name';
     };
 
     subtest 'export as csv using token' => sub {
@@ -198,21 +237,37 @@ FixMyStreet::override_config {
         $mech->get_ok('/dashboard?export=1');
         like $mech->res->header('Content-type'), qr'text/csv';
         $mech->content_contains('Report ID');
+        $mech->delete_header('Authorization');
+    };
+};
+
+FixMyStreet::override_config {
+    ALLOWED_COBRANDS => 'tester',
+    MAPIT_URL => 'http://mapit.uk/',
+}, sub {
+    subtest 'no body or export, 404' => sub {
+        $mech->get('/dashboard');
+        is $mech->status, '404', 'No parameters, 404';
+        $mech->get('/dashboard?export=1');
+        is $mech->status, '404', 'If no body, 404';
+        $mech->get("/dashboard?body=$body_id");
+        is $mech->status, '404', 'If no export, 404';
+    };
+
+    subtest 'body and export, okay' => sub {
+        $mech->get_ok("/dashboard?body=$body_id&export=1");
     };
 };
 
 sub test_table {
     my ($content, @expected) = @_;
     my $res = $categories->scrape( $mech->content );
-    my $i = 0;
+    my @actual;
     foreach my $row ( @{ $res->{rows} }[1 .. 11] ) {
-        foreach my $col ( @{ $row->{cols} } ) {
-            is $col, $expected[$i++];
-        }
+        push @actual, @{$row->{cols}} if $row->{cols};
     }
+    is_deeply \@actual, \@expected;
 }
 
-END {
-    restore_time;
-    done_testing();
-}
+restore_time;
+done_testing();

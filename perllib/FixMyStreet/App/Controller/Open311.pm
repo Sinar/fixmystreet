@@ -7,6 +7,7 @@ use namespace::autoclean;
 use JSON::MaybeXS;
 use XML::Simple;
 use DateTime::Format::W3CDTF;
+use FixMyStreet::MapIt;
 
 BEGIN { extends 'Catalyst::Controller'; }
 
@@ -110,8 +111,6 @@ sub get_discovery : Private {
     {
         'contact' => ["Send email to $contact_email."],
         'changeset' => [$prod_changeset],
-        # XXX rewrite to match
-        'key_service' => ["Read access is open to all according to our \u003Ca href='/open_data' target='_blank'\u003Eopen data license\u003C/a\u003E. For write access either: 1. return the 'guid' cookie on each call (unique to each client) or 2. use an api key from a user account which can be generated here: http://seeclickfix.com/register The unversioned url will always point to the latest supported version."],
         'max_requests' => [ $c->config->{OPEN311_LIMIT} || 1000 ],
         'endpoints' => [
             {
@@ -164,9 +163,7 @@ sub get_services : Private {
 
     if ($lat || $lon) {
         my $area_types = $c->cobrand->area_types;
-        my $all_areas = mySociety::MaPit::call('point',
-                                                  "4326/$lon,$lat",
-                                                  type => $area_types);
+        my $all_areas = FixMyStreet::MapIt::call('point', "4326/$lon,$lat", type => $area_types);
         $categories = $categories->search( {
             'body_areas.area_id' => [ keys %$all_areas ],
         }, { join => { 'body' => 'body_areas' } } );
@@ -196,9 +193,7 @@ sub get_services : Private {
             );
     }
     $c->forward( 'format_output', [ {
-        'services' => [ {
-            'service' => \@services
-        } ]
+        'services' => \@services
     } ] );
 }
 
@@ -292,9 +287,7 @@ sub output_requests : Private {
     }
 
     $c->forward( 'format_output', [ {
-        'requests' => [ {
-            'request' => \@problemlist
-        } ]
+        service_requests => \@problemlist
     } ] );
 }
 
@@ -310,7 +303,8 @@ sub get_requests : Private {
     delete $states->{unconfirmed};
     delete $states->{submitted};
     my $criteria = {
-        state => [ keys %$states ]
+        state => [ keys %$states ],
+        non_public => 0,
     };
 
     my %rules = (
@@ -415,6 +409,7 @@ sub get_request : Private {
     my $criteria = {
         state => [ keys %$states ],
         id => $id,
+        non_public => 0,
     };
     $c->forward( 'output_requests', [ $criteria ] );
 }
@@ -428,7 +423,21 @@ sub format_output : Private {
         $c->res->body( encode_json($hashref) );
     } elsif ('xml' eq $format) {
         $c->res->content_type('application/xml; charset=utf-8');
-        $c->res->body( XMLout($hashref, RootName => undef, NoAttr => 1 ) );
+        my $group_tags = {
+            services => 'service',
+            attributes => 'attribute',
+            values => 'value',
+            service_requests => 'request',
+            errors => 'error',
+            service_request_updates => 'request_update',
+        };
+        $c->res->body( XMLout($hashref,
+            KeyAttr => {},
+            GroupTags => $group_tags,
+            SuppressEmpty => undef,
+            RootName => undef,
+            NoAttr => 1,
+        ) );
     } else {
         $c->detach( 'error', [
             sprintf(_('Invalid format %s specified.'), $format)

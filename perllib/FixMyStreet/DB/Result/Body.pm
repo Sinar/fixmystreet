@@ -8,7 +8,11 @@ use strict;
 use warnings;
 
 use base 'DBIx::Class::Core';
-__PACKAGE__->load_components("FilterColumn", "InflateColumn::DateTime", "EncodedColumn");
+__PACKAGE__->load_components(
+  "FilterColumn",
+  "FixMyStreet::InflateColumn::DateTime",
+  "FixMyStreet::EncodedColumn",
+);
 __PACKAGE__->table("body");
 __PACKAGE__->add_columns(
   "id",
@@ -18,6 +22,12 @@ __PACKAGE__->add_columns(
     is_nullable       => 0,
     sequence          => "body_id_seq",
   },
+  "name",
+  { data_type => "text", is_nullable => 0 },
+  "external_url",
+  { data_type => "text", is_nullable => 1 },
+  "parent",
+  { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
   "endpoint",
   { data_type => "text", is_nullable => 1 },
   "jurisdiction",
@@ -36,19 +46,13 @@ __PACKAGE__->add_columns(
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "send_extended_statuses",
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
-  "name",
-  { data_type => "text", is_nullable => 0 },
-  "parent",
-  { data_type => "integer", is_foreign_key => 1, is_nullable => 1 },
-  "deleted",
-  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
-  "external_url",
-  { data_type => "text", is_nullable => 1 },
   "fetch_problems",
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "blank_updates_permitted",
-  { data_type => "boolean", default_value => \"false", is_nullable => 1 },
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "convert_latlong",
+  { data_type => "boolean", default_value => \"false", is_nullable => 0 },
+  "deleted",
   { data_type => "boolean", default_value => \"false", is_nullable => 0 },
   "extra",
   { data_type => "text", is_nullable => 1 },
@@ -113,6 +117,12 @@ __PACKAGE__->has_many(
   { cascade_copy => 0, cascade_delete => 0 },
 );
 __PACKAGE__->has_many(
+  "roles",
+  "FixMyStreet::DB::Result::Role",
+  { "foreign.body_id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+__PACKAGE__->has_many(
   "user_body_permissions",
   "FixMyStreet::DB::Result::UserBodyPermission",
   { "foreign.body_id" => "self.id" },
@@ -126,22 +136,30 @@ __PACKAGE__->has_many(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2018-04-05 14:29:33
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:HV8IM2C1ErrpvXoRTZ1B1Q
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2019-05-23 18:03:28
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:9sFgYQ9qhnZNcz3kUFYuvg
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
 __PACKAGE__->rabx_column('extra');
 
 use Moo;
 use namespace::clean;
+use FixMyStreet::MapIt;
 
 with 'FixMyStreet::Roles::Translatable',
      'FixMyStreet::Roles::Extra';
 
+sub _url {
+    my ( $obj, $cobrand, $args ) = @_;
+    my $uri = URI->new('/reports/' . $cobrand->short_name($obj));
+    $uri->query_form($args) if $args;
+    return $uri;
+}
+
 sub url {
     my ( $self, $c, $args ) = @_;
-    # XXX $areas_info was used here for Norway parent - needs body parents, I guess
-    return $c->uri_for( '/reports/' . $c->cobrand->short_name( $self ), $args || {} );
+    my $cobrand = $self->result_source->schema->cobrand;
+    return _url($self, $cobrand, $args);
 }
 
 __PACKAGE__->might_have(
@@ -174,7 +192,8 @@ sub first_area_children {
     return unless $body_area;
 
     my $cobrand = $self->result_source->schema->cobrand;
-    my $children = mySociety::MaPit::call('area/children', $body_area->area_id,
+
+    my $children = FixMyStreet::MapIt::call('area/children', $body_area->area_id,
         type => $cobrand->area_types_children,
     );
 
@@ -196,8 +215,25 @@ sub get_cobrand_handler {
     return FixMyStreet::Cobrand->body_handler($self->areas);
 }
 
+=item
+
+If get_cobrand_handler returns a cobrand, and that cobrand
+has a council_name, use it in preference to the body name.
+
+=cut
+
+sub cobrand_name {
+    my $self = shift;
+    my $handler = $self->get_cobrand_handler;
+    if ($handler && $handler->can('council_name')) {
+        return $handler->council_name;
+    }
+    return $self->name;
+}
+
 sub calculate_average {
-    my ($self) = @_;
+    my ($self, $threshold) = @_;
+    $threshold ||= 0;
 
     my $substmt = "select min(id) from comment where me.problem_id=comment.problem_id and (problem_state in ('fixed', 'fixed - council', 'fixed - user') or mark_fixed)";
     my $subquery = FixMyStreet::DB->resultset('Comment')->to_body($self)->search({
@@ -207,9 +243,10 @@ sub calculate_average {
         ],
         'me.id' => \"= ($substmt)",
         'me.state' => 'confirmed',
+        'problem.state' => [ FixMyStreet::DB::Result::Problem->visible_states() ],
     }, {
         select   => [
-            { extract => "epoch from me.confirmed-problem.confirmed", -as => 'time' },
+            { extract => \"epoch from me.confirmed-problem.confirmed", -as => 'time' },
         ],
         as => [ qw/time/ ],
         rows => 100,
@@ -217,12 +254,15 @@ sub calculate_average {
         join => 'problem'
     })->as_subselect_rs;
 
-    my $avg = $subquery->search({
+    my $result = $subquery->search({
     }, {
-        select => [ { avg => "time" } ],
-        as => [ qw/avg/ ],
-    })->first->get_column('avg');
-    return $avg;
+        select => [ { avg => "time" }, { count => "time" } ],
+        as => [ qw/avg count/ ],
+    })->first;
+    my $avg = $result->get_column('avg');
+    my $count = $result->get_column('count');
+
+    return $count >= $threshold ? $avg : undef;
 }
 
 1;

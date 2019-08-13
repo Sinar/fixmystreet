@@ -5,8 +5,8 @@ use namespace::autoclean;
 BEGIN {extends 'Catalyst::Controller'; }
 
 use JSON::MaybeXS;
-use File::Path;
-use File::Slurp;
+use Path::Tiny;
+use Try::Tiny;
 use FixMyStreet::App::Model::PhotoSet;
 
 =head1 NAME
@@ -39,6 +39,7 @@ sub during :LocalRegex('^(temp|fulltemp)\.([0-9a-f]{40}\.(?:jpeg|png|gif|tiff))$
     $size = $size eq 'temp' ? 'default' : 'full';
     my $photo = $photoset->get_image_data(size => $size, default => $c->cobrand->default_photo_resize);
 
+    $c->stash->{non_public} = 0;
     $c->forward( 'output', [ $photo ] );
 }
 
@@ -46,13 +47,17 @@ sub index :LocalRegex('^(c/)?([1-9]\d*)(?:\.(\d+))?(?:\.(full|tn|fp))?\.(?:jpeg|
     my ( $self, $c ) = @_;
     my ( $is_update, $id, $photo_number, $size ) = @{ $c->req->captures };
 
+    $photo_number ||= 0;
+    $size ||= '';
+
     my $item;
     if ( $is_update ) {
         ($item) = $c->model('DB::Comment')->search( {
-            id => $id,
-            state => 'confirmed',
-            photo => { '!=', undef },
-        } );
+            'me.id' => $id,
+            'me.state' => 'confirmed',
+            'problem.state' => [ FixMyStreet::DB::Result::Problem->visible_states() ],
+            'me.photo' => { '!=', undef },
+        }, { prefetch => 'problem' });
     } else {
         ($item) = $c->cobrand->problems->search( {
             id => $id,
@@ -64,6 +69,19 @@ sub index :LocalRegex('^(c/)?([1-9]\d*)(?:\.(\d+))?(?:\.(full|tn|fp))?\.(?:jpeg|
     $c->detach( 'no_photo' ) unless $item;
 
     $c->detach( 'no_photo' ) unless $c->cobrand->allow_photo_display($item, $photo_number); # Should only be for reports, not updates
+
+    my $problem = $is_update ? $item->problem : $item;
+    $c->stash->{non_public} = $problem->non_public;
+
+    if ($c->stash->{non_public}) {
+        my $body_ids = $problem->bodies_str_ids;
+        # Check permission
+        $c->detach('no_photo') unless $c->user_exists;
+        $c->detach('no_photo') unless $c->user->is_superuser
+            || $c->user->id == $problem->user->id
+            || $c->user->has_permission_to('report_inspect', $body_ids)
+            || $c->user->has_permission_to('report_mark_private', $body_ids);
+    }
 
     my $photo;
     $photo = $item->get_photoset
@@ -77,8 +95,12 @@ sub output : Private {
     my ( $self, $c, $photo ) = @_;
 
     # Save to file
-    File::Path::make_path( FixMyStreet->path_to( 'web', 'photo', 'c' )->stringify );
-    File::Slurp::write_file( FixMyStreet->path_to( 'web', $c->req->path )->stringify, \$photo->{data} );
+    if (!FixMyStreet->config('LOGIN_REQUIRED') && !$c->stash->{non_public}) {
+        path(FixMyStreet->path_to('web', 'photo', 'c'))->mkpath;
+        my $out = FixMyStreet->path_to('web', $c->req->path);
+        my $symlink_exists = $photo->{symlink} ? symlink($photo->{symlink}, $out) : undef;
+        path($out)->spew_raw($photo->{data}) unless $symlink_exists;
+    }
 
     $c->res->content_type( $photo->{content_type} );
     $c->res->body( $photo->{data} );
@@ -101,8 +123,13 @@ sub upload : Local {
         c => $c,
         data_items => \@items,
     });
-
-    my $fileid = $photoset->data;
+    my $fileid = try {
+        $photoset->data;
+    } catch {
+        $c->log->debug("Photo upload failed.");
+        $c->stash->{photo_error} = _("Photo upload failed.");
+        return undef;
+    };
     my $out;
     if ($c->stash->{photo_error} || !$fileid) {
         $c->res->status(500);

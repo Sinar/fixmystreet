@@ -1,3 +1,6 @@
+[% extra_js = [
+    version('/js/contact.js')
+] -%]
 [% INCLUDE 'header.html',
     title = loc('Contact Us')
     robots = 'noindex,nofollow'
@@ -13,6 +16,8 @@
 [% END %]
 
 <form method="post" action="/contact/submit" class="validate">
+    <input type="hidden" name="token" value="[% csrf_token %]">
+    <input type="hidden" name="s" value="[% s %]">
     <fieldset>
         [% INCLUDE 'errors.html' %]
 
@@ -23,16 +28,16 @@
             </p>
 
             <blockquote>
-                <p>
+                <cite>
                     [% IF update.anonymous %]
                         [% tprintf( loc('Update below added anonymously at %s'), prettify_dt( update.confirmed ) ) %]
                     [% ELSE %]
                         [% tprintf( loc('Update below added by %s at %s'), update.name, prettify_dt( update.confirmed ) ) | html %]
                     [% END %]
-                </p>
+                </cite>
 
                 <p>
-                    [% update.text | html %]
+                    [%~ update.text | html ~%]
                 </p>
 
             </blockquote>
@@ -50,16 +55,16 @@
             <blockquote>
                 <h2>[% problem.title_safe | html %]</h2>
 
-                <p>
+                <cite>
                     [% IF problem.anonymous %]
                         [% tprintf( loc('Reported anonymously at %s'), prettify_dt( problem.confirmed ) ) %]
                     [% ELSE %]
                         [% tprintf( loc('Reported by %s at %s'), problem.user.name, prettify_dt( problem.confirmed ) ) | html %]
                     [% END %]
-                </p>
+                </cite>
 
                 <p>
-                    [% problem.detail | html %]
+                    [%~ problem.detail | html ~%]
                 </p>
 
             </blockquote>
@@ -70,6 +75,8 @@
             [% INCLUDE 'contact/blurb.html' %]
 
         [% END %]
+
+        [% INCLUDE 'contact/who.html' %]
 
         <label for="form_name">[% loc('Your name') %]</label>
         [% IF field_errors.name %]
@@ -85,7 +92,7 @@
 
         <div class="form-group">
           <label for="form_phone">[% loc('Your phone number') %]</label>
-          <span class="required-text required-text--optional">optional</span>
+          <span class="required-text required-text--optional">[% loc('optional') %]</span>
           <input type="text" class="form-control extra.phone" name="extra.phone" id="form_phone" value="" size="30">
         </div>
 
@@ -95,13 +102,15 @@
         [% END %]
         <input type="text" class="form-control required" name="subject" id="form_subject" value="[% subject | html %]" size="30">
 
-        [% INCLUDE 'contact/who.html' %]
-
         <label for="form_message">[% loc('Message') %]</label>
         [% IF field_errors.message %]
            <div class="form-error">[% field_errors.message %]</div>
         [% END %]
         <textarea class="form-control required" name="message" id="form_message" rows="7" cols="50">[% message | html %]</textarea>
+
+        [% IF NOT problem AND NOT update %]
+        <p>[% loc('If you are contacting us about a specific report or update please include a link to the report in the message.') %]</p>
+        [% END %]
 
 
         <input class="final-submit green-btn" type="submit" value="[% loc('Send') %]">

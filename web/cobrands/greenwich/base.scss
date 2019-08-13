@@ -32,8 +32,8 @@ label[for=pc] {
     color: $greenwich_dark_red;
 }
 
-#front-howto #front_stats {
-    color: $nav_fg;
+#front_stats {
+    color: $nav_colour;
 }
 
 #greenwich-menu-desktop, #fms-menu-desktop, #greenwich-breadcrumb {
@@ -58,10 +58,9 @@ h1, h2 {
     font-style: italic;
 }
 
-button, input[type=submit], .btn, .green-btn, button.green-btn, input.green-btn {
+button, input[type=submit], .btn, .green-btn {
     border: none;
     border-radius: 0;
-    text-transform: none;
     color: white;
     background: $greenwich_dark_grey;
     border-bottom: solid 4px $greenwich_red;

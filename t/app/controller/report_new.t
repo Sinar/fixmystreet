@@ -1,3 +1,10 @@
+package FixMyStreet::Cobrand::HounslowNoName;
+use base 'FixMyStreet::Cobrand::UK';
+
+sub council_area_id { 2483 };
+
+package main;
+
 use Test::MockModule;
 use FixMyStreet::TestMech;
 use FixMyStreet::App;
@@ -24,10 +31,15 @@ subtest "test that bare requests to /report/new get redirected" => sub {
         MAPIT_URL => 'http://mapit.uk/',
     }, sub {
         $mech->get_ok('/report/new?pc=SW1A%201AA');
+        is $mech->uri->path, '/around', "went to /around";
+        is_deeply { $mech->uri->query_form }, { pc => 'SW1A 1AA' },
+          "pc correctly transferred";
+
+        $mech->get_ok('/report/new?pc_override=SW1A%201AA&latitude=51&longitude=-2');
+        is $mech->uri->path, '/around', "went to /around";
+        is_deeply { $mech->uri->query_form }, { pc => 'SW1A 1AA' },
+          "pc correctly transferred, lat/lon gone";
     };
-    is $mech->uri->path, '/around', "went to /around";
-    is_deeply { $mech->uri->query_form }, { pc => 'SW1A 1AA' },
-      "pc correctly transferred";
 };
 
 my %body_ids;
@@ -40,6 +52,14 @@ for my $body (
     { area_id => 2482, name => 'Bromley Council' },
     { area_id => 2227, name => 'Hampshire County Council' },
     { area_id => 2333, name => 'Hart Council' },
+    { area_id => 2535, name => 'Sandwell Borough Council' },
+    { area_id => 1000, name => 'Highways England' },
+    { area_id => 2217, name => 'Buckinghamshire County Council' },
+    { area_id => 2232, name => 'Lincolnshire County Council' },
+    { area_id => 2237, name => 'Oxfordshire County Council' },
+    { area_id => 2600, name => 'Rutland County Council' },
+    { area_id => 2234, name => 'Northamptonshire County Council' },
+    { area_id => 2483, name => 'Hounslow Borough Council' },
 ) {
     my $body_obj = $mech->create_body_ok($body->{area_id}, $body->{name});
     push @bodies, $body_obj;
@@ -97,6 +117,47 @@ my $contact10 = $mech->create_contact_ok(
     category => 'Street lighting',
     email => 'streetlights-2326@example.com',
 );
+my $contact11 = $mech->create_contact_ok(
+    body_id => $body_ids{1000}, # Highways
+    category => 'Pothole',
+    email => 'pothole-1000@example.com',
+);
+my $contact12 = $mech->create_contact_ok(
+    body_id => $body_ids{2217}, # Buckinghamshire
+    category => 'Street lighting',
+    email => 'streetlights-2217@example.com',
+);
+my $contact13 = $mech->create_contact_ok(
+    body_id => $body_ids{2232}, # Lincolnshire
+    category => 'Trees',
+    email => 'trees-2232@example.com',
+);
+my $contact14 = $mech->create_contact_ok(
+    body_id => $body_ids{2237}, # Oxfordshire
+    category => 'Trees',
+    email => 'trees-2247@example.com',
+);
+my $contact15 = $mech->create_contact_ok(
+    body_id => $body_ids{2600}, # Rutland
+    category => 'Trees',
+    email => 'trees-2600@example.com',
+);
+my $contact16 = $mech->create_contact_ok(
+    body_id => $body_ids{2234}, # Northamptonshire
+    category => 'Trees',
+    email => 'trees-2234@example.com',
+);
+my $contact17 = $mech->create_contact_ok(
+    body_id => $body_ids{2483}, # Hounslow
+    category => 'Trees',
+    email => 'trees-2483@example.com',
+);
+my $contact18 = $mech->create_contact_ok(
+    body_id => $body_ids{2483}, # Hounslow
+    category => 'General Enquiry',
+    email => 'general-enquiry-2483@example.com',
+    non_public => 1,
+);
 
 # test that the various bit of form get filled in and errors correctly
 # generated.
@@ -113,11 +174,9 @@ foreach my $test (
             name          => '',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -140,12 +199,10 @@ foreach my $test (
             name          => '',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Something bad',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             category => '-- Pick a category --',
@@ -170,12 +227,10 @@ foreach my $test (
             name          => '',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -197,12 +252,10 @@ foreach my $test (
             name          => '',
             may_show_name => undef,
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -224,12 +277,10 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => undef,
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -250,12 +301,10 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -276,12 +325,10 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             title => 'Dog poo on walls',
@@ -302,12 +349,10 @@ foreach my $test (
             name          => 'DUDE',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -327,12 +372,10 @@ foreach my $test (
             name          => 'anonymous',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {},
         errors  => [
@@ -352,14 +395,12 @@ foreach my $test (
             name          => 'Joe Smith',
             may_show_name => '1',
             username      => 'not an email',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
-        changes => { username => 'notanemail', email => 'notanemail' },
+        changes => { username => 'notanemail' },
         errors  => [ 'Please enter a valid email', ],
     },
     {
@@ -374,12 +415,10 @@ foreach my $test (
             name          => '',
             may_show_name => '1',
             username      => '',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             title  => 'Test title',
@@ -402,17 +441,14 @@ foreach my $test (
             name          => '  Bob    Jones   ',
             may_show_name => '1',
             username      => '   BOB @ExAmplE.COM   ',
-            email         => '',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             name  => 'Bob Jones',
             username => 'bob@example.com',
-            email => 'bob@example.com',
         },
         errors => [ 'Please enter a subject', 'Please enter some details', ],
     },
@@ -428,12 +464,10 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => '1',
             username      => 'bob@example.com',
-            email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             photo1 => '',
@@ -452,12 +486,10 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => '1',
             username      => 'bob@example.com',
-            email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             photo1 => '',
@@ -476,17 +508,179 @@ foreach my $test (
             name          => 'Bob Jones',
             may_show_name => '1',
             username      => 'bob@example.com',
-            email         => 'bob@example.com',
             phone         => '',
             category      => 'Street lighting',
             password_sign_in => '',
             password_register => '',
-            remember_me => undef,
         },
         changes => {
             photo1 => '',
         },
         errors => [ "Please enter a subject" ],
+    },
+    {
+        msg    => 'email in title',
+        pc     => 'SW1A 1AA',
+        fields => {
+            title         => 'user@example.com',
+            detail        => 'Test detail',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'Joe Smith',
+            may_show_name => '1',
+            username      => 'user@example.com',
+            phone         => '',
+            category      => 'Street lighting',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => {
+            username => 'user@example.com',
+            title => 'User@example.com'
+        },
+        errors  => [ 'Please make sure you are not including an email address', ],
+    },
+    {
+        msg    => 'Bromley long detail',
+        pc     => 'BR1 3UH',
+        fields => {
+            fms_extra_title => 'MR',
+            title         => '',
+            detail        => 'X' . 'x' x 1751,
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'Bob Example',
+            may_show_name => '1',
+            username      => 'bob@example.com',
+            phone         => '',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Reports are limited to 1750 characters in length. Please shorten your report' ],
+    },
+    {
+        msg    => 'Oxfordshire long detail',
+        pc     => 'OX20 1SZ',
+        fields => {
+            title         => '',
+            detail        => 'X' . 'x' x 1701,
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'Bob Example',
+            may_show_name => '1',
+            username      => 'bob@example.com',
+            phone         => '',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Reports are limited to 1700 characters in length. Please shorten your report' ],
+    },
+    {
+        msg    => 'Lincolnshire long phone',
+        pc     => 'PE9 2GX',
+        fields => {
+            title         => '',
+            detail        => 'Detail',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'Bob Example',
+            may_show_name => '1',
+            username      => 'bob@example.com',
+            phone         => '123456789 12345678910',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Phone numbers are limited to 20 characters in length.' ],
+    },
+    {
+        msg    => 'Buckinghamshire long name',
+        pc     => 'RG9 6TL',
+        fields => {
+            title         => '',
+            detail        => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'This is a very long name that should fail validation',
+            may_show_name => '1',
+            username      => 'bob@example.com',
+            phone         => '',
+            category      => 'Street lighting',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Please enter some details', 'Names are limited to 50 characters in length.' ],
+    },
+    {
+        msg    => 'Rutland long name',
+        pc     => 'LE15 0GJ',
+        fields => {
+            title         => '',
+            detail        => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'This is a very long name that should fail validation',
+            may_show_name => '1',
+            username      => 'bob@example.com',
+            phone         => '',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Please enter some details', 'Names are limited to 40 characters in length.' ],
+    },
+    {
+        msg    => 'Oxfordshire validation',
+        pc     => 'OX20 1SZ',
+        fields => {
+            title         => '',
+            detail        => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'This is a really extraordinarily long name that definitely should fail validation',
+            may_show_name => '1',
+            username      => 'bob.has.a.very.long.email@thisisalonghostname.example.com',
+            phone         => '01234 5678910 09876 54321 ext 203',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Please enter a subject', 'Please enter some details', 'Emails are limited to 50 characters in length.', 'Phone numbers are limited to 20 characters in length.', 'Names are limited to 50 characters in length.'],
+    },
+    {
+        msg    => 'Northamptonshire validation',
+        pc     => 'NN1 1NS',
+        fields => {
+            title         => 'This is a very long title that should fail the validation as it is really much too long to pass the validation of 120 characters',
+            detail        => '',
+            photo1        => '',
+            photo2        => '',
+            photo3        => '',
+            name          => 'A User',
+            may_show_name => '1',
+            username      => 'user@example.org',
+            phone         => '',
+            category      => 'Trees',
+            password_sign_in => '',
+            password_register => '',
+        },
+        changes => { },
+        errors => [ 'Summaries are limited to 120 characters in length. Please shorten your summary', 'Please enter some details'],
     },
   )
 {
@@ -495,7 +689,7 @@ foreach my $test (
 
         # submit initial pc form
         FixMyStreet::override_config {
-            ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+            ALLOWED_COBRANDS => [ { fixmystreet => '.' }, 'bromley', 'oxfordshire', 'rutland', 'lincolnshire', 'buckinghamshire', 'northamptonshire' ],
             MAPIT_URL => 'http://mapit.uk/',
         }, sub {
             $mech->submit_form_ok( { with_fields => { pc => $test->{pc} } },
@@ -679,6 +873,7 @@ subtest "test password errors for a user who is signing in as they report" => su
         name     => 'Joe Bloggs',
         phone    => '01234 567 890',
         password => 'secret2',
+        phone_verified => 1,
     } ), "set user details";
 
     # submit initial pc form
@@ -714,6 +909,8 @@ subtest "test password errors for a user who is signing in as they report" => su
     is_deeply $mech->page_errors, [
         "There was a problem with your login information. If you cannot remember your password, or do not have one, please fill in the \x{2018}No\x{2019} section of the form.",
     ], "check there were errors";
+
+    $mech->content_lacks('1234', 'phone number not shown');
 };
 
 foreach my $test (
@@ -960,10 +1157,24 @@ foreach my $test (
         email_count => 1,
     },
     {
-        desc => "test invalid single_body_only means multiple report bodies",
+        desc => "test invalid single_body_only means no report bodies",
         category => 'Street lighting',
-        councils => [ 2226, 2326 ],
+        councils => [],
         extra_fields => { single_body_only => 'Invalid council' },
+        email_count => 1,
+    },
+    {
+        desc => "test do_not_send means body is ignored",
+        category => 'Street lighting',
+        councils => [ 2326 ],
+        extra_fields => { do_not_send => 'Gloucestershire County Council' },
+        email_count => 1,
+    },
+    {
+        desc => "test single_body_only with Highways England",
+        category => 'Street lighting',
+        councils => [ 1000 ],
+        extra_fields => { single_body_only => 'Highways England' },
         email_count => 1,
     },
 ) {
@@ -1036,7 +1247,7 @@ foreach my $test (
         ok $report, "Found the report";
 
         # Check the report has been assigned appropriately
-        is $report->bodies_str, join(',', @body_ids{@{$test->{councils}}});
+        is $report->bodies_str, join(',', @body_ids{@{$test->{councils}}}) || undef;
 
         $mech->content_contains('Thank you for reporting this issue');
 
@@ -1089,16 +1300,18 @@ subtest "Test inactive categories" => sub {
 };
 
 subtest "category groups" => sub {
-    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::FixMyStreet');
-    $cobrand->mock('enable_category_groups', sub { 1 });
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => 'fixmystreet',
         MAPIT_URL => 'http://mapit.uk/',
+        COBRAND_FEATURES => {
+            category_groups => { fixmystreet => 1 }
+        }
     }, sub {
-        $contact2->update( { extra => { group => 'Roads' } } );
+        $contact2->update( { extra => { group => ['Roads','Pavements'] } } );
         $contact9->update( { extra => { group => 'Roads' } } );
         $contact10->update( { extra => { group => 'Roads' } } );
         $mech->get_ok("/report/new?lat=$saved_lat&lon=$saved_lon");
+        $mech->content_like(qr{<optgroup label="Pavements">\s*<option value='Potholes'>Potholes</option></optgroup>});
         $mech->content_like(qr{<optgroup label="Roads">\s*<option value='Potholes'>Potholes</option>\s*<option value='Street lighting'>Street lighting</option></optgroup>});
     };
 };
@@ -1174,27 +1387,76 @@ subtest "test report creation for a category that is non public" => sub {
     $contact1->update( { non_public => 0 } );
 };
 
-$contact2->category( "Pothol\xc3\xa9s" );
+$contact2->category( "Pothol\x{00E9}s" );
 $contact2->update;
 
-my $extra_details;
-FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-    MAPIT_URL => 'http://mapit.uk/',
-}, sub {
-    $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=' . $saved_lat . '&longitude=' . $saved_lon );
-};
-$mech->content_contains( "Pothol\xc3\xa9s" );
-like $extra_details->{councils_text}, qr/<strong>Cheltenham/;
-ok !$extra_details->{titles_list}, 'Non Bromley does not send back list of titles';
+subtest "check map click ajax response" => sub {
+    my $extra_details;
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'fixmystreet',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=' . $saved_lat . '&longitude=' . $saved_lon );
+    };
+    # this order seems to be random so check individually/sort
+    like $extra_details->{councils_text}, qr/Cheltenham Borough Council/, 'correct council text for two tier';
+    like $extra_details->{councils_text}, qr/Gloucestershire County Council/, 'correct council text for two tier';
+    like $extra_details->{category}, qr/Pothol\x{00E9}s.*Street lighting/, 'category looks correct for two tier council';
+    my @sorted_bodies = sort @{ $extra_details->{bodies} };
+    is_deeply \@sorted_bodies, [ "Cheltenham Borough Council", "Gloucestershire County Council" ], 'correct bodies for two tier';
+    ok !$extra_details->{titles_list}, 'Non Bromley does not send back list of titles';
 
-FixMyStreet::override_config {
-    ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
-    MAPIT_URL => 'http://mapit.uk/',
-}, sub {
-    $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.4021&longitude=0.01578');
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'fixmystreet',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.4021&longitude=0.01578');
+    };
+    ok $extra_details->{titles_list}, 'Bromley sends back list of titles';
+    like $extra_details->{councils_text}, qr/Bromley Council/, 'correct council text';
+    like $extra_details->{councils_text_private}, qr/^These details will be sent to the council, but will never be shown online/, 'correct private council text';
+    like $extra_details->{category}, qr/Trees/, 'category looks correct';
+    is_deeply $extra_details->{bodies}, [ "Bromley Council" ], 'correct bodies';
+    ok !$extra_details->{contribute_as}, 'no contribute as section';
+    ok !$extra_details->{top_message}, 'no top message';
+    ok $extra_details->{extra_name_info}, 'extra name info';
+
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'fixmystreet',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=52.563074&longitude=-1.991032' );
+    };
+    like $extra_details->{councils_text}, qr/^These will be published online for others to see/, 'correct council text for council with no contacts';
+    is $extra_details->{category}, '', 'category is empty for council with no contacts';
+    is_deeply $extra_details->{bodies}, [ "Sandwell Borough Council" ], 'correct bodies for council with no contacts';
+    ok !$extra_details->{extra_name_info}, 'no extra name info';
+
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'hounslow',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.482286&longitude=-0.328163' );
+    };
+    is_deeply $extra_details->{display_names}, { 'Hounslow Borough Council' => 'Hounslow Highways' }, 'council display name mapping correct';
+
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'hounslownoname',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.482286&longitude=-0.328163' );
+    };
+    isnt defined $extra_details->{display_names}, 'no council display names if none defined';
+
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'hounslow',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.482286&longitude=-0.328163' );
+    };
+    ok $extra_details->{by_category}->{'General Enquiry'}->{non_public}, 'non_public set correctly for private category';
+    isnt defined $extra_details->{by_category}->{Tree}->{non_public}, 'non_public omitted for public category';
 };
-ok $extra_details->{titles_list}, 'Bromley sends back list of titles';
 
 #### test uploading an image
 
@@ -1552,7 +1814,7 @@ subtest "test Hart" => sub {
             if ( $test->{confirm} ) {
                 is $mech->uri->path, "/report/new";
                 my $base = 'www.fixmystreet.com';
-                $base = "hart.fixmystreet.com" unless $test->{national};
+                $base = '"' unless $test->{national};
                 $mech->content_contains("$base/report/" . $report->id, "links to correct site");
             } else {
                 # receive token
@@ -1579,7 +1841,7 @@ subtest "test Hart" => sub {
                 };
 
                 my $base = 'www.fixmystreet.com';
-                $base = 'hart.fixmystreet.com' unless $test->{national};
+                $base = '"' unless $test->{national};
                 $mech->content_contains( $base . '/report/' .
                     $report->id, 'confirm page links to correct site' );
 
@@ -1637,9 +1899,12 @@ subtest "unresponsive body handling works" => sub {
         # Test body-level send method
         my $old_send = $contact1->body->send_method;
         $contact1->body->update( { send_method => 'Refused' } );
-        $mech->get_ok('/report/new/ajax?latitude=55.952055&longitude=-3.189579'); # Edinburgh
         my $body_id = $contact1->body->id;
-        ok $mech->content_like( qr{Edinburgh.*accept reports.*/unresponsive\?body=$body_id} );
+        my $extra_details = $mech->get_ok_json('/report/new/ajax?latitude=55.952055&longitude=-3.189579');
+        like $extra_details->{top_message}, qr{Edinburgh.*accept reports.*/unresponsive\?body=$body_id};
+        is_deeply $extra_details->{unresponsive}, { $body_id => 1 }, "unresponsive json set";
+        $extra_details = $mech->get_ok_json('/report/new/category_extras?category=Street%20lighting&latitude=55.952055&longitude=-3.189579');
+        is_deeply $extra_details->{unresponsive}, { $body_id => 1 }, "unresponsive json set";
 
         my $test_email = 'test-2@example.com';
         $mech->log_out_ok;
@@ -1713,8 +1978,10 @@ subtest "unresponsive body handling works" => sub {
         # And test per-category refusing
         my $old_email = $contact3->email;
         $contact3->update( { email => 'REFUSED' } );
-        $mech->get_ok('/report/new/category_extras?category=Trees&latitude=51.896268&longitude=-2.093063');
-        ok $mech->content_like( qr/Cheltenham.*Trees.*unresponsive.*category=Trees/ );
+        $extra_details = $mech->get_ok_json('/report/new/ajax?latitude=51.896268&longitude=-2.093063');
+        like $extra_details->{by_category}{$contact3->category}{category_extra}, qr/Cheltenham.*Trees.*unresponsive.*category=Trees/s;
+        $extra_details = $mech->get_ok_json('/report/new/category_extras?category=Trees&latitude=51.896268&longitude=-2.093063');
+        is_deeply $extra_details->{unresponsive}, { $contact3->body->id => 1 }, "unresponsive json set";
 
         $mech->get_ok('/around');
         $mech->submit_form_ok( { with_fields => { pc => 'GL50 2PR', } }, "submit location" );
@@ -1879,6 +2146,51 @@ subtest "extra google analytics code displayed on email confirmation problem cre
     };
 };
 
+
+my $private_perms = $mech->create_user_ok('private_perms@example.org', name => 'private', from_body => $bodies[0]);
+subtest "report_mark_private allows users to mark reports as private" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        BASE_URL => 'https://www.fixmystreet.com',
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $mech->log_out_ok;
+
+        $private_perms->user_body_permissions->find_or_create({
+            body => $bodies[0],
+            permission_type => 'report_mark_private',
+        });
+
+        $mech->log_in_ok('private_perms@example.org');
+        $mech->get_ok('/');
+        $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB' } },
+            "submit location" );
+        $mech->follow_link_ok(
+            { text_regex => qr/skip this step/i, },
+            "follow 'skip this step' link"
+        );
+
+        $mech->submit_form_ok(
+            {
+                with_fields => {
+                    title         => "Private report",
+                    detail        => 'Private report details.',
+                    photo1        => '',
+                    name          => 'Joe Bloggs',
+                    may_show_name => '1',
+                    phone         => '07903 123 456',
+                    category      => 'Trees',
+                    non_public    => 1,
+                }
+            },
+            "submit good details"
+        );
+
+        $mech->content_contains('Great work. Now spread the word', 'shown confirmation page');
+    }
+};
+
+my $inspector = $mech->create_user_ok('inspector@example.org', name => 'inspector', from_body => $bodies[0]);
 foreach my $test (
   { non_public => 0 },
   { non_public => 1 },
@@ -1891,12 +2203,11 @@ foreach my $test (
     }, sub {
         $mech->log_out_ok;
 
-        my $user = $mech->create_user_ok('inspector@example.org', name => 'inspector', from_body => $bodies[0]);
-        $user->user_body_permissions->find_or_create({
+        $inspector->user_body_permissions->find_or_create({
             body => $bodies[0],
             permission_type => 'planned_reports',
         });
-        $user->user_body_permissions->find_or_create({
+        $inspector->user_body_permissions->find_or_create({
             body => $bodies[0],
             permission_type => 'report_inspect',
         });
@@ -1929,6 +2240,113 @@ foreach my $test (
         like $mech->uri->path, qr/\/report\/[0-9]+/, 'Redirects directly to report';
     }
   };
+}
+
+subtest "check map click ajax response for inspector" => sub {
+    $mech->log_out_ok;
+
+    my $extra_details;
+    $inspector->user_body_permissions->find_or_create({
+        body => $bodies[0],
+        permission_type => 'planned_reports',
+    });
+    $inspector->user_body_permissions->find_or_create({
+        body => $bodies[0],
+        permission_type => 'report_inspect',
+    });
+
+    $mech->log_in_ok('inspector@example.org');
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=55.952055&longitude=-3.189579' );
+    };
+    like $extra_details->{category}, qr/data-prefill="0/, 'inspector prefill not set';
+    ok !$extra_details->{contribute_as}, 'no contribute as section';
+};
+
+subtest "check map click ajax response for inspector and uk cobrand" => sub {
+    $mech->log_out_ok;
+
+    my $extra_details;
+    $inspector->user_body_permissions->find_or_create({
+        body => $bodies[4],
+        permission_type => 'planned_reports',
+    });
+    $inspector->user_body_permissions->find_or_create({
+        body => $bodies[4],
+        permission_type => 'report_inspect',
+    });
+
+    $mech->log_in_ok('inspector@example.org');
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ { bromley => '.' } ],
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.402096&longitude=0.015784' );
+    };
+    like $extra_details->{category}, qr/data-prefill="0/, 'inspector prefill not set';
+};
+
+for my $test (
+    {
+        desc => 'map click ajax for contribute_as_another_user',
+        permissions => {
+            contribute_as_another_user => 1,
+            contribute_as_anonymous_user => undef,
+            contribute_as_body => undef,
+        }
+    },
+    {
+        desc => 'map click ajax for contribute_as_anonymous_user',
+        permissions => {
+            contribute_as_another_user => undef,
+            contribute_as_anonymous_user => 1,
+            contribute_as_body => undef,
+        }
+    },
+    {
+        desc => 'map click ajax for contribute_as_body',
+        permissions => {
+            contribute_as_another_user => undef,
+            contribute_as_anonymous_user => undef,
+            contribute_as_body => 1,
+        }
+    },
+) {
+    subtest $test->{desc} => sub {
+        $mech->log_out_ok;
+        my $extra_details;
+        (my $name = $test->{desc}) =~ s/.*(contri.*)/$1/;
+        my $user = $mech->create_user_ok("$name\@example.org", name => 'test user', from_body => $bodies[0]);
+        for my $p ( keys %{$test->{permissions}} ) {
+            next unless $test->{permissions}->{$p};
+            $user->user_body_permissions->find_or_create({
+                body => $bodies[0],
+                permission_type => $p,
+            });
+        }
+        $mech->log_in_ok("$name\@example.org");
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=55.952055&longitude=-3.189579' );
+        };
+        for my $p ( keys %{$test->{permissions}} ) {
+            (my $key = $p) =~ s/contribute_as_//;
+            is $extra_details->{contribute_as}->{$key}, $test->{permissions}->{$p}, "$key correctly set";
+        }
+
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
+            MAPIT_URL => 'http://mapit.uk/',
+        }, sub {
+            $extra_details = $mech->get_ok_json( '/report/new/ajax?latitude=51.754926&longitude=-1.256179' );
+        };
+        ok !$extra_details->{contribute_as}, 'no contribute as section for other council';
+    };
 }
 
 done_testing();

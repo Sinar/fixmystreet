@@ -15,6 +15,60 @@ var fixmystreet = fixmystreet || {};
 fixmystreet.utils = fixmystreet.utils || {};
 
 $.extend(fixmystreet.utils, {
+    array_to_csv_line: function(arr) {
+        var out = [], s;
+        for (var i=0; i<arr.length; i++) {
+            s = arr[i];
+            if (/[",]/.test(s)) {
+                s = '"' + s.replace('"', '""') + '"';
+            }
+            out.push(s);
+        }
+        return out.join(',');
+    },
+
+    // https://stackoverflow.com/questions/1293147/javascript-code-to-parse-csv-data/1293163#1293163
+    csv_to_array: function( strData, strDelimiter ) {
+        strDelimiter = (strDelimiter || ",");
+
+        var objPattern = new RegExp(
+            (
+                "(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
+                "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
+                "([^\"\\" + strDelimiter + "\\r\\n]*))"
+            ),
+            "gi"
+            );
+
+        var arrData = [[]];
+
+        var arrMatches = objPattern.exec( strData );
+        while (arrMatches) {
+
+            var strMatchedDelimiter = arrMatches[ 1 ];
+
+            if ( strMatchedDelimiter.length &&
+                strMatchedDelimiter !== strDelimiter) {
+                arrData.push( [] );
+            }
+
+            var strMatchedValue;
+            if (arrMatches[ 2 ]) {
+                strMatchedValue = arrMatches[ 2 ].replace(
+                    new RegExp( "\"\"", "g" ),
+                    "\""
+                );
+            } else {
+                strMatchedValue = arrMatches[ 3 ];
+            }
+
+            arrData[ arrData.length - 1 ].push( strMatchedValue );
+            arrMatches = objPattern.exec( strData );
+        }
+
+        return( arrData );
+    },
+
     parse_query_string: function() {
         var qs = {};
         if (!location.search) {
@@ -124,12 +178,19 @@ $.extend(fixmystreet.utils, {
         return lonlat;
       },
 
+      setup_inspector: function() {
+        setup_inspector_marker_drag();
+      },
+
       markers_list: function(pins, transform) {
         var markers = [];
         var size = fixmystreet.maps.marker_size();
         var selected_size = fixmystreet.maps.selected_marker_size();
         for (var i=0; i<pins.length; i++) {
             var pin = pins[i];
+            if (pin[1] == 0 && pin[0] == 0) {
+                continue;
+            }
             var loc = new OpenLayers.Geometry.Point(pin[1], pin[0]);
             if (transform) {
                 // The Strategy does this for us, so don't do it in that case.
@@ -140,13 +201,14 @@ $.extend(fixmystreet.utils, {
             }
             var id = pin[3] === undefined ? pin[3] : +pin[3];
             var marker_size = (id === window.selected_problem_id) ? selected_size : size;
+            var draggable = (id === window.selected_problem_id) ? true : (pin[6] === false ? false : true);
             var marker = new OpenLayers.Feature.Vector(loc, {
                 colour: pin[2],
                 size: pin[5] || marker_size,
                 faded: 0,
                 id: id,
                 title: pin[4] || '',
-                draggable: pin[6] === false ? false : true
+                draggable: draggable
             });
             markers.push( marker );
         }
@@ -157,10 +219,13 @@ $.extend(fixmystreet.utils, {
         var size = fixmystreet.maps.marker_size();
         var selected_size = fixmystreet.maps.selected_marker_size();
         for (var i = 0; i < fixmystreet.markers.features.length; i++) {
-            if (fixmystreet.markers.features[i].attributes.id == window.selected_problem_id) {
-                fixmystreet.markers.features[i].attributes.size = selected_size;
+            var attr = fixmystreet.markers.features[i].attributes;
+            if (attr.id == window.selected_problem_id) {
+                attr.size = selected_size;
+                attr.draggable = true;
             } else {
-                fixmystreet.markers.features[i].attributes.size = size;
+                attr.size = size;
+                attr.draggable = false;
             }
         }
         fixmystreet.markers.redraw();
@@ -219,6 +284,8 @@ $.extend(fixmystreet.utils, {
                   }
               }
           } );
+          // Allow handled feature click propagation to other click handlers
+          drag.handlers.feature.stopClick = false;
           fixmystreet.map.addControl( drag );
           drag.activate();
       },
@@ -237,6 +304,9 @@ $.extend(fixmystreet.utils, {
       // fixmystreet.select_feature).
 
       markers_highlight: function(problem_id) {
+          if (!fixmystreet.markers) {
+              return;
+          }
           for (var i = 0; i < fixmystreet.markers.features.length; i++) {
               if (typeof problem_id == 'undefined') {
                   // There is no highlighted marker, so unfade this marker
@@ -276,13 +346,29 @@ $.extend(fixmystreet.utils, {
                   $('#loading-indicator').attr('aria-hidden', true);
               }
           }
+      },
+
+      get_map_state: function() {
+          var centre = fixmystreet.map.getCenter();
+          return {
+              zoom: fixmystreet.map.getZoom(),
+              lat: centre.lat,
+              lon: centre.lon,
+          };
+      },
+
+      set_map_state: function(state) {
+          fixmystreet.map.setCenter(
+              new OpenLayers.LonLat( state.lon, state.lat ),
+              state.zoom
+          );
       }
     });
 
     /* Make sure pins aren't going to reload just because we're zooming out,
      * we already have the pins when the page loaded */
     function zoomToBounds(bounds) {
-        if (!bounds) { return; }
+        if (!bounds || !fixmystreet.markers.strategies) { return; }
         var strategy = fixmystreet.markers.strategies[0];
         strategy.deactivate();
         var center = bounds.getCenterLonLat();
@@ -298,17 +384,22 @@ $.extend(fixmystreet.utils, {
 
     function sidebar_highlight(problem_id) {
         if (typeof problem_id !== 'undefined') {
-            var $a = $('.item-list--reports a[href$="/' + problem_id + '"]');
-            $a.parent().addClass('hovered');
+            var $li = $('[data-report-id="' + problem_id + '"]');
+            $li.addClass('hovered');
         } else {
-            $('.item-list--reports .hovered').removeClass('hovered');
+            $('.item-list .hovered').removeClass('hovered');
         }
     }
 
     function marker_click(problem_id, evt) {
-        var $a = $('.item-list--reports a[href$="/' + problem_id + '"]');
+        var $a = $('.item-list a[href$="/' + problem_id + '"]');
         if (!$a[0]) {
             return;
+        }
+
+        // clickFeature operates on touchstart, we do not want the map click taking place on touchend!
+        if (fixmystreet.maps.click_control) {
+            fixmystreet.maps.click_control.deactivate();
         }
 
         // All of this, just so that ctrl/cmd-click on a pin works?!
@@ -343,11 +434,25 @@ $.extend(fixmystreet.utils, {
     }
 
     function replace_query_parameter(qs, id, key) {
-        var value = $('#' + id).val();
-        if (value) {
-            qs[key] = (typeof value === 'string') ? value : value.join(',');
+        var value,
+            $el = $('#' + id);
+        if (!$el[0]) {
+            return;
+        }
+        if ( $el[0].type === 'checkbox' ) {
+            value = $el[0].checked ? '1' : '';
+            if (value) {
+                qs[key] = value;
+            } else {
+                delete qs[key];
+            }
         } else {
-            delete qs[key];
+            value = $el.val();
+            if (value) {
+                qs[key] = (typeof value === 'string') ? value : fixmystreet.utils.array_to_csv_line(value);
+            } else {
+                delete qs[key];
+            }
         }
         return value;
     }
@@ -364,22 +469,33 @@ $.extend(fixmystreet.utils, {
         return new_url;
     }
 
+    function update_history(qs, data) {
+        var new_url = update_url(qs);
+        history.pushState(data, null, new_url);
+
+        // Ensure the permalink control is updated when the filters change
+        var permalink_controls = fixmystreet.map.getControlsByClass(/Permalink/);
+        if (permalink_controls.length) {
+            permalink_controls[0].updateLink();
+        }
+    }
+
     function page_changed_history() {
         if (!('pushState' in history)) {
             return;
         }
         var qs = fixmystreet.utils.parse_query_string();
 
-        var page = $('.pagination').data('page');
+        var show_old_reports = replace_query_parameter(qs, 'show_old_reports', 'show_old_reports');
+        var page = $('.pagination:first').data('page');
         if (page > 1) {
             qs.p = page;
         } else {
             delete qs.p;
         }
-        var new_url = update_url(qs);
-        history.pushState({
-            page_change: { 'page': page }
-        }, null, new_url);
+        update_history(qs, {
+            page_change: { 'page': page, 'show_old_reports': show_old_reports }
+        });
     }
 
     function categories_or_status_changed_history() {
@@ -390,11 +506,11 @@ $.extend(fixmystreet.utils, {
         var filter_categories = replace_query_parameter(qs, 'filter_categories', 'filter_category');
         var filter_statuses = replace_query_parameter(qs, 'statuses', 'status');
         var sort_key = replace_query_parameter(qs, 'sort', 'sort');
+        var show_old_reports = replace_query_parameter(qs, 'show_old_reports', 'show_old_reports');
         delete qs.p;
-        var new_url = update_url(qs);
-        history.pushState({
-            filter_change: { 'filter_categories': filter_categories, 'statuses': filter_statuses, 'sort': sort_key }
-        }, null, new_url);
+        update_history(qs, {
+            filter_change: { 'filter_categories': filter_categories, 'statuses': filter_statuses, 'sort': sort_key, 'show_old_reports': show_old_reports }
+        });
     }
 
     function setup_inspector_marker_drag() {
@@ -413,8 +529,8 @@ $.extend(fixmystreet.utils, {
             $("#problem_easting").text(bng.x.toFixed(1));
             $("#problem_latitude").text(lonlat.y.toFixed(6));
             $("#problem_longitude").text(lonlat.x.toFixed(6));
-            $("form#report_inspect_form input[name=latitude]").val(lonlat.y);
-            $("form#report_inspect_form input[name=longitude]").val(lonlat.x);
+            $("input[name=latitude]").val(lonlat.y.toFixed(6));
+            $("input[name=longitude]").val(lonlat.x.toFixed(6));
         },
         false);
     }
@@ -447,7 +563,8 @@ $.extend(fixmystreet.utils, {
                     $.extend(style.defaultStyle, { fillColor: 'black', strokeColor: 'black' });
                 }
                 var geometry = this.features[0].geometry;
-                if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Collection') {
+                if (geometry.CLASS_NAME == 'OpenLayers.Geometry.Collection' ||
+                    geometry.CLASS_NAME == 'OpenLayers.Geometry.MultiPolygon') {
                     $.each(geometry.components, function(i, polygon) {
                         new_geometry.addComponents(polygon.components);
                         extent.extend(polygon.getBounds());
@@ -461,8 +578,10 @@ $.extend(fixmystreet.utils, {
                     f.geometry = new_geometry;
                     this.removeAllFeatures();
                     this.addFeatures([f]);
-                    var qs = fixmystreet.utils.parse_query_string();
-                    if (!qs.bbox) {
+                    // Look at original href here to know if location was present at load.
+                    // If it was, we don't want to zoom out to the bounds of the area.
+                    var qs = OpenLayers.Util.getParameters(fixmystreet.original.href);
+                    if (!qs.bbox && !qs.lat && !qs.lon) {
                         zoomToBounds(extent);
                     }
                 } else {
@@ -474,8 +593,8 @@ $.extend(fixmystreet.utils, {
                     renderers: ['SVGBig', 'VML', 'Canvas'],
                     strategies: [ new OpenLayers.Strategy.Fixed() ],
                     protocol: new OpenLayers.Protocol.HTTP({
-                        url: "/mapit/area/" + fixmystreet.area[i] + ".kml?simplify_tolerance=0.0001",
-                        format: new OpenLayers.Format.KML()
+                        url: "/mapit/area/" + fixmystreet.area[i] + ".geojson?simplify_tolerance=0.0001",
+                        format: new OpenLayers.Format.GeoJSON()
                     })
                 });
                 fixmystreet.map.addLayer(area);
@@ -614,23 +733,26 @@ $.extend(fixmystreet.utils, {
             );
             fixmystreet.map.addControl( fixmystreet.select_feature );
             fixmystreet.select_feature.activate();
-            fixmystreet.map.events.register( 'zoomend', null, fixmystreet.maps.markers_resize );
             fixmystreet.map.events.register( 'zoomend', null, function() {
-              fixmystreet.run(fixmystreet.maps.show_shortlist_control);
+                fixmystreet.maps.markers_resize();
+                $(fixmystreet).trigger('map:zoomend');
             });
 
             // Set up the event handlers to populate the filters and react to them changing
             $("#filter_categories").on("change.filters", categories_or_status_changed);
             $("#statuses").on("change.filters", categories_or_status_changed);
             $("#sort").on("change.filters", categories_or_status_changed);
+            $("#show_old_reports").on("change.filters", categories_or_status_changed);
             $('.js-pagination').on('change.filters', categories_or_status_changed);
             $('.js-pagination').on('click', 'a', function(e) {
                 e.preventDefault();
-                var page = $('.pagination').data('page');
-                if ($(this).hasClass('next')) {
-                    $('.pagination').data('page', page + 1);
+                var page = $('.pagination:first').data('page');
+                if ($(this).hasClass('show_old')) {
+                    $("#show_old_reports").prop('checked', true);
+                } else if ($(this).hasClass('next')) {
+                    $('.pagination:first').data('page', page + 1);
                 } else {
-                    $('.pagination').data('page', page - 1);
+                    $('.pagination:first').data('page', page - 1);
                 }
                 fixmystreet.markers.protocol.use_page = true;
                 $(this).trigger('change');
@@ -638,6 +760,7 @@ $.extend(fixmystreet.utils, {
             $("#filter_categories").on("change.user", categories_or_status_changed_history);
             $("#statuses").on("change.user", categories_or_status_changed_history);
             $("#sort").on("change.user", categories_or_status_changed_history);
+            $("#show_old_reports").on("change.user", categories_or_status_changed_history);
             $('.js-pagination').on('click', 'a', page_changed_history);
         } else if (fixmystreet.page == 'new') {
             drag.activate();
@@ -670,6 +793,10 @@ $.extend(fixmystreet.utils, {
     }
 
     $(function(){
+
+        if (!document.getElementById('map')) {
+            return;
+        }
 
         // Set specific map config - some other JS included in the
         // template should define this
@@ -710,17 +837,18 @@ $.extend(fixmystreet.utils, {
             fixmystreet.map.addLayer(layer);
         }
 
-        if (!fixmystreet.map.getCenter()) {
-            var centre = new OpenLayers.LonLat( fixmystreet.longitude, fixmystreet.latitude );
-            centre.transform(
-                new OpenLayers.Projection("EPSG:4326"),
-                fixmystreet.map.getProjectionObject()
+        // map.getCenter() returns a position in "map units", but sometimes you
+        // want the center in GPS-style latitude/longitude coordinates (WGS84)
+        // for example, to pass as GET params to fixmystreet.com/report/new.
+        fixmystreet.map.getCenterWGS84 = function() {
+            return fixmystreet.map.getCenter().transform(
+                fixmystreet.map.getProjectionObject(),
+                new OpenLayers.Projection("EPSG:4326")
             );
-            fixmystreet.map.setCenter(centre, fixmystreet.zoom || 3);
-        }
+        };
 
         if (document.getElementById('mapForm')) {
-            var click = new OpenLayers.Control.Click();
+            var click = fixmystreet.maps.click_control = new OpenLayers.Control.Click();
             fixmystreet.map.addControl(click);
             click.activate();
         }
@@ -732,17 +860,26 @@ $.extend(fixmystreet.utils, {
             onload();
         }
 
-        (function() {
-            var timeout;
-            $('#js-reports-list').on('mouseenter', '.item-list--reports__item', function(){
-                var href = $('a', this).attr('href');
-                var id = parseInt(href.replace(/^.*[\/]([0-9]+)$/, '$1'),10);
-                clearTimeout(timeout);
-                fixmystreet.maps.markers_highlight(id);
-            }).on('mouseleave', '.item-list--reports__item', function(){
-                timeout = setTimeout(fixmystreet.maps.markers_highlight, 50);
-            });
-        })();
+        // Allow external scripts to react to pans/zooms on the map,
+        // by subscribing to $(fixmystreet).on('maps:update_view')
+        fixmystreet.map.events.register('moveend', null, function(){
+            $(fixmystreet).trigger('maps:update_view');
+        });
+
+        if (!fixmystreet.map.events.extensions.buttonclick.isDeviceTouchCapable) {
+            // On touchscreens go straight to the report (see #2294).
+            (function() {
+                var timeout;
+                $('#js-reports-list').on('mouseenter', '.item-list--reports__item', function(){
+                    var href = $('a', this).attr('href');
+                    var id = parseInt(href.replace(/^.*[\/]([0-9]+)$/, '$1'),10);
+                    clearTimeout(timeout);
+                    fixmystreet.maps.markers_highlight(id);
+                }).on('mouseleave', '.item-list--reports__item', function(){
+                    timeout = setTimeout(fixmystreet.maps.markers_highlight, 50);
+                });
+            })();
+        }
     });
 
 // End maps closure
@@ -781,9 +918,34 @@ OpenLayers.Control.PanZoomFMS = OpenLayers.Class(OpenLayers.Control.PanZoom, {
     }
 });
 
+OpenLayers.Control.ArgParserFMS = OpenLayers.Class(OpenLayers.Control.ArgParser, {
+    getParameters: function(url) {
+        var args = OpenLayers.Control.ArgParser.prototype.getParameters.apply(this, arguments);
+        // Get defaults from provided data if not in URL
+        if (!args.lat && !args.lon) {
+            args.lon = fixmystreet.longitude;
+            args.lat = fixmystreet.latitude;
+        }
+        if (args.lat && !args.zoom) {
+            args.zoom = fixmystreet.zoom || 3;
+        }
+        return args;
+    },
+
+    CLASS_NAME: "OpenLayers.Control.ArgParserFMS"
+});
+
 /* Overriding Permalink so that it can pass the correct zoom to OSM */
 OpenLayers.Control.PermalinkFMS = OpenLayers.Class(OpenLayers.Control.Permalink, {
     _updateLink: function(alter_zoom) {
+        // this.base was originally set in initialize(), but the window's href
+        // may have changed since then if e.g. the map filters have been updated.
+        // NB this won't change the base of the 'problems nearby' permalink on
+        // /report, as this would result in it pointing at the wrong page.
+        if (this.base !== '/around' && fixmystreet.page !== 'report') {
+            this.base = window.location.href;
+        }
+
         var separator = this.anchor ? '#' : '?';
         var href = this.base;
         if (href.indexOf(separator) != -1) {
@@ -796,7 +958,17 @@ OpenLayers.Control.PermalinkFMS = OpenLayers.Class(OpenLayers.Control.Permalink,
         if ( alter_zoom ) {
             zoom += fixmystreet.zoomOffset;
         }
-        href += separator + OpenLayers.Util.getParameterString(this.createParams(center, zoom));
+
+        var params = this.createParams(center, zoom);
+
+        // Strip out the ugly OpenLayers layers state string
+        delete params.layers;
+        if (params.lat && params.lon) {
+            // No need for the postcode string either, if we have a latlon
+            delete params.pc;
+        }
+
+        href += separator + OpenLayers.Util.getParameterString(params);
         // Could use mlat/mlon here as well if we are on a page with a marker
         if (this.base == '/around') {
             href += '&js=1';
@@ -808,15 +980,21 @@ OpenLayers.Control.PermalinkFMS = OpenLayers.Class(OpenLayers.Control.Permalink,
         else {
             this.element.href = href;
         }
+
+        if ('replaceState' in history) {
+            if (fixmystreet.page.match(/around|reports/)) {
+                history.replaceState(
+                    history.state,
+                    null,
+                    href
+                );
+            }
+        }
     },
     updateLink: function() {
         this._updateLink(0);
-    }
-});
-OpenLayers.Control.PermalinkFMSz = OpenLayers.Class(OpenLayers.Control.PermalinkFMS, {
-    updateLink: function() {
-        this._updateLink(1);
-    }
+    },
+    CLASS_NAME: "OpenLayers.Control.PermalinkFMS"
 });
 
 OpenLayers.Strategy.FixMyStreet = OpenLayers.Class(OpenLayers.Strategy.BBOX, {
@@ -884,6 +1062,13 @@ OpenLayers.Strategy.FixMyStreetFixed = OpenLayers.Class(OpenLayers.Strategy.Fixe
 // is dragged (modulo a buffer extending outside the viewport).
 // This subclass is required so we can pass the 'filter_category' and 'status' query
 // params to /around?ajax if the user has filtered the map.
+
+fixmystreet.protocol_params = {
+    filter_category: 'filter_categories',
+    status: 'statuses',
+    sort: 'sort'
+};
+
 OpenLayers.Protocol.FixMyStreet = OpenLayers.Class(OpenLayers.Protocol.HTTP, {
     initial_page: null,
     use_page: false,
@@ -891,15 +1076,18 @@ OpenLayers.Protocol.FixMyStreet = OpenLayers.Class(OpenLayers.Protocol.HTTP, {
     read: function(options) {
         // Pass the values of the category, status, and sort fields as query params
         options.params = options.params || {};
-        $.each({ filter_category: 'filter_categories', status: 'statuses', sort: 'sort' }, function(key, id) {
+        $.each(fixmystreet.protocol_params, function(key, id) {
             var val = $('#' + id).val();
-            if (val !== undefined) {
-                options.params[key] = val;
+            if (val && val.length) {
+                options.params[key] = val.join ? fixmystreet.utils.array_to_csv_line(val) : val;
             }
         });
+        if ( $('#show_old_reports').is(':checked') ) {
+            options.params.show_old_reports = 1;
+        }
         var page;
         if (this.use_page) {
-            page = $('.pagination').data('page');
+            page = $('.pagination:first').data('page');
             this.use_page = false;
         } else if (this.initial_page) {
             page = 1;
@@ -925,6 +1113,11 @@ OpenLayers.Format.FixMyStreet = OpenLayers.Class(OpenLayers.Format.JSON, {
         var reports_list;
         if (typeof(obj.reports_list) != 'undefined' && (reports_list = document.getElementById('js-reports-list'))) {
             reports_list.innerHTML = obj.reports_list;
+            if ( $('.item-list--reports').data('show-old-reports') ) {
+                $('#show_old_reports_wrapper').removeClass('hidden');
+            } else {
+                $('#show_old_reports_wrapper').addClass('hidden');
+            }
         }
         if (typeof(obj.pagination) != 'undefined') {
             $('.js-pagination').html(obj.pagination);

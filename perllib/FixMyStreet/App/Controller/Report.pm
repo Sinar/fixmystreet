@@ -1,5 +1,6 @@
 package FixMyStreet::App::Controller::Report;
 
+use utf8;
 use Moose;
 use namespace::autoclean;
 use JSON::MaybeXS;
@@ -20,8 +21,8 @@ Show a report
 
 =head2 index
 
-Redirect to homepage unless C<id> parameter in query, in which case redirect to
-'/report/$id'.
+Redirect to homepage unless we have a homepage template,
+in which case show that.
 
 =cut
 
@@ -35,13 +36,13 @@ sub index : Path('') : Args(0) {
     }
 }
 
-=head2 report_display
+=head2 id
 
-Display a report.
+Load in ID, for use by chained pages.
 
 =cut
 
-sub display : Path('') : Args(1) {
+sub id :PathPart('report') :Chained :CaptureArgs(1) {
     my ( $self, $c, $id ) = @_;
 
     if (
@@ -49,15 +50,17 @@ sub display : Path('') : Args(1) {
         || $id =~ m{ ^(\d+) \D .* $ }x    # trailing garbage
       )
     {
-        return $c->res->redirect( $c->uri_for($1), 301 );
+        $c->res->redirect( $c->uri_for($1), 301 );
+        $c->detach;
     }
 
-    $c->forward( '_display', [ $id ] );
+    $c->forward( 'load_problem_or_display_error', [ $id ] );
 }
 
 =head2 ajax
 
-Return JSON formatted details of a report
+Return JSON formatted details of a report.
+URL used by mobile app so remains /report/ajax/N.
 
 =cut
 
@@ -65,40 +68,62 @@ sub ajax : Path('ajax') : Args(1) {
     my ( $self, $c, $id ) = @_;
 
     $c->stash->{ajax} = 1;
-    $c->forward( '_display', [ $id ] );
+    $c->forward('load_problem_or_display_error', [ $id ]);
+    $c->forward('display');
 }
 
-sub _display : Private {
-    my ( $self, $c, $id ) = @_;
+=head2 display
+
+Display a report.
+
+=cut
+
+sub display :PathPart('') :Chained('id') :Args(0) {
+    my ( $self, $c ) = @_;
 
     $c->forward('/auth/get_csrf_token');
-    $c->forward( 'load_problem_or_display_error', [ $id ] );
     $c->forward( 'load_updates' );
     $c->forward( 'format_problem_for_display' );
 
     my $permissions = $c->stash->{_permissions} ||= $c->forward( 'check_has_permission_to',
-        [ qw/report_inspect report_edit_category report_edit_priority/ ] );
+        [ qw/report_inspect report_edit_category report_edit_priority report_mark_private/ ] );
     if (any { $_ } values %$permissions) {
         $c->stash->{template} = 'report/inspect.html';
         $c->forward('inspect');
     }
 }
 
-sub support : Path('support') : Args(0) {
+sub moderate_report :PathPart('moderate') :Chained('id') :Args(0) {
     my ( $self, $c ) = @_;
 
-    my $id = $c->get_param('id');
+    if ($c->user_exists && $c->user->can_moderate($c->stash->{problem})) {
+        $c->stash->{show_moderation} = 'report';
+        $c->stash->{template} = 'report/display.html';
+        $c->detach('display');
+    }
+    $c->res->redirect($c->stash->{problem}->url);
+}
 
-    my $uri =
-        $id
-      ? $c->uri_for( '/report', $id )
-      : $c->uri_for('/');
+sub moderate_update :PathPart('moderate') :Chained('id') :Args(1) {
+    my ( $self, $c, $update_id ) = @_;
 
-    if ( $id && $c->cobrand->can_support_problems && $c->user && $c->user->from_body ) {
-        $c->forward( 'load_problem_or_display_error', [ $id ] );
+    my $comment = $c->stash->{problem}->comments->find($update_id);
+    if ($c->user_exists && $comment && $c->user->can_moderate($comment)) {
+        $c->stash->{show_moderation} = $update_id;
+        $c->stash->{template} = 'report/display.html';
+        $c->detach('display');
+    }
+    $c->res->redirect($c->stash->{problem}->url);
+}
+
+sub support :Chained('id') :Args(0) {
+    my ( $self, $c ) = @_;
+
+    if ( $c->cobrand->can_support_problems && $c->user && $c->user->from_body ) {
         $c->stash->{problem}->update( { interest_count => \'interest_count +1' } );
     }
-    $c->res->redirect( $uri );
+
+    $c->res->redirect($c->stash->{problem}->url);
 }
 
 sub load_problem_or_display_error : Private {
@@ -130,17 +155,18 @@ sub load_problem_or_display_error : Private {
         # Creator, and inspection users can see non_public reports
         $c->stash->{problem} = $problem;
         my $permissions = $c->stash->{_permissions} = $c->forward( 'check_has_permission_to',
-            [ qw/report_inspect report_edit_category report_edit_priority/ ] );
-        if ( !$c->user || ($c->user->id != $problem->user->id && !$permissions->{report_inspect}) ) {
+            [ qw/report_inspect report_edit_category report_edit_priority report_mark_private / ] );
+        if ( !$c->user || ($c->user->id != $problem->user->id && !($permissions->{report_inspect} || $permissions->{report_mark_private})) ) {
+            my $url = '/auth?r=report/' . $problem->id;
             $c->detach(
                 '/page_error_403_access_denied',
-                [ sprintf(_('That report cannot be viewed on %s.'), $c->stash->{site_name}) ]
+                [ sprintf(_('Sorry, you don’t have permission to do that. If you are the problem reporter, or a member of staff, please <a href="%s">sign in</a> to view this report.'), $url) ]
             );
         }
     }
 
     $c->stash->{problem} = $problem;
-    if ( $c->user_exists && $c->user->has_permission_to(moderate => $problem->bodies_str_ids) ) {
+    if ( $c->user_exists && $c->user->can_moderate($problem) ) {
         $c->stash->{problem_original} = $problem->find_or_new_related(
             moderation_original_data => {
                 title => $problem->title,
@@ -162,14 +188,30 @@ sub load_updates : Private {
         { order_by => [ 'confirmed', 'id' ] }
     );
 
-    my $questionnaires = $c->model('DB::Questionnaire')->search(
+    my $questionnaires_still_open = $c->model('DB::Questionnaire')->search(
         {
             problem_id => $c->stash->{problem}->id,
             whenanswered => { '!=', undef },
-            old_state => [ -and =>
-                { -in => [ FixMyStreet::DB::Result::Problem::closed_states, FixMyStreet::DB::Result::Problem::open_states ] },
-                \'= new_state',
-            ]
+            -or => [ {
+                # Any steady state open/closed
+                old_state => [ -and =>
+                    { -in => [ FixMyStreet::DB::Result::Problem::closed_states, FixMyStreet::DB::Result::Problem::open_states ] },
+                    \'= new_state',
+                ],
+            }, {
+                # Any reopening
+                new_state => 'confirmed',
+            } ]
+        },
+        { order_by => 'whenanswered' }
+    );
+
+    my $questionnaires_fixed = $c->model('DB::Questionnaire')->search(
+        {
+            problem_id => $c->stash->{problem}->id,
+            whenanswered => { '!=', undef },
+            old_state => { -not_in => [ FixMyStreet::DB::Result::Problem::fixed_states ] },
+            new_state => { -in => [ FixMyStreet::DB::Result::Problem::fixed_states ] },
         },
         { order_by => 'whenanswered' }
     );
@@ -182,13 +224,36 @@ sub load_updates : Private {
             $questionnaires_with_updates{$qid} = $update;
         }
     }
-    while (my $q = $questionnaires->next) {
+    while (my $q = $questionnaires_still_open->next) {
         if (my $update = $questionnaires_with_updates{$q->id}) {
             $update->set_extra_metadata('open_from_questionnaire', 1);
             next;
         }
         push @combined, [ $q->whenanswered, $q ];
     }
+    while (my $q = $questionnaires_fixed->next) {
+        next if $questionnaires_with_updates{$q->id};
+        push @combined, [ $q->whenanswered, $q ];
+    }
+
+    # And include moderation changes...
+    my $problem = $c->stash->{problem};
+    my $public_history = $c->cobrand->call_hook(public_moderation_history => $problem);
+    my $user_can_moderate = $c->user_exists && $c->user->can_moderate($problem);
+    if ($public_history || $user_can_moderate) {
+        my @history = $problem->moderation_history;
+        my $last_history = $problem;
+        foreach my $history (@history) {
+            push @combined, [ $history->created, {
+                id => 'm' . $history->id,
+                type => 'moderation',
+                last => $last_history,
+                entry => $history,
+            } ];
+            $last_history = $history;
+        }
+    }
+
     @combined = map { $_->[1] } sort { $a->[0] <=> $b->[0] } @combined;
     $c->stash->{updates} = \@combined;
 
@@ -205,6 +270,9 @@ sub format_problem_for_display : Private {
     my ( $self, $c ) = @_;
 
     my $problem = $c->stash->{problem};
+
+    # upload_fileid is used by the update form on this page
+    $c->stash->{problem_upload_fileid} = $problem->get_photoset->data;
 
     ( $c->stash->{latitude}, $c->stash->{longitude} ) =
       map { Utils::truncate_coordinate($_) }
@@ -251,7 +319,7 @@ sub generate_map_tags : Private {
         latitude  => $problem->latitude,
         longitude => $problem->longitude,
         pins      => $problem->used_map
-            ? [ $problem->pin_data($c, 'report', type => 'big') ]
+            ? [ $problem->pin_data($c, 'report', type => 'big', draggable => 1) ]
             : [],
     );
 
@@ -271,22 +339,18 @@ users too about this change, at which point we can delete:
 
 =cut
 
-sub delete :Local :Args(1) {
-    my ( $self, $c, $id ) = @_;
+sub delete :Chained('id') :Args(0) {
+    my ($self, $c) = @_;
 
     $c->forward('/auth/check_csrf_token');
 
-    $c->forward( 'load_problem_or_display_error', [ $id ] );
     my $p = $c->stash->{problem};
 
-    my $uri = $c->uri_for( '/report', $id );
-
-    return $c->res->redirect($uri) unless $c->user_exists;
+    return $c->res->redirect($p->url) unless $c->user_exists;
 
     my $body = $c->user->obj->from_body;
-    return $c->res->redirect($uri) unless $body;
-
-    return $c->res->redirect($uri) unless $p->bodies->{$body->id};
+    return $c->res->redirect($p->url) unless $body;
+    return $c->res->redirect($p->url) unless $p->bodies->{$body->id};
 
     $p->state('hidden');
     $p->lastupdate( \'current_timestamp' );
@@ -299,26 +363,10 @@ sub delete :Local :Args(1) {
         admin_user => $c->user->from_body->name,
         object_type => 'problem',
         action => 'state_change',
-        object_id => $id,
+        object_id => $p->id,
     } );
 
-    return $c->res->redirect($uri);
-}
-
-=head2 action_router
-
-A router for dispatching handlers for sub-actions on a particular report,
-e.g. /report/1/inspect
-
-=cut
-
-sub action_router : Path('') : Args(2) {
-    my ( $self, $c, $id, $action ) = @_;
-
-    $c->go( 'map', [ $id ] ) if $action eq 'map';
-    $c->go( 'nearby_json', [ $id ] ) if $action eq 'nearby.json';
-
-    $c->detach( '/page_error_404_not_found', [] );
+    return $c->res->redirect($p->url);
 }
 
 sub inspect : Private {
@@ -327,7 +375,7 @@ sub inspect : Private {
     my $permissions = $c->stash->{_permissions};
 
     $c->forward('/admin/categories_for_point');
-    $c->stash->{report_meta} = { map { $_->{name} => $_ } @{ $c->stash->{problem}->get_extra_fields() } };
+    $c->stash->{report_meta} = { map { 'x' . $_->{name} => $_ } @{ $c->stash->{problem}->get_extra_fields() } };
 
     if ($c->cobrand->can('council_area_id')) {
         my $priorities_by_category = FixMyStreet::App->model('DB::ResponsePriority')->by_categories($c->cobrand->council_area_id, @{$c->stash->{contacts}});
@@ -357,8 +405,6 @@ sub inspect : Private {
         my %update_params = ();
 
         if ($permissions->{report_inspect}) {
-            $problem->non_public($c->get_param('non_public') ? 1 : 0);
-
             $problem->set_extra_metadata( traffic_information => $c->get_param('traffic_information') );
 
             if ( my $info = $c->get_param('detailed_information') ) {
@@ -373,12 +419,6 @@ sub inspect : Private {
                             $c->cobrand->max_detailed_info_length
                         );
                 }
-            }
-
-            if ( $c->get_param('defect_type') ) {
-                $problem->defect_type($problem->defect_types->find($c->get_param('defect_type')));
-            } else {
-                $problem->defect_type(undef);
             }
 
             if ( $c->get_param('include_update') ) {
@@ -397,12 +437,12 @@ sub inspect : Private {
                 $problem->confirmed( \'current_timestamp' );
             }
             if ( $problem->state eq 'hidden' ) {
-                $problem->get_photoset->delete_cached;
+                $problem->get_photoset->delete_cached(plus_updates => 1);
             }
             if ( $problem->state eq 'duplicate') {
                 if (my $duplicate_of = $c->get_param('duplicate_of')) {
                     $problem->set_duplicate_of($duplicate_of);
-                } elsif (not $c->get_param('public_update')) {
+                } elsif (not $c->get_param('include_update')) {
                     $valid = 0;
                     push @{ $c->stash->{errors} }, _('Please provide a duplicate ID or public update for this report.');
                 }
@@ -438,6 +478,11 @@ sub inspect : Private {
             }
         }
 
+        $problem->non_public($c->get_param('non_public') ? 1 : 0);
+        if ($problem->non_public) {
+            $problem->get_photoset->delete_cached(plus_updates => 1);
+        }
+
         if ( !$c->forward( '/admin/report_edit_location', [ $problem ] ) ) {
             # New lat/lon isn't valid, show an error
             $valid = 0;
@@ -461,10 +506,25 @@ sub inspect : Private {
             $c->forward('/report/new/set_report_extras', [ \@contacts, $param_prefix ]);
         }
 
-        # Updating priority must come after category, in case category has changed (and so might have priorities)
-        if ($c->get_param('priority') && ($permissions->{report_inspect} || $permissions->{report_edit_priority})) {
-            $problem->response_priority( $problem->response_priorities->find({ id => $c->get_param('priority') }) );
+        # Updating priority/defect type must come after category, in case
+        # category has changed (and so might have priorities/defect types)
+        if ($permissions->{report_inspect} || $permissions->{report_edit_priority}) {
+            if ($c->get_param('priority')) {
+                $problem->response_priority( $problem->response_priorities->find({ id => $c->get_param('priority') }) );
+            } else {
+                $problem->response_priority(undef);
+            }
         }
+
+        if ($permissions->{report_inspect}) {
+            if ( $c->get_param('defect_type') ) {
+                $problem->defect_type($problem->defect_types->find($c->get_param('defect_type')));
+            } else {
+                $problem->defect_type(undef);
+            }
+        }
+
+        $c->cobrand->call_hook(report_inspect_update_extra => $problem);
 
         if ($valid) {
             if ( $reputation_change != 0 ) {
@@ -479,7 +539,7 @@ sub inspect : Private {
                     # to have the FMS timezone so we need to add the timezone otherwise
                     # dates come back out the database at time +/- timezone offset.
                     $timestamp = DateTime->from_epoch(
-                        time_zone =>  FixMyStreet->time_zone || FixMyStreet->local_time_zone,
+                        time_zone => FixMyStreet->local_time_zone,
                         epoch => $saved_at
                     );
                 }
@@ -508,7 +568,7 @@ sub inspect : Private {
             # shortlist is always a single click away, being on the main nav.
             if ($c->user->has_body_permission_to('planned_reports')) {
                 unless ($redirect_uri = $c->get_param("post_inspect_url")) {
-                    my $categories = join(',', @{ $c->user->categories });
+                    my $categories = $c->user->categories_string;
                     my $params = {
                         lat => $problem->latitude,
                         lon => $problem->longitude,
@@ -532,10 +592,8 @@ sub inspect : Private {
     }
 };
 
-sub map : Private {
-    my ( $self, $c, $id ) = @_;
-
-    $c->forward( 'load_problem_or_display_error', [ $id ] );
+sub map :Chained('id') :Args(0) {
+    my ($self, $c) = @_;
 
     my $image = $c->stash->{problem}->static_map;
     $c->res->content_type($image->{content_type});
@@ -543,27 +601,44 @@ sub map : Private {
 }
 
 
-sub nearby_json : Private {
-    my ( $self, $c, $id ) = @_;
+sub nearby_json :PathPart('nearby.json') :Chained('id') :Args(0) {
+    my ($self, $c) = @_;
 
-    $c->forward( 'load_problem_or_display_error', [ $id ] );
     my $p = $c->stash->{problem};
-    my $dist = 1;
+    $c->forward('_nearby_json', [ {
+        latitude => $p->latitude,
+        longitude => $p->longitude,
+        categories => [ $p->category ],
+        ids => [ $p->id ],
+    } ]);
+}
+
+sub _nearby_json :Private {
+    my ($self, $c, $params) = @_;
 
     # This is for the list template, this is a list on that page.
     $c->stash->{page} = 'report';
 
-    my $extra_params = $c->cobrand->call_hook('display_location_extra_params');
+    # distance in metres
+    my $dist = $c->get_param('distance') || '';
+    $dist = 1000 unless $dist =~ /^\d+$/;
+    $dist = 1000 if $dist > 1000;
+    $params->{distance} = $dist / 1000;
 
-    my $nearby = $c->model('DB::Nearby')->nearby(
-        $c, $dist, [ $p->id ], 5, $p->latitude, $p->longitude, [ $p->category ], undef, $extra_params
-    );
+    my $pin_size = $c->get_param('pin_size') || '';
+    $pin_size = 'small' unless $pin_size =~ /^(mini|small|normal|big)$/;
+
+    $params->{extra} = $c->cobrand->call_hook('display_location_extra_params');
+    $params->{limit} = 5;
+
+    my $nearby = $c->model('DB::Nearby')->nearby($c, %$params);
+
     # Want to treat these as if they were on map
     $nearby = [ map { $_->problem } @$nearby ];
     my @pins = map {
         my $p = $_->pin_data($c, 'around');
         [ $p->{latitude}, $p->{longitude}, $p->{colour},
-          $p->{id}, $p->{title}, 'small', JSON->false
+          $p->{id}, $p->{title}, $pin_size, JSON->false
         ]
     } @$nearby;
 

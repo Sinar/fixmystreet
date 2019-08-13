@@ -1,3 +1,9 @@
+package FixMyStreet::Cobrand::OxfordshireUTA;
+use parent 'FixMyStreet::Cobrand::Oxfordshire';
+sub area_types { [ 'UTA' ] }
+
+package main;
+
 use FixMyStreet::TestMech;
 
 my $mech = FixMyStreet::TestMech->new;
@@ -8,6 +14,7 @@ my $superuser = $mech->create_user_ok('superuser@example.com', name => 'Super Us
 
 my $oxfordshire = $mech->create_body_ok(2237, 'Oxfordshire County Council');
 my $oxfordshireuser = $mech->create_user_ok('counciluser@example.com', name => 'Council User', from_body => $oxfordshire);
+$oxfordshireuser->user_body_permissions->create({ body => $oxfordshire, permission_type => 'category_edit' });
 
 my $dt = DateTime->new(
     year   => 2011,
@@ -18,7 +25,7 @@ my $dt = DateTime->new(
     second => 23
 );
 
-my $report = FixMyStreet::App->model('DB::Problem')->find_or_create(
+my $report = FixMyStreet::DB->resultset('Problem')->find_or_create(
     {
         postcode           => 'SW1A 1AA',
         bodies_str         => '2504',
@@ -46,7 +53,7 @@ my $report = FixMyStreet::App->model('DB::Problem')->find_or_create(
 my $report_id = $report->id;
 ok $report, "created test report - $report_id";
 
-my $alert = FixMyStreet::App->model('DB::Alert')->find_or_create(
+my $alert = FixMyStreet::DB->resultset('Alert')->find_or_create(
     {
         alert_type => 'area_problems',
         parameter => 2482,
@@ -58,20 +65,20 @@ my $alert = FixMyStreet::App->model('DB::Alert')->find_or_create(
 $mech->log_in_ok( $superuser->email );
 
 subtest 'check summary counts' => sub {
-    my $problems = FixMyStreet::App->model('DB::Problem')->search( { state => { -in => [qw/confirmed fixed closed investigating planned/, 'in progress', 'fixed - user', 'fixed - council'] } } );
+    my $problems = FixMyStreet::DB->resultset('Problem')->search( { state => { -in => [qw/confirmed fixed closed investigating planned/, 'in progress', 'fixed - user', 'fixed - council'] } } );
 
     ok $mech->host('www.fixmystreet.com');
 
     my $problem_count = $problems->count;
     $problems->update( { cobrand => '' } );
 
-    FixMyStreet::App->model('DB::Problem')->search( { bodies_str => 2489 } )->update( { bodies_str => 1 } );
+    FixMyStreet::DB->resultset('Problem')->search( { bodies_str => 2489 } )->update( { bodies_str => 1 } );
 
-    my $q = FixMyStreet::App->model('DB::Questionnaire')->find_or_new( { problem => $report, });
+    my $q = FixMyStreet::DB->resultset('Questionnaire')->find_or_new( { problem => $report, });
     $q->whensent( \'current_timestamp' );
     $q->in_storage ? $q->update : $q->insert;
 
-    my $alerts =  FixMyStreet::App->model('DB::Alert')->search( { confirmed => { '>' => 0 } } );
+    my $alerts =  FixMyStreet::DB->resultset('Alert')->search( { confirmed => { '>' => 0 } } );
     my $a_count = $alerts->count;
 
     FixMyStreet::override_config {
@@ -85,7 +92,7 @@ subtest 'check summary counts' => sub {
     $mech->content_contains( "$problem_count</strong> live problems" );
     $mech->content_contains( "$a_count confirmed alerts" );
 
-    my $questionnaires = FixMyStreet::App->model('DB::Questionnaire')->search( { whensent => { -not => undef } } );
+    my $questionnaires = FixMyStreet::DB->resultset('Questionnaire')->search( { whensent => { -not => undef } } );
     my $q_count = $questionnaires->count();
 
     $mech->content_contains( "$q_count questionnaires sent" );
@@ -123,17 +130,27 @@ subtest 'check summary counts' => sub {
         $alert->update;
     };
 
-    FixMyStreet::App->model('DB::Problem')->search( { bodies_str => 1 } )->update( { bodies_str => 2489 } );
+    FixMyStreet::DB->resultset('Problem')->search( { bodies_str => 1 } )->update( { bodies_str => 2489 } );
     ok $mech->host('www.fixmystreet.com');
 };
 
 subtest "Check admin_base_url" => sub {
-    my $rs = FixMyStreet::App->model('DB::Problem');
-    my $cobrand = FixMyStreet::Cobrand->get_class_for_moniker($report->cobrand)->new();
+    my $rs = FixMyStreet::DB->resultset('Problem');
+    my $cobrand = $report->get_cobrand_logged;
 
     is ($report->admin_url($cobrand),
         (sprintf 'http://www.example.org/admin/report_edit/%d', $report_id),
         'get_admin_url OK');
+};
+
+subtest "Check body dropdown on admin index page" => sub {
+    FixMyStreet::override_config {
+        MAPIT_TYPES => [ 'UTA' ],
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        ok $mech->get('/admin');
+        $mech->submit_form_ok({ with_fields => { body => $oxfordshire->id } });
+    };
 };
 
 # Finished with the superuser tests
@@ -141,23 +158,29 @@ $mech->log_out_ok;
 
 subtest "Users without from_body can't access admin" => sub {
     $mech->log_in_ok( $user->email );
-
     ok $mech->get('/admin');
     is $mech->res->code, 403, "got 403";
-
-    $mech->log_out_ok;
 };
+
+$mech->log_in_ok( $oxfordshireuser->email );
 
 subtest "Users with from_body can access their own council's admin" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'oxfordshire' ],
     }, sub {
-        $mech->log_in_ok( $oxfordshireuser->email );
-
         $mech->get_ok('/admin');
         $mech->content_contains( 'FixMyStreet admin:' );
+    };
+};
 
-        $mech->log_out_ok;
+
+subtest "Check admin index page redirects" => sub {
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => [ 'oxfordshireuta' ],
+        MAPIT_URL => 'http://mapit.uk/',
+    }, sub {
+        ok $mech->get('/admin/bodies');
+        is $mech->uri->path, '/admin/body/' . $oxfordshire->id, 'body redirects okay';
     };
 };
 
@@ -165,12 +188,8 @@ subtest "Users with from_body can't access another council's admin" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'bristol' ],
     }, sub {
-        $mech->log_in_ok( $oxfordshireuser->email );
-
         ok $mech->get('/admin');
         is $mech->res->code, 403, "got 403";
-
-        $mech->log_out_ok;
     };
 };
 
@@ -178,12 +197,8 @@ subtest "Users with from_body can't access fixmystreet.com admin" => sub {
     FixMyStreet::override_config {
         ALLOWED_COBRANDS => [ 'fixmystreet' ],
     }, sub {
-        $mech->log_in_ok( $oxfordshireuser->email );
-
         ok $mech->get('/admin');
         is $mech->res->code, 403, "got 403";
-
-        $mech->log_out_ok;
     };
 };
 

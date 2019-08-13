@@ -4,6 +4,7 @@ use FixMyStreet::Test;
 use Test::Output;
 use CGI::Simple;
 use LWP::Protocol::PSGI;
+use Test::Warn;
 use t::Mock::Static;
 
 use_ok( 'Open311' );
@@ -11,6 +12,7 @@ use_ok( 'Open311' );
 use_ok( 'Open311::GetServiceRequestUpdates' );
 use DateTime;
 use DateTime::Format::W3CDTF;
+use File::Temp 'tempdir';
 use FixMyStreet::DB;
 
 my $user = FixMyStreet::DB->resultset('User')->find_or_create(
@@ -21,16 +23,31 @@ my $user = FixMyStreet::DB->resultset('User')->find_or_create(
 
 my %bodies = (
     2237 => FixMyStreet::DB->resultset("Body")->create({ name => 'Oxfordshire' }),
-    2482 => FixMyStreet::DB->resultset("Body")->create({ name=> 'Bromley', id => 2482 }),
-    2651 => FixMyStreet::DB->resultset("Body")->new({ id => 2651 }),
+    2494 => FixMyStreet::DB->resultset("Body")->create({ name => 'Bexley' }),
+    2482 => FixMyStreet::DB->resultset("Body")->create({
+        name => 'Bromley',
+        send_method => 'Open311',
+        send_comments => 1,
+        endpoint => 'endpoint',
+        comment_user_id => $user->id,
+        blank_updates_permitted => 1,
+    }),
+    2651 => FixMyStreet::DB->resultset("Body")->create({ name => 'Edinburgh' }),
 );
 $bodies{2237}->body_areas->create({ area_id => 2237 });
+$bodies{2494}->body_areas->create({ area_id => 2494 });
 
 my $response_template = $bodies{2482}->response_templates->create({
     title => "investigating template",
     text => "We are investigating this report.",
     auto_response => 1,
     state => "investigating"
+});
+my $response_template_fixed = $bodies{2482}->response_templates->create({
+    title => "fixed template",
+    text => "We have fixed this report.",
+    auto_response => 1,
+    state => "fixed - council"
 });
 
 my $requests_xml = qq{<?xml version="1.0" encoding="utf-8"?>
@@ -46,7 +63,7 @@ UPDATED_DATETIME
 };
 
 
-my $dt = DateTime->now(formatter => DateTime::Format::W3CDTF->new);
+my $dt = DateTime->now(formatter => DateTime::Format::W3CDTF->new)->add( minutes => -5 );
 
 # basic xml -> perl object tests
 for my $test (
@@ -115,8 +132,10 @@ subtest 'check extended request parsed correctly' => sub {
 };
 
 my $problem_rs = FixMyStreet::DB->resultset('Problem');
-my $problem = $problem_rs->new(
-    {
+
+sub create_problem {
+    my ($body_id, $external_id) = @_;
+    my $problem = $problem_rs->create({
         postcode     => 'EH99 1SP',
         latitude     => 1,
         longitude    => 1,
@@ -125,7 +144,7 @@ my $problem = $problem_rs->new(
         detail       => '',
         used_map     => 1,
         user_id      => 1,
-        name         => '',
+        name         => 'Test User',
         state        => 'confirmed',
         service      => '',
         cobrand      => 'default',
@@ -134,12 +153,13 @@ my $problem = $problem_rs->new(
         created      => DateTime->now()->subtract( days => 1 ),
         lastupdate   => DateTime->now()->subtract( days => 1 ),
         anonymous    => 1,
-        external_id  => time(),
-        bodies_str   => 2482,
-    }
-);
+        external_id  => $external_id || int(rand(time())),
+        bodies_str   => $body_id,
+    });
+    return $problem;
+}
 
-$problem->insert;
+my $problem = create_problem($bodies{2482}->id);
 
 for my $test (
     {
@@ -258,6 +278,18 @@ for my $test (
         end_state => 'fixed - council',
     },
     {
+        desc => 'status of CLOSED marks report as closed when using extended statuses',
+        description => 'This is a note',
+        external_id => 638344,
+        start_state => 'confirmed',
+        comment_status => 'CLOSED',
+        mark_fixed=> 0,
+        mark_open => 0,
+        problem_state => 'closed',
+        end_state => 'closed',
+        extended_statuses => 1,
+    },
+    {
         desc => 'status of OPEN re-opens fixed report',
         description => 'This is a note',
         external_id => 638344,
@@ -358,6 +390,19 @@ for my $test (
         end_state => 'investigating',
     },
     {
+        desc => 'change in fixed state does not trigger auto-response template',
+        description => '',
+        xml_description => '',
+        external_id => 638344,
+        start_state => 'fixed - user',
+        comment_status => 'FIXED',
+        mark_fixed => 0,
+        mark_open => 0,
+        problem_state => undef,
+        end_state => 'fixed - user',
+        comment_state => 'hidden',
+    },
+    {
         desc => 'unchanging state does not trigger auto-response template',
         description => '',
         xml_description => '',
@@ -384,14 +429,14 @@ for my $test (
 ) {
     subtest $test->{desc} => sub {
         my $local_requests_xml = setup_xml($problem->external_id, $problem->id, $test->{comment_status}, $test->{xml_description});
-        my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
+        my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', extended_statuses => $test->{extended_statuses}, test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
 
         $problem->lastupdate( DateTime->now()->subtract( days => 1 ) );
         $problem->state( $test->{start_state} );
         $problem->update;
 
-        my $update = Open311::GetServiceRequestUpdates->new( system_user => $user );
-        $update->update_comments( $o, $bodies{2482} );
+        my $update = Open311::GetServiceRequestUpdates->new;
+        $update->fetch($o);
 
         is $problem->comments->count, 1, 'comment count';
         $problem->discard_changes;
@@ -408,27 +453,38 @@ for my $test (
     };
 }
 
-my $problemOx = $problem_rs->create({
-    postcode     => 'EH99 1SP',
-    latitude     => 1,
-    longitude    => 1,
-    areas        => 1,
-    title        => '',
-    detail       => '',
-    used_map     => 1,
-    user_id      => 1,
-    name         => '',
-    state        => 'confirmed',
-    service      => '',
-    cobrand      => 'default',
-    cobrand_data => '',
-    user         => $user,
-    created      => DateTime->now()->subtract( days => 1 ),
-    lastupdate   => DateTime->now()->subtract( days => 1 ),
-    anonymous    => 1,
-    external_id  => time(),
-    bodies_str   => $bodies{2237}->id,
+my $response_template_vars = $bodies{2482}->response_templates->create({
+    title => "a placeholder action scheduled template",
+    text => "We are investigating this report: {{description}}",
+    auto_response => 1,
+    state => "action scheduled"
 });
+subtest 'Check template placeholders' => sub {
+    my $local_requests_xml = setup_xml($problem->external_id, $problem->id, 'ACTION_SCHEDULED', 'We will do this in the morning.');
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', extended_statuses => undef, test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
+
+    $problem->lastupdate( DateTime->now()->subtract( days => 1 ) );
+    $problem->state( 'fixed - council' );
+    $problem->update;
+
+    my $update = Open311::GetServiceRequestUpdates->new;
+    $update->fetch($o);
+
+    is $problem->comments->count, 1, 'comment count';
+    $problem->discard_changes;
+
+    my $c = FixMyStreet::DB->resultset('Comment')->search( { external_id => 638344 } )->first;
+    ok $c, 'comment exists';
+    is $c->text, "We are investigating this report: We will do this in the morning.", 'text correct';
+    is $c->mark_fixed, 0, 'mark_closed correct';
+    is $c->problem_state, 'action scheduled', 'problem_state correct';
+    is $c->mark_open, 0, 'mark_open correct';
+    is $c->state, 'confirmed', 'comment state correct';
+    is $problem->state, 'action scheduled', 'correct problem state';
+    $problem->comments->delete;
+};
+
+my $problemB = create_problem($bodies{2237}->id);
 
 for my $test (
     {
@@ -447,28 +503,64 @@ for my $test (
     },
 ) {
     subtest $test->{desc} => sub {
-        my $local_requests_xml = setup_xml($problemOx->external_id, $problemOx->id, $test->{comment_status});
+        my $local_requests_xml = setup_xml($problemB->external_id, $problemB->id, $test->{comment_status});
         my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
 
-        $problemOx->lastupdate( DateTime->now()->subtract( days => 1 ) );
-        $problemOx->state( $test->{start_state} );
-        $problemOx->update;
+        $problemB->lastupdate( DateTime->now()->subtract( days => 1 ) );
+        $problemB->state( $test->{start_state} );
+        $problemB->update;
 
-        my $update = Open311::GetServiceRequestUpdates->new( system_user => $user );
-        $update->update_comments( $o, $bodies{2237} );
+        my $update = Open311::GetServiceRequestUpdates->new(
+            system_user => $user,
+            current_open311 => $o,
+            current_body => $bodies{2237},
+        );
+        $update->process_body;
 
-        is $problemOx->comments->count, 1, 'comment count';
-        $problemOx->discard_changes;
+
+        is $problemB->comments->count, 1, 'comment count';
+        $problemB->discard_changes;
 
         my $c = FixMyStreet::DB->resultset('Comment')->search( { external_id => 638344 } )->first;
         ok $c, 'comment exists';
         is $c->problem_state, $test->{problem_state}, 'problem_state correct';
-        is $problemOx->state, $test->{end_state}, 'correct problem state';
-        $problemOx->comments->delete;
+        is $problemB->state, $test->{end_state}, 'correct problem state';
+        $problemB->comments->delete;
     };
 }
 
+subtest 'Marking report as fixed closes it for updates (Bexley)' => sub {
+    my $local_requests_xml = setup_xml($problemB->external_id, $problemB->id, 'CLOSED');
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
+
+    $problemB->update( { bodies_str => $bodies{2494}->id } );
+
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2494},
+        current_cobrand => $bodies{2494}->get_cobrand_handler,
+    );
+    FixMyStreet::override_config {
+        ALLOWED_COBRANDS => 'bexley',
+    }, sub {
+        $update->process_body;
+    };
+
+    $problemB->discard_changes;
+    is $problemB->comments->count, 1, 'comment count';
+    is $problemB->get_extra_metadata('closed_updates'), 1;
+    $problemB->comments->delete;
+};
+
 subtest 'Update with media_url includes image in update' => sub {
+  my $UPLOAD_DIR = tempdir( CLEANUP => 1 );
+  FixMyStreet::override_config {
+    PHOTO_STORAGE_BACKEND => 'FileSystem',
+    PHOTO_STORAGE_OPTIONS => {
+        UPLOAD_DIR => $UPLOAD_DIR,
+    },
+  }, sub {
     my $guard = LWP::Protocol::PSGI->register(t::Mock::Static->to_psgi_app, host => 'example.com');
 
     my $local_requests_xml = setup_xml($problem->external_id, 1, "");
@@ -480,13 +572,45 @@ subtest 'Update with media_url includes image in update' => sub {
     $problem->state('confirmed');
     $problem->update;
 
-    my $update = Open311::GetServiceRequestUpdates->new( system_user => $user );
-    $update->update_comments( $o, $bodies{2482} );
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+    $update->process_body;
 
     is $problem->comments->count, 1, 'comment count';
     my $c = $problem->comments->first;
     is $c->external_id, 638344;
     is $c->photo, '74e3362283b6ef0c48686fb0e161da4043bbcc97.jpeg', 'photo exists';
+    $problem->comments->delete;
+  };
+};
+
+subtest 'Update with customer_reference adds reference to problem' => sub {
+    my $guard = LWP::Protocol::PSGI->register(t::Mock::Static->to_psgi_app, host => 'example.com');
+
+    my $local_requests_xml = setup_xml($problem->external_id, 1, "");
+    $local_requests_xml =~ s#</service_request_id>#</service_request_id>
+        <customer_reference>REFERENCE</customer_reference>#;
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
+
+    $problem->lastupdate( DateTime->now()->subtract( days => 1 ) );
+    $problem->state('confirmed');
+    $problem->update;
+
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+    $update->process_body;
+
+    $problem->discard_changes;
+    is $problem->comments->count, 1, 'comment count';
+    my $c = $problem->comments->first;
+    is $c->external_id, 638344;
+    is $problem->get_extra_metadata('customer_reference'), 'REFERENCE';
     $problem->comments->delete;
 };
 
@@ -494,8 +618,16 @@ subtest 'date for comment correct' => sub {
     my $local_requests_xml = setup_xml($problem->external_id, $problem->id, "");
     my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
 
-    my $update = Open311::GetServiceRequestUpdates->new( system_user => $user );
-    $update->update_comments( $o, $bodies{2482} );
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+    FixMyStreet::override_config {
+        TIME_ZONE => 'Australia/Sydney',
+    }, sub {
+        $update->process_body;
+    };
 
     my $comment = $problem->comments->first;
     is $comment->created, $dt, 'created date set to date from XML';
@@ -503,29 +635,7 @@ subtest 'date for comment correct' => sub {
     $problem->comments->delete;
 };
 
-my $problem2 = $problem_rs->create(
-    {
-        postcode     => 'EH99 1SP',
-        latitude     => 1,
-        longitude    => 1,
-        areas        => 1,
-        title        => '',
-        detail       => '',
-        used_map     => 1,
-        user_id      => 1,
-        name         => '',
-        state        => 'confirmed',
-        service      => '',
-        cobrand      => 'default',
-        cobrand_data => '',
-        user         => $user,
-        created      => DateTime->now(),
-        lastupdate   => DateTime->now(),
-        anonymous    => 1,
-        external_id  => $problem->external_id,
-        bodies_str   => 2651,
-    }
-);
+my $problem2 = create_problem($bodies{2651}->id, $problem->external_id);
 
 for my $test (
     {
@@ -551,8 +661,12 @@ for my $test (
         my $local_requests_xml = setup_xml($test->{request_id}, $test->{request_id_ext}, "");
         my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $local_requests_xml } );
 
-        my $update = Open311::GetServiceRequestUpdates->new( system_user => $user );
-        $update->update_comments( $o, $bodies{$test->{area_id}} );
+        my $update = Open311::GetServiceRequestUpdates->new(
+            system_user => $user,
+            current_open311 => $o,
+            current_body => $bodies{$test->{area_id}},
+        );
+        $update->process_body;
 
         is $problem->comments->count, $test->{p1_comments}, 'comment count for first problem';
         is $problem2->comments->count, $test->{p2_comments}, 'comment count for second problem';
@@ -570,26 +684,30 @@ subtest 'using start and end date' => sub {
     my $update = Open311::GetServiceRequestUpdates->new( 
         system_user => $user,
         start_date => $start_dt,
+        current_open311 => $o,
     );
 
-    my $res = $update->update_comments( $o );
+    my $res = $update->process_body;
     is $res, 0, 'returns 0 if start but no end date';
 
     $update = Open311::GetServiceRequestUpdates->new( 
         system_user => $user,
         end_date => $end_dt,
+        current_open311 => $o,
     );
 
-    $res = $update->update_comments( $o );
+    $res = $update->process_body;
     is $res, 0, 'returns 0 if end but no start date';
 
     $update = Open311::GetServiceRequestUpdates->new( 
         system_user => $user,
         start_date => $start_dt,
         end_date => $end_dt,
+        current_open311 => $o,
+        current_body => $bodies{2482},
     );
 
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
 
     my $start = $start_dt . '';
     my $end = $end_dt . '';
@@ -647,21 +765,65 @@ subtest 'check that existing comments are not duplicated' => sub {
 
     my $update = Open311::GetServiceRequestUpdates->new(
         system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
     );
 
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
 
     $problem->discard_changes;
     is $problem->comments->count, 2, 'two comments after fetching updates';
 
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
     $problem->discard_changes;
     is $problem->comments->count, 2, 're-fetching updates does not add comments';
 
     $problem->comments->delete;
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
     $problem->discard_changes;
     is $problem->comments->count, 2, 'if comments are deleted then they are added';
+};
+
+subtest 'check that can limit fetching to a body' => sub {
+    my $requests_xml = qq{<?xml version="1.0" encoding="utf-8"?>
+    <service_requests_updates>
+    <request_update>
+    <update_id>638344</update_id>
+    <service_request_id>@{[ $problem->external_id ]}</service_request_id>
+    <status>open</status>
+    <description>This is a note</description>
+    <updated_datetime>UPDATED_DATETIME</updated_datetime>
+    </request_update>
+    </service_requests_updates>
+    };
+
+    $problem->comments->delete;
+
+    is $problem->comments->count, 0, 'one comment before fetching updates';
+
+    $requests_xml =~ s/UPDATED_DATETIME/$dt/;
+
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $requests_xml } );
+
+    my $update = Open311::GetServiceRequestUpdates->new(
+        body => 'Oxfordshire',
+        system_user => $user,
+    );
+
+    $update->fetch( $o );
+
+    $problem->discard_changes;
+    is $problem->comments->count, 0, 'no comments after fetching updates';
+
+    $update = Open311::GetServiceRequestUpdates->new(
+        body => 'Bromley',
+        system_user => $user,
+    );
+
+    $update->fetch( $o );
+
+    $problem->discard_changes;
+    is $problem->comments->count, 1, '1 comment after fetching updates';
 };
 
 subtest 'check that external_status_code is stored correctly' => sub {
@@ -696,9 +858,11 @@ subtest 'check that external_status_code is stored correctly' => sub {
 
     my $update = Open311::GetServiceRequestUpdates->new(
         system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
     );
 
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
 
     $problem->discard_changes;
     is $problem->comments->count, 2, 'two comments after fetching updates';
@@ -710,6 +874,36 @@ subtest 'check that external_status_code is stored correctly' => sub {
 
     is $problem->get_extra_metadata('external_status_code'), "101", "correct external status code";
 
+    $requests_xml = qq{<?xml version="1.0" encoding="utf-8"?>
+    <service_requests_updates>
+    <request_update>
+    <update_id>638364</update_id>
+    <service_request_id>@{[ $problem->external_id ]}</service_request_id>
+    <status>open</status>
+    <description>This is a note</description>
+    <updated_datetime>UPDATED_DATETIME</updated_datetime>
+    <external_status_code></external_status_code>
+    </request_update>
+    </service_requests_updates>
+    };
+
+    $problem->comments->delete;
+
+    my $dt3 = $dt->clone->add( minutes => 1 );
+    $requests_xml =~ s/UPDATED_DATETIME/$dt3/;
+
+    $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $requests_xml } );
+
+    $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+
+    $update->process_body;
+
+    $problem->discard_changes;
+    is $problem->get_extra_metadata('external_status_code'), '', "external status code unset";
 };
 
 subtest 'check that external_status_code triggers auto-responses' => sub {
@@ -741,9 +935,11 @@ subtest 'check that external_status_code triggers auto-responses' => sub {
 
     my $update = Open311::GetServiceRequestUpdates->new(
         system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
     );
 
-    $update->update_comments( $o, $bodies{2482} );
+    $update->process_body;
 
     $problem->discard_changes;
     is $problem->comments->count, 1, 'one comment after fetching updates';
@@ -795,9 +991,11 @@ foreach my $test ( {
 
         my $update = Open311::GetServiceRequestUpdates->new(
             system_user => $user,
+            current_open311 => $o,
+            current_body => $bodies{2482},
         );
 
-        $update->update_comments( $o, $bodies{2482} );
+        $update->process_body;
 
         $problem->discard_changes;
         is $problem->comments->count, 2, 'two comments after fetching updates';
@@ -860,9 +1058,11 @@ foreach my $test ( {
         my $update = Open311::GetServiceRequestUpdates->new(
             system_user => $user,
             suppress_alerts => $test->{suppress_alerts},
+            current_open311 => $o,
+            current_body => $bodies{2482},
         );
 
-        $update->update_comments( $o, $bodies{2482} );
+        $update->process_body;
         $problem->discard_changes;
 
         my $alerts_sent = FixMyStreet::DB->resultset('AlertSent')->search(
@@ -886,6 +1086,7 @@ foreach my $test ( {
     }
 }
 
+$response_template_fixed->delete;
 foreach my $test ( {
         desc => 'normally blank text produces a warning',
         num_alerts => 1,
@@ -921,18 +1122,112 @@ foreach my $test ( {
         my $update = Open311::GetServiceRequestUpdates->new(
             system_user => $user,
             blank_updates_permitted => $test->{blank_updates_permitted},
+            current_open311 => $o,
+            current_body => $bodies{2482},
         );
 
         if ( $test->{blank_updates_permitted} ) {
-            stderr_is { $update->update_comments( $o, $bodies{2482} ) } '', 'No error message'
+            stderr_is { $update->process_body } '', 'No error message'
         } else {
-            stderr_like { $update->update_comments( $o, $bodies{2482} ) } qr/Couldn't determine update text for/, 'Error message displayed'
+            stderr_like { $update->process_body } qr/Couldn't determine update text for/, 'Error message displayed'
         }
         $problem->discard_changes;
         $problem->comments->delete;
     }
 }
 
+subtest 'check matching on fixmystreet_id overrides service_request_id' => sub {
+    my $requests_xml = qq{<?xml version="1.0" encoding="utf-8"?>
+    <service_requests_updates>
+    <request_update>
+    <update_id>638344</update_id>
+    <service_request_id>8888888888888</service_request_id>
+    <fixmystreet_id>@{[ $problem->id ]}</fixmystreet_id>
+    <status>open</status>
+    <description>This is a note</description>
+    <updated_datetime>UPDATED_DATETIME</updated_datetime>
+    </request_update>
+    <request_update>
+    <update_id>638354</update_id>
+    <service_request_id>@{[ $problem->external_id ]}</service_request_id>
+    <fixmystreet_id>999999999</fixmystreet_id>
+    <status>open</status>
+    <description>This is a different note</description>
+    <updated_datetime>UPDATED_DATETIME2</updated_datetime>
+    </request_update>
+    <request_update>
+    <update_id>638356</update_id>
+    <service_request_id></service_request_id>
+    <fixmystreet_id>@{[ $problem->id ]}</fixmystreet_id>
+    <status>investigating</status>
+    <description>This is a last note</description>
+    <updated_datetime>UPDATED_DATETIME3</updated_datetime>
+    </request_update>
+    </service_requests_updates>
+    };
+
+    $problem->comments->delete;
+
+    my $dt2 = $dt->clone->subtract( minutes => 30 );
+    my $dt3 = $dt2->clone->subtract( minutes => 30 );
+    $requests_xml =~ s/UPDATED_DATETIME3/$dt/;
+    $requests_xml =~ s/UPDATED_DATETIME2/$dt2/;
+    $requests_xml =~ s/UPDATED_DATETIME/$dt3/;
+
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $requests_xml } );
+
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+
+    $update->process_body;
+
+    $problem->discard_changes;
+    is $problem->comments->count, 2, 'two comments after fetching updates';
+
+    my @comments = $problem->comments->search(undef, { order_by => [ 'created' ] } )->all;
+
+    is $comments[0]->external_id, 638344, "correct first comment added";
+    is $comments[1]->external_id, 638356, "correct second comment added";
+};
+
+subtest 'check bad fixmystreet_id is handled' => sub {
+    my $requests_xml = qq{<?xml version="1.0" encoding="utf-8"?>
+    <service_requests_updates>
+    <request_update>
+    <update_id>638344</update_id>
+    <service_request_id>8888888888888</service_request_id>
+    <fixmystreet_id>123456 654321</fixmystreet_id>
+    <status>open</status>
+    <description>This is a note</description>
+    <updated_datetime>UPDATED_DATETIME</updated_datetime>
+    </request_update>
+    </service_requests_updates>
+    };
+
+    $problem->comments->delete;
+
+    $requests_xml =~ s/UPDATED_DATETIME/$dt/;
+
+    my $o = Open311->new( jurisdiction => 'mysociety', endpoint => 'http://example.com', test_mode => 1, test_get_returns => { 'servicerequestupdates.xml' => $requests_xml } );
+
+    my $update = Open311::GetServiceRequestUpdates->new(
+        system_user => $user,
+        current_open311 => $o,
+        current_body => $bodies{2482},
+    );
+
+    warning_like {
+        $update->process_body
+    }
+    qr/skipping bad fixmystreet id in updates for Bromley: \[123456 654321\], external id is 8888888888888/,
+    "warning emitted for bad fixmystreet id";
+
+    $problem->discard_changes;
+    is $problem->comments->count, 0, 'no comments after fetching updates';
+};
 done_testing();
 
 sub setup_xml {

@@ -3,21 +3,17 @@ package FixMyStreet::App::Model::PhotoSet;
 # TODO this isn't a Cat model, rename to something else
 
 use Moose;
-use Path::Tiny 'path';
-
-my $IM = eval {
-    require Image::Magick;
-    Image::Magick->import;
-    1;
-};
 
 use Scalar::Util 'openhandle', 'blessed';
-use Digest::SHA qw(sha1_hex);
 use Image::Size;
 use IPC::Cmd qw(can_run);
 use IPC::Open3;
-use MIME::Base64;
 
+use FixMyStreet;
+use FixMyStreet::ImageMagick;
+use FixMyStreet::PhotoStorage;
+
+# Attached Catalyst app, if present, for feeding back errors during photo upload
 has c => (
     is => 'ro',
 );
@@ -57,27 +53,28 @@ has data_items => ( # either a) split from db_data or b) provided by photo uploa
         my $self = shift;
         my $data = $self->db_data or return [];
 
-        return [$data] if (detect_type($data));
+        return [$data] if ($self->storage->detect_type($data));
 
         return [ split ',' => $data ];
     },
 );
 
-has upload_dir => (
+has storage => (
     is => 'ro',
     lazy => 1,
     default => sub {
-        path(FixMyStreet->config('UPLOAD_DIR'))->absolute(FixMyStreet->path_to());
-    },
+        return FixMyStreet::PhotoStorage::backend;
+    }
 );
 
-sub detect_type {
-    return 'jpeg' if $_[0] =~ /^\x{ff}\x{d8}/;
-    return 'png' if $_[0] =~ /^\x{89}\x{50}/;
-    return 'tiff' if $_[0] =~ /^II/;
-    return 'gif' if $_[0] =~ /^GIF/;
-    return '';
-}
+has symlinkable => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $cfg = FixMyStreet->config('PHOTO_STORAGE_OPTIONS');
+        return $cfg ? $cfg->{SYMLINK_FULL_SIZE} : 0;
+    }
+);
 
 =head2 C<ids>, C<num_images>, C<get_id>, C<all_ids>
 
@@ -123,23 +120,8 @@ has ids => ( #  Arrayref of $fileid tuples (always, so post upload/raw data proc
                     return ();
                 }
 
-                # base64 decode the file if it's encoded that way
-                # Catalyst::Request::Upload doesn't do this automatically
-                # unfortunately.
-                my $transfer_encoding = $upload->headers->header('Content-Transfer-Encoding');
-                if (defined $transfer_encoding && $transfer_encoding eq 'base64') {
-                    my $decoded = decode_base64($upload->slurp);
-                    if (open my $fh, '>', $upload->tempname) {
-                        binmode $fh;
-                        print $fh $decoded;
-                        close $fh
-                    } else {
-                        my $c = $self->c;
-                        $c->log->info('Couldn\'t open temp file to save base64 decoded image: ' . $!);
-                        $c->stash->{photo_error} = _("Sorry, we couldn't save your image(s), please try again.");
-                        return ();
-                    }
-                }
+                # Make sure any base64 encoding is handled.
+                FixMyStreet::PhotoStorage::base64_decode_upload($self->c, $upload);
 
                 # get the photo into a variable
                 my $photo_blob = eval {
@@ -166,25 +148,21 @@ has ids => ( #  Arrayref of $fileid tuples (always, so post upload/raw data proc
                     return ();
                 }
 
-                # we have an image we can use - save it to the upload dir for storage
-                my $fileid = $self->get_fileid($photo_blob);
-                my $file = $self->get_file($fileid, $type);
-                $upload->copy_to( $file );
-                return $file->basename;
+                # we have an image we can use - save it to storage
+                $photo_blob = FixMyStreet::ImageMagick->new(blob => $photo_blob)->shrink('2048x2048')->as_blob;
+                return $self->storage->store_photo($photo_blob);
+            }
 
-            }
-            if (my $type = detect_type($part)) {
+            # It might be a raw file stored in the DB column...
+            if (my $type = $self->storage->detect_type($part)) {
                 my $photo_blob = $part;
-                my $fileid = $self->get_fileid($photo_blob);
-                my $file = $self->get_file($fileid, $type);
-                $file->spew_raw($photo_blob);
-                return $file->basename;
+                return $self->storage->store_photo($photo_blob);
+                # TODO: Should this update the DB record with a pointer to the
+                # newly-stored file, instead of leaving it in the DB?
             }
-            my ($fileid, $type) = split /\./, $part;
-            $type ||= 'jpeg';
-            if ($fileid && length($fileid) == 40) {
-                my $file = $self->get_file($fileid, $type);
-                $file->basename;
+
+            if (my $key = $self->storage->validate_key($part)) {
+                $key;
             } else {
                 # A bad hash, probably a bot spamming with bad data.
                 ();
@@ -194,25 +172,13 @@ has ids => ( #  Arrayref of $fileid tuples (always, so post upload/raw data proc
     },
 );
 
-sub get_fileid {
-    my ($self, $photo_blob) = @_;
-    return sha1_hex($photo_blob);
-}
-
-sub get_file {
-    my ($self, $fileid, $type) = @_;
-    my $cache_dir = $self->upload_dir;
-    return path( $cache_dir, "$fileid.$type" );
-}
-
 sub get_raw_image {
     my ($self, $index) = @_;
     my $filename = $self->get_id($index);
-    my ($fileid, $type) = split /\./, $filename;
-    my $file = $self->get_file($fileid, $type);
-    if ($file->exists) {
-        my $photo = $file->slurp_raw;
+    my ($photo, $type, $object) = $self->storage->retrieve_photo($filename);
+    if ($photo) {
         return {
+            $object ? (object => $object) : (),
             data => $photo,
             content_type => "image/$type",
             extension => $type,
@@ -229,14 +195,21 @@ sub get_image_data {
     my $photo = $image->{data};
 
     my $size = $args{size};
+
+    if ($self->symlinkable && $image->{object} && $size eq 'full') {
+        $image->{symlink} = delete $image->{object};
+        return $image;
+    }
+
+    my $im = FixMyStreet::ImageMagick->new(blob => $photo);
     if ( $size eq 'tn' ) {
-        $photo = _shrink( $photo, 'x100' );
+        $photo = $im->shrink('x100')->as_blob;
     } elsif ( $size eq 'fp' ) {
-        $photo = _crop( $photo );
+        $photo = $im->crop->as_blob;
     } elsif ( $size eq 'full' ) {
         # do nothing
     } else {
-        $photo = _shrink( $photo, $args{default} || '250x250' );
+        $photo = $im->shrink($args{default} || '250x250')->as_blob;
     }
 
     return {
@@ -246,7 +219,7 @@ sub get_image_data {
 }
 
 sub delete_cached {
-    my ($self) = @_;
+    my ($self, %params) = @_;
     my $object = $self->object or return;
     my $id = $object->id or return;
 
@@ -266,6 +239,11 @@ sub delete_cached {
         foreach my $size ("", ".fp", ".tn", ".full") {
             unlink FixMyStreet->path_to(@dirs, "$id.$i$size.$type");
         }
+    }
+
+    # Loop through all the updates as well if requested
+    if ($params{plus_updates}) {
+        $_->get_photoset->delete_cached() foreach $object->comments->all;
     }
 }
 
@@ -298,7 +276,7 @@ sub rotate_image {
     return if $index > $#images;
 
     my $image = $self->get_raw_image($index);
-    $images[$index] = _rotate_image( $image->{data}, $direction );
+    $images[$index] = FixMyStreet::ImageMagick->new(blob => $image->{data})->rotate($direction)->as_blob;
 
     my $new_set = (ref $self)->new({
         data_items => \@images,
@@ -308,49 +286,6 @@ sub rotate_image {
     $self->delete_cached();
 
     return $new_set->data; # e.g. new comma-separated fileid
-}
-
-sub _rotate_image {
-    my ($photo, $direction) = @_;
-    return $photo unless $IM;
-    my $image = Image::Magick->new;
-    $image->BlobToImage($photo);
-    my $err = $image->Rotate($direction);
-    return 0 if $err;
-    my @blobs = $image->ImageToBlob();
-    undef $image;
-    return $blobs[0];
-}
-
-
-# Shrinks a picture to the specified size, but keeping in proportion.
-sub _shrink {
-    my ($photo, $size) = @_;
-    return $photo unless $IM;
-    my $image = Image::Magick->new;
-    $image->BlobToImage($photo);
-    my $err = $image->Scale(geometry => "$size>");
-    throw Error::Simple("resize failed: $err") if "$err";
-    $image->Strip();
-    my @blobs = $image->ImageToBlob();
-    undef $image;
-    return $blobs[0];
-}
-
-# Shrinks a picture to 90x60, cropping so that it is exactly that.
-sub _crop {
-    my ($photo) = @_;
-    return $photo unless $IM;
-    my $image = Image::Magick->new;
-    $image->BlobToImage($photo);
-    my $err = $image->Resize( geometry => "90x60^" );
-    throw Error::Simple("resize failed: $err") if "$err";
-    $err = $image->Extent( geometry => '90x60', gravity => 'Center' );
-    throw Error::Simple("resize failed: $err") if "$err";
-    $image->Strip();
-    my @blobs = $image->ImageToBlob();
-    undef $image;
-    return $blobs[0];
 }
 
 1;

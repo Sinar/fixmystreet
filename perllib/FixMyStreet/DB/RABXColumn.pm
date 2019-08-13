@@ -52,6 +52,8 @@ set_filtered_column behaviour to not trust the cache.
 sub rabx_column {
     my ($class, $col) = @_;
 
+    my $data_type = $class->column_info($col)->{data_type};
+
     # Apply the filtering for this column
     $class->filter_column(
         $col => {
@@ -59,7 +61,10 @@ sub rabx_column {
                 my $self = shift;
                 my $ser  = shift;
                 return undef unless defined $ser;
-                utf8::encode($ser) if utf8::is_utf8($ser);
+                # Some RABX columns are text, when they should be bytea. For
+                # these we must re-encode the string returned from the
+                # database, so that it is decoded again by RABX.
+                utf8::encode($ser) if $data_type ne 'bytea';
                 my $h = new IO::String($ser);
                 return RABX::wire_rd($h);
             },
@@ -69,6 +74,10 @@ sub rabx_column {
                 my $ser  = '';
                 my $h    = new IO::String($ser);
                 RABX::wire_wr( $data, $h );
+                # Some RABX columns are text, when they should be bytea. For
+                # these, we must re-decode the string encoded by RABX, so that
+                # it is encoded again when saved to the db.
+                utf8::decode($ser) if $data_type ne 'bytea';
                 return $ser;
             },
         }
@@ -78,18 +87,15 @@ sub rabx_column {
     $RABX_COLUMNS{ _get_class_identifier($class) }{$col} = 1;
 }
 
-
 sub set_filtered_column {
     my ($self, $col, $val) = @_;
-
-    my $class = ref $self;
 
     # because filtered objects may be expensive to marshall for storage there
     # is a cache that attempts to detect if they have changed or not. For us
     # this cache breaks things and our marshalling is cheap, so clear it when
     # trying set a column.
     delete $self->{_filtered_column}{$col}
-        if $RABX_COLUMNS{ _get_class_identifier($class) }{$col};
+        if $RABX_COLUMNS{ _get_class_identifier($self) }{$col};
 
     return $self->next::method($col, $val);
 }

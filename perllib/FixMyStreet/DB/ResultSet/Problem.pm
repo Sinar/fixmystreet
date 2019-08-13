@@ -28,13 +28,23 @@ sub body_query {
 sub non_public_if_possible {
     my ($rs, $params, $c) = @_;
     if ($c->user_exists) {
+        my $only_non_public = $c->stash->{only_non_public} ? 1 : 0;
         if ($c->user->is_superuser) {
             # See all reports, no restriction
-        } elsif ($c->user->has_body_permission_to('report_inspect')) {
-            $params->{'-or'} = [
-                non_public => 0,
-                $rs->body_query($c->user->from_body->id),
-            ];
+            $params->{non_public} = 1 if $only_non_public;
+        } elsif ($c->user->has_body_permission_to('report_inspect') ||
+                 $c->user->has_body_permission_to('report_mark_private')) {
+            if ($only_non_public) {
+                $params->{'-and'} = [
+                    non_public => 1,
+                    $rs->body_query($c->user->from_body->id),
+                ];
+            } else {
+                $params->{'-or'} = [
+                    non_public => 0,
+                    $rs->body_query($c->user->from_body->id),
+                ];
+            }
         } else {
             $params->{non_public} = 0;
         }
@@ -57,6 +67,10 @@ sub to_body {
 
 # Front page statistics
 
+sub _cache_timeout {
+    FixMyStreet->config('CACHE_TIMEOUT') // 3600;
+}
+
 sub recent_fixed {
     my $rs = shift;
     my $key = "recent_fixed:$site_key";
@@ -66,7 +80,7 @@ sub recent_fixed {
             state => [ FixMyStreet::DB::Result::Problem->fixed_states() ],
             lastupdate => { '>', \"current_timestamp-'1 month'::interval" },
         } )->count;
-        Memcached::set($key, $result, 3600);
+        Memcached::set($key, $result, _cache_timeout());
     }
     return $result;
 }
@@ -80,7 +94,7 @@ sub number_comments {
             { 'comments.state' => 'confirmed' },
             { join => 'comments' }
         )->count;
-        Memcached::set($key, $result, 3600);
+        Memcached::set($key, $result, _cache_timeout());
     }
     return $result;
 }
@@ -95,7 +109,7 @@ sub recent_new {
             state => [ FixMyStreet::DB::Result::Problem->visible_states() ],
             confirmed => { '>', \"current_timestamp-'$interval'::interval" },
         } )->count;
-        Memcached::set($key, $result, 3600);
+        Memcached::set($key, $result, _cache_timeout());
     }
     return $result;
 }
@@ -127,7 +141,7 @@ sub _recent {
     $query->{photo} = { '!=', undef } if $photos;
 
     my $attrs = {
-        order_by => { -desc => 'coalesce(confirmed, created)' },
+        order_by => { -desc => \'coalesce(confirmed, created)' },
         rows => $num,
     };
 
@@ -144,10 +158,10 @@ sub _recent {
             # Need to reattach schema so that confirmed column gets reinflated.
             $probs->[0]->result_source->schema( $rs->result_source->schema ) if $probs->[0];
             # Catch any cached ones since hidden
-            $probs = [ grep { ! $_->is_hidden } @$probs ];
+            $probs = [ grep { $_->photo && ! $_->is_hidden && !$_->non_public } @$probs ];
         } else {
             $probs = [ $rs->search( $query, $attrs )->all ];
-            Memcached::set($key, $probs, 3600);
+            Memcached::set($key, $probs, _cache_timeout());
         }
     }
 
@@ -172,6 +186,9 @@ sub around_map {
             latitude => { '>=', $p{min_lat}, '<', $p{max_lat} },
             longitude => { '>=', $p{min_lon}, '<', $p{max_lon} },
     };
+
+    $q->{$c->stash->{report_age_field}} = { '>=', \"current_timestamp-'$p{report_age}'::interval" } if
+        $p{report_age};
     $q->{category} = $p{categories} if $p{categories} && @{$p{categories}};
 
     $rs->non_public_if_possible($q, $c);
@@ -190,21 +207,16 @@ sub around_map {
 sub timeline {
     my ( $rs ) = @_;
 
-    my $prefetch =
-        $rs->result_source->storage->sql_maker->quote_char ?
-        [ qw/user/ ] :
-        [];
-
     return $rs->search(
         {
             -or => {
-                created  => { '>=', \"current_timestamp-'7 days'::interval" },
-                confirmed => { '>=', \"current_timestamp-'7 days'::interval" },
-                whensent  => { '>=', \"current_timestamp-'7 days'::interval" },
+                'me.created' => { '>=', \"current_timestamp-'7 days'::interval" },
+                'me.confirmed' => { '>=', \"current_timestamp-'7 days'::interval" },
+                'me.whensent' => { '>=', \"current_timestamp-'7 days'::interval" },
             }
         },
         {
-            prefetch => $prefetch,
+            prefetch => 'user',
         }
     );
 }
@@ -256,7 +268,7 @@ sub categories_summary {
 sub include_comment_counts {
     my $rs = shift;
     my $order_by = $rs->{attrs}{order_by};
-    return $rs unless ref $order_by eq 'HASH' && $order_by->{-desc} eq 'comment_count';
+    return $rs unless ref $order_by eq 'ARRAY' && ref $order_by->[0] eq 'HASH' && $order_by->[0]->{-desc} eq 'comment_count';
     $rs->search({}, {
         '+select' => [ {
             "" => \'(select count(*) from comment where problem_id=me.id and state=\'confirmed\')',

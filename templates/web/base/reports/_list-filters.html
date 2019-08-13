@@ -3,7 +3,13 @@
     <select class="form-control js-multiple" name="status" id="statuses" multiple
     data-all="[% loc('All') %]"
     [% IF show_all_states %]
-    [% options = []; FOR group IN filter_states; FOR state IN group.1; NEXT IF state == 'hidden'; options.push(state); END; END %]
+    [%  options = [];
+        FOR group IN filter_states; FOR state IN group.1;
+            NEXT IF state == 'hidden';
+            SET state = 'fixed' IF state == 'fixed - council';
+            options.push(state);
+        END; END
+    %]
     data-all-options='["[% options.join('", "') %]"]'
     [%~ ELSE ~%]
       [%~ IF has_fixed_state ~%]
@@ -18,10 +24,14 @@
         <option value="shortlisted"[% ' selected' IF filter_status.shortlisted %]>[% loc('Shortlisted') %]</option>
         <option value="unshortlisted"[% ' selected' IF filter_status.unshortlisted %]>[% loc('Unshortlisted') %]</option>
       [% END %]
+      [% IF c.user_exists AND ( c.user.has_body_permission_to('report_inspect') OR c.user.has_body_permission_to('report_mark_private') ) %]
+        <option value="non_public"[% ' selected' IF filter_status.non_public %]>[% loc('Private only') %]</option>
+      [% END %]
       [% IF show_all_states %]
         [% FOR group IN filter_states %]
           [% FOR state IN group.1 %]
             [% NEXT IF state == 'hidden' %]
+            [% SET state = 'fixed' IF state == 'fixed - council' ~%]
             <option value="[% state %]"[% ' selected' IF filter_status.$state %]>[% prettify_state(state, 1) %]</option>
           [% END %]
         [% END %]
@@ -50,6 +60,8 @@
   [% END %]
 [% END %]
 
+<div class="report-list-filters-wrapper">
+
 [% IF use_form_wrapper %]
     <form method="get" action="">
 [% END %]
@@ -73,7 +85,16 @@
             </select>
             <input type="submit" name="filter_update" value="[% loc('Go') %]">
         </p>
+        [% IF page == 'around' %]
+        <p id="show_old_reports_wrapper" class="report-list-filters[% ' hidden' UNLESS num_old_reports > 0 %]">
+            <label for="show_old_reports">[% loc('Show older reports') %]</label>
+            <input type="checkbox" name="show_old_reports" id="show_old_reports" value="1"[% ' checked' IF show_old_reports %]>
+            <input type="submit" name="filter_update" value="[% loc('Go') %]">
+        </p>
+        [% END %]
 
 [% IF use_form_wrapper %]
     </form>
 [% END %]
+
+</div>

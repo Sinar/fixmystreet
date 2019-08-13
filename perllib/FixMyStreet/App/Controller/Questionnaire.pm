@@ -33,7 +33,8 @@ sub check_questionnaire : Private {
 
     my $problem = $questionnaire->problem;
 
-    if ( $unanswered && $questionnaire->whenanswered ) {
+    my $cutoff = DateTime->now()->subtract( minutes => 2 );
+    if ( $unanswered && $questionnaire->whenanswered && $questionnaire->whenanswered < $cutoff) {
         my $problem_url = $c->cobrand->base_url_for_report( $problem ) . $problem->url;
         my $contact_url = $c->uri_for( "/contact" );
         my $message = sprintf(_("You have already answered this questionnaire. If you have a question, please <a href='%s'>get in touch</a>, or <a href='%s'>view your problem</a>.\n"), $contact_url, $problem_url);
@@ -64,15 +65,8 @@ sub submit : Path('submit') {
     my ( $self, $c ) = @_;
 
     if (my $token = $c->get_param('token')) {
-        if ($token eq '_test_') {
-            $c->stash->{been_fixed} = $c->get_param('been_fixed');
-            $c->stash->{new_state} = $c->get_param('new_state');
-            $c->stash->{template} = 'questionnaire/completed.html';
-            return;
-        }
         $c->forward('submit_standard');
     } elsif (my $p = $c->get_param('problem')) {
-        $c->detach('creator_fixed') if $p eq '_test_';
         $c->forward('submit_creator_fixed');
     } else {
         $c->detach( '/page_error_404_not_found' );

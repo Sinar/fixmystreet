@@ -11,7 +11,7 @@
 [%- END %]
     data-latitude=[% map.latitude %]
     data-longitude=[% map.longitude %]
-[% IF map.any_zoom -%]
+[% IF map.zoomToBounds -%]
     data-zoomToBounds=1
 [%- END %]
 [% IF map.zoom -%]
@@ -25,12 +25,16 @@
 [% IF include_key -%]
     data-key='[% c.config.BING_MAPS_API_KEY %]'
 [%- END -%]
+[% IF list_of_names_as_string -%]
+    data-bodies='[% list_of_names_as_string | html %]'
+[%- END -%]
 >
 </div>
 <div id="map_box" aria-hidden="true">
     [% pre_map %]
     <div id="map">
-      [% INCLUDE 'maps/noscript_map.html' js = 1 %]
+      [% DEFAULT noscript_map_template = 'maps/noscript_map.html' %]
+      [% INCLUDE $noscript_map_template js = 1 %]
     </div>
     [% IF map.copyright %]
     <div class="olControlAttribution" style="position: absolute;">[% map.copyright %]</div>

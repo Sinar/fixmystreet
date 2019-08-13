@@ -1,7 +1,13 @@
-  <p>
-    <strong>[% loc('Categories:') %]</strong>
-  </p>
-  <ul>
+<fieldset>
+  <legend>
+  [% IF hint %]
+    <div class="admin-hint">
+      <p>[% hint %]</p>
+    </div>
+  [% END %]
+    [% loc('Categories:') %]
+  </legend>
+  <ul class="no-bullets no-margin">
     <li>
       [% loc('Select:') %]
       <a href="#" data-select-all>[% loc('all') %]</a> /
@@ -9,10 +15,11 @@
     </li>
     [% FOR contact IN contacts %]
       <li>
-        <label title="[% contact.email | html %]">
+        <label class="inline" title="[% contact.email | html %]">
           <input type="checkbox" name="contacts[[% contact.id %]]" [% 'checked' IF contact.active %]/>
           [% contact.category %]
         </label>
       </li>
     [% END %]
   </ul>
+</fieldset>

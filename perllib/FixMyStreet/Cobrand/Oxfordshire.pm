@@ -10,15 +10,31 @@ sub council_name { return 'Oxfordshire County Council'; }
 sub council_url { return 'oxfordshire'; }
 sub is_two_tier { return 1; }
 
+sub report_validation {
+    my ($self, $report, $errors) = @_;
+
+    if ( length( $report->detail ) > 1700 ) {
+        $errors->{detail} = sprintf( _('Reports are limited to %s characters in length. Please shorten your report'), 1700 );
+    }
+
+    if ( length( $report->name ) > 50 ) {
+        $errors->{name} = sprintf( 'Names are limited to %d characters in length.', 50 );
+    }
+
+    if ( length( $report->user->phone ) > 20 ) {
+        $errors->{phone} = sprintf( 'Phone numbers are limited to %s characters in length.', 20 );
+    }
+
+    if ( length( $report->user->email ) > 50 ) {
+        $errors->{username} = sprintf( 'Emails are limited to %s characters in length.', 50 );
+    }
+
+    return $errors;
+}
+
 sub is_council_with_case_management {
     # XXX Change this to return 1 when OCC FMSfC goes live.
     return FixMyStreet->config('STAGING_SITE');
-}
-
-sub base_url {
-    my $self = shift;
-    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
-    return 'https://fixmystreet.oxfordshire.gov.uk';
 }
 
 sub enter_postcode_text {
@@ -38,10 +54,6 @@ sub disambiguate_location {
     };
 }
 
-sub example_places {
-    return ( 'OX20 1SZ', 'Park St, Woodstock' );
-}
-
 # don't send questionnaires to people who used the OCC cobrand to report their problem
 sub send_questionnaires { return 0; }
 
@@ -51,52 +63,18 @@ sub default_map_zoom { return 3; }
 # let staff hide OCC reports
 sub users_can_hide { return 1; }
 
-sub default_show_name { 0 }
+sub lookup_by_ref_regex {
+    return qr/^\s*((?:ENQ)?\d+)\s*$/;
+}
 
-=head2 problem_response_days
+sub lookup_by_ref {
+    my ($self, $ref) = @_;
 
-Returns the number of working days that are expected to elapse
-between the problem being reported and it being responded to by
-the council/body.
-If the value 'emergency' is returned, a different template block
-is triggered that has custom wording.
-
-=cut
-
-sub problem_response_days {
-    my $self = shift;
-    my $p = shift;
-
-    return 'emergency' if $p->category eq 'Street lighting';
-
-    # Temporary, see https://github.com/mysociety/fixmystreetforcouncils/issues/291
-    return 0;
-
-    return 10 if $p->category eq 'Bridges';
-    return 10 if $p->category eq 'Carriageway Defect'; # phone if urgent
-    return 10 if $p->category eq 'Debris/Spillage';
-    return 10 if $p->category eq 'Drainage';
-    return 10 if $p->category eq 'Fences';
-    return 10 if $p->category eq 'Flyposting';
-    return 10 if $p->category eq 'Footpaths/ Rights of way (usually not tarmac)';
-    return 10 if $p->category eq 'Gully and Catchpits';
-    return 10 if $p->category eq 'Ice/Snow'; # phone if urgent
-    return 10 if $p->category eq 'Manhole';
-    return 10 if $p->category eq 'Mud and Debris'; # phone if urgent
-    return 10 if $p->category eq 'Oil Spillage';  # phone if urgent
-    return 10 if $p->category eq 'Pavements';
-    return 10 if $p->category eq 'Pothole'; # phone if urgent
-    return 10 if $p->category eq 'Property Damage';
-    return 10 if $p->category eq 'Public rights of way';
-    return 10 if $p->category eq 'Road Marking';
-    return 10 if $p->category eq 'Road traffic signs';
-    return 10 if $p->category eq 'Roads/highways';
-    return 10 if $p->category eq 'Skips and scaffolding';
-    return 10 if $p->category eq 'Traffic lights'; # phone if urgent
-    return 10 if $p->category eq 'Traffic';
-    return 10 if $p->category eq 'Trees';
-    return 10 if $p->category eq 'Utilities';
-    return 10 if $p->category eq 'Vegetation';
+    if ( $ref =~ /^ENQ/ ) {
+        my $len = length($ref);
+        my $filter = "%T18:customer_reference,T$len:$ref,%";
+        return { 'extra' => { -like => $filter } };
+    }
 
     return 0;
 }
@@ -130,10 +108,10 @@ sub pin_hover_title {
 
 sub state_groups_inspect {
     [
-        [ _('New'), [ 'confirmed', 'investigating' ] ],
-        [ _('Scheduled'), [ 'action scheduled' ] ],
-        [ _('Fixed'), [ 'fixed - council' ] ],
-        [ _('Closed'), [ 'not responsible', 'duplicate', 'unable to fix' ] ],
+        [ 'New', [ 'confirmed', 'investigating' ] ],
+        [ 'Scheduled', [ 'action scheduled' ] ],
+        [ 'Fixed', [ 'fixed - council' ] ],
+        [ 'Closed', [ 'not responsible', 'duplicate', 'unable to fix' ] ],
     ]
 }
 
@@ -142,30 +120,32 @@ sub open311_config {
 
     my $extra = $row->get_extra_fields;
     push @$extra, { name => 'external_id', value => $row->id };
+    push @$extra, { name => 'northing', value => $h->{northing} };
+    push @$extra, { name => 'easting', value => $h->{easting} };
 
     if ($h->{closest_address}) {
         push @$extra, { name => 'closest_address', value => "$h->{closest_address}" }
     }
-    if ( $row->used_map || ( !$row->used_map && !$row->postcode ) ) {
-        push @$extra, { name => 'northing', value => $h->{northing} };
-        push @$extra, { name => 'easting', value => $h->{easting} };
-    }
     $row->set_extra_fields( @$extra );
 
+    $params->{multi_photos} = 1;
     $params->{extended_description} = 'oxfordshire';
 }
 
-sub open311_pre_send {
-    my ($self, $row, $open311) = @_;
-    $open311->endpoints( { requests => 'open311_service_request.cgi' } );
+sub open311_config_updates {
+    my ($self, $params) = @_;
+    $params->{use_customer_reference} = 1;
+}
+
+sub should_skip_sending_update {
+    my ($self, $update ) = @_;
+
+    # Oxfordshire stores the external id of the problem as a customer reference
+    # in metadata
+    return 1 if !$update->problem->get_extra_metadata('customer_reference');
 }
 
 sub on_map_default_status { return 'open'; }
-
-sub contact_email {
-    my $self = shift;
-    return join( '@', 'highway.enquiries', 'oxfordshire.gov.uk' );
-}
 
 sub admin_user_domain { 'oxfordshire.gov.uk' }
 
@@ -233,6 +213,13 @@ sub available_permissions {
 
     my $perms = $self->next::method();
     $perms->{Bodies}->{defect_type_edit} = "Add/edit defect types";
+
+    delete $perms->{Problems}->{report_edit};
+    delete $perms->{Problems}->{report_edit_category};
+    delete $perms->{Problems}->{report_edit_priority};
+    delete $perms->{Problems}->{report_inspect};
+    delete $perms->{Problems}->{report_instruct};
+    delete $perms->{Problems}->{planned_reports};
 
     return $perms;
 }

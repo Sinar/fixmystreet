@@ -196,7 +196,12 @@ subtest "Banners are displayed correctly" => sub {
                 $banner->{text} =~ s/ $//g;
             }
 
-            is $banner->{id}, $test->{banner_id}, 'banner id';
+            if ( $test->{banner_id} ) {
+                ok $banner->{class} =~ /banner--$test->{banner_id}/i, 'banner class';
+            } else {
+                is $banner->{class}, $test->{banner_id}, 'banner class';
+            }
+
             if ($test->{banner_text}) {
                 like_string( $banner->{text}, qr/$test->{banner_text}/i, 'banner text is ' . $test->{banner_text} );
             } else {
@@ -416,7 +421,10 @@ FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'zurich' ],
     MAPIT_URL => 'http://mapit.zurich/',
     MAP_TYPE => 'Zurich,OSM',
-    UPLOAD_DIR => $UPLOAD_DIR,
+    PHOTO_STORAGE_BACKEND => 'FileSystem',
+    PHOTO_STORAGE_OPTIONS => {
+        UPLOAD_DIR => $UPLOAD_DIR,
+    },
 }, sub {
     # Photo publishing
     $mech->get_ok( '/admin/report_edit/' . $report->id );
@@ -830,6 +838,7 @@ subtest "only superuser can see 'Add body' form" => sub {
     }, sub {
         $mech->get_ok( '/admin/bodies' );
     };
+    $mech->content_contains('External Body');
     $mech->content_lacks( '<form method="post" action="bodies"' );
     $mech->log_out_ok;
 };
@@ -956,7 +965,6 @@ subtest "test stats" => sub {
 };
 
 subtest "test admin_log" => sub {
-    diag $report->id;
     my @entries = FixMyStreet::DB->resultset('AdminLog')->search({
         object_type => 'problem',
         object_id   => $report->id,
@@ -1004,7 +1012,7 @@ subtest 'email images to external partners' => sub {
         $expected_email_content =~ s{Subject: (.*?)\r?\n}{
             my $subj = Encode::decode('MIME-Header', $1);
             $subj =~ s{REPORT_ID}{$REPORT_ID}g;
-            'Subject: ' . Email::MIME::Encode::mime_encode($subj, "utf-8") . "\n";
+            'Subject: ' . Email::MIME::Encode::mime_encode($subj, "utf-8", 9) . "\n";
         }eg;
         $expected_email_content =~ s{REPORT_ID}{$REPORT_ID}g;
         $expected_email_content =~ s{BOUNDARY}{$boundary}g;
@@ -1084,7 +1092,7 @@ FixMyStreet::override_config {
 }, sub {
     subtest 'users at the top level can be edited' => sub {
         $mech->log_in_ok( $superuser->email );
-        $mech->get_ok('/admin/user_edit/' . $superuser->id );
+        $mech->get_ok('/admin/users/' . $superuser->id );
     };
 };
 

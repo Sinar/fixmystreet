@@ -1,5 +1,5 @@
 package FixMyStreet::Cobrand::Bristol;
-use parent 'FixMyStreet::Cobrand::UKCouncils';
+use parent 'FixMyStreet::Cobrand::Whitelabel';
 
 use strict;
 use warnings;
@@ -9,21 +9,9 @@ sub council_area { return 'Bristol'; }
 sub council_name { return 'Bristol County Council'; }
 sub council_url { return 'bristol'; }
 
-sub base_url {
-    my $self = shift;
-    return $self->next::method() if FixMyStreet->config('STAGING_SITE');
-    return 'https://fixmystreet.bristol.gov.uk';
-}
-
-sub example_places {
-    return ( 'BS1 5TR', "Broad Quay" );
-}
-
 sub map_type {
     'Bristol';
 }
-
-sub default_link_zoom { 6 }
 
 sub disambiguate_location {
     my $self    = shift;
@@ -52,11 +40,6 @@ sub pin_colour {
     return 'yellow';
 }
 
-sub contact_email {
-    my $self = shift;
-    return join( '@', 'customer.services', 'bristol.gov.uk' );
-}
-
 sub send_questionnaires {
     return 0;
 }
@@ -75,6 +58,15 @@ sub open311_config {
     my ($self, $row, $h, $params) = @_;
 
     $params->{always_send_email} = 1;
+}
+
+sub open311_contact_meta_override {
+    my ($self, $service, $contact, $meta) = @_;
+
+    my %server_set = (easting => 1, northing => 1);
+    foreach (@$meta) {
+        $_->{automated} = 'server_set' if $server_set{$_->{code}};
+    }
 }
 
 1;

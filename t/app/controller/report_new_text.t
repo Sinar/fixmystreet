@@ -23,7 +23,7 @@ foreach my $test (
             username => '0121 4960000000', email => '', phone => '',
             title => 'Title', detail => 'Detail', name => 'Bob Jones',
             category => 'Street lighting',
-            may_show_name => '1', remember_me => undef,
+            may_show_name => '1',
             photo1 => '', photo2 => '', photo3 => '',
             password_register => '', password_sign_in => '',
         },
@@ -40,7 +40,7 @@ foreach my $test (
             username => '0121 4960000', email => '', phone => '',
             title => 'Title', detail => 'Detail', name => 'Bob Jones',
             category => 'Street lighting',
-            may_show_name => '1', remember_me => undef,
+            may_show_name => '1',
             photo1 => '', photo2 => '', photo3 => '',
             password_register => '', password_sign_in => '',
         },
@@ -222,6 +222,8 @@ subtest "test password errors for a user who is signing in as they report" => su
         ALLOWED_COBRANDS => [ { fixmystreet => '.' } ],
         MAPIT_URL => 'http://mapit.uk/',
         SMS_AUTHENTICATION => 1,
+        phone_verified => 1,
+        email_verified => 1,
     }, sub {
         $mech->submit_form_ok( { with_fields => { pc => 'EH1 1BB', } }, "submit location" );
         $mech->follow_link_ok( { text_regex => qr/skip this step/i, }, "follow 'skip this step' link" );
@@ -245,6 +247,8 @@ subtest "test password errors for a user who is signing in as they report" => su
     is_deeply $mech->page_errors, [
         "There was a problem with your login information. If you cannot remember your password, or do not have one, please fill in the \x{2018}No\x{2019} section of the form.",
     ], "check there were errors";
+
+    $mech->content_lacks($user->email, 'email not displayed');
 };
 
 subtest "test report creation for a user who is signing in as they report" => sub {
@@ -320,7 +324,7 @@ subtest "test report creation for a user who is logged in" => sub {
             {
                 title => '',
                 detail => '',
-                may_show_name => '1',
+                may_show_name => undef,
                 name => 'Joe Bloggs',
                 email => 'joe@example.net',
                 photo1 => '',

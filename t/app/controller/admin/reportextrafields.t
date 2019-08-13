@@ -120,11 +120,41 @@ FixMyStreet::override_config {
         $contact->update;
     };
 
+    subtest 'check contact updating does not remove server_set' => sub {
+        $contact->set_extra_fields(({ code => 'POT', automated => 'server_set' }));
+        $contact->update;
+
+        $mech->get_ok("/admin/body/" . $body->id . "/" . $contact->category);
+        $mech->submit_form_ok( { with_fields => {
+            email    => 'test4@example.com',
+            note     => 'test4 note',
+        } } );
+
+        $mech->content_like(qr'test4@example.com's);
+
+        $contact->discard_changes;
+        my $meta_data = $contact->get_extra_fields;
+        is $contact->email, 'test4@example.com', 'contact updated';
+        is_deeply $meta_data, [ {
+            order => 0,
+            datatype => 'string',
+            datatype_description => '',
+            description => '',
+            required => 'false',
+            variable => 'true',
+            code => 'POT',
+            automated => 'server_set'
+        } ], "automated fields not unset";
+    };
+
+
     subtest 'Create and update new ReportExtraFields' => sub {
         my $extra_fields = [];
 
-        my $model = FixMyStreet::App->model('DB::ReportExtraFields');
+        my $model = FixMyStreet::App->model('DB::ReportExtraField');
         is $model->count, 0, 'no ReportExtraFields yet';
+
+        $mech->get_ok("/admin/reportextrafields");
 
         $mech->get_ok("/admin/reportextrafields/new");
         $mech->submit_form_ok({ with_fields => {
@@ -181,8 +211,36 @@ FixMyStreet::override_config {
                 { name => "name1", key => "key1" },
             ]
         };
+
         $object->discard_changes;
         is_deeply $object->get_extra_fields, $extra_fields, 'new list field was added';
+        is $object->language, "en-gb", "Correct language was set";
+
+        $mech->get_ok("/admin/reportextrafields/" . $object->id);
+        $mech->submit_form_ok({ with_fields => {
+            "metadata[2].order" => "3",
+            "metadata[2].code" => "automated_test",
+            "metadata[2].required" => undef,
+            "metadata[2].notice" => "",
+            "metadata[2].description" => "",
+            "metadata[2].datatype_description" => "",
+            "metadata[2].datatype" => "string",
+            "metadata[2].automated" => "server_set",
+        }});
+
+        push @$extra_fields, {
+            order => "3",
+            code => "automated_test",
+            required => "false",
+            variable => "true",
+            description => "",
+            datatype_description => "",
+            datatype => "string",
+            automated => "server_set",
+        };
+
+        $object->discard_changes;
+        is_deeply $object->get_extra_fields, $extra_fields, 'new automated field was added';
         is $object->language, "en-gb", "Correct language was set";
 
         $mech->get_ok("/admin/reportextrafields/" . $object->id);
@@ -233,7 +291,7 @@ FixMyStreet::override_config {
     LANGUAGES => [ 'en-gb,English,en_GB' ]
 }, sub {
     subtest "Extra fields are missing from cobrand that doesn't allow them" => sub {
-        my $object = FixMyStreet::App->model('DB::ReportExtraFields')->first;
+        my $object = FixMyStreet::App->model('DB::ReportExtraField')->first;
         $object->update({ language => "", cobrand => ""});
 
         $mech->get_ok("/report/new?longitude=-1.351488&latitude=51.847235&category=" . $contact->category);
@@ -242,7 +300,7 @@ FixMyStreet::override_config {
     };
 };
 
-FixMyStreet::App->model('DB::ReportExtraFields')->delete_all;
+FixMyStreet::App->model('DB::ReportExtraField')->delete_all;
 $mech->log_out_ok;
 
 subtest 'Reports are created with correct extra metadata' => sub {
@@ -250,7 +308,7 @@ subtest 'Reports are created with correct extra metadata' => sub {
         ALLOWED_COBRANDS => [ 'tester' ],
         MAPIT_URL => 'http://mapit.uk/',
     }, sub {
-        my $model = FixMyStreet::App->model('DB::ReportExtraFields');
+        my $model = FixMyStreet::App->model('DB::ReportExtraField');
         my $extra_fields = $model->find_or_create({
             name => "Test extra fields",
             language => "",

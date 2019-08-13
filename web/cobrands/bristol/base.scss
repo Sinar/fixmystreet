@@ -78,13 +78,11 @@ body, .content {
 }
 
 // Make sure the numbers on the front page have the correct font weight
-#front-howto {
-  #front_stats {
-    color: white;
+#front_stats {
+  color: white;
 
-    div {
-      @extend %bold-font;
-    }
+  div {
+    @extend %bold-font;
   }
 }
 
@@ -111,12 +109,6 @@ dl dt {
   }
 }
 
-p, dd, aside {
-  a, a:visited, a:hover {
-    color: $b3;
-  }
-}
-
 a#geolocate_link {
   color: $b3;
 }
@@ -127,4 +119,10 @@ label {
 
 #map #drag .square-map__tile {
   position: static;
+}
+
+// uses important because btn also uses it
+#highways .segmented-control--radio input:checked + label.btn {
+    color: $g7 !important;
+    font-weight: bold !important;
 }

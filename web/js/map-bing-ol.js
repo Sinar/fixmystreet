@@ -6,7 +6,7 @@ fixmystreet.maps.config = function() {
 
     fixmystreet.controls = [
         new OpenLayers.Control.Attribution(),
-        new OpenLayers.Control.ArgParser(),
+        new OpenLayers.Control.ArgParserFMS(),
         new OpenLayers.Control.Navigation(),
         new OpenLayers.Control.PermalinkFMS(permalink_id),
         new OpenLayers.Control.PanZoomFMS({id: 'fms_pan_zoom' })
@@ -95,10 +95,10 @@ OpenLayers.Layer.Bing = OpenLayers.Class(OpenLayers.Layer.XYZ, {
 
     get_urls: function(bounds, z) {
         return [
-            "//ecn.t0.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
-            "//ecn.t1.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
-            "//ecn.t2.tiles.virtualearth.net/tiles/r${id}.png?g=5941",
-            "//ecn.t3.tiles.virtualearth.net/tiles/r${id}.png?g=5941"
+            "//ecn.t0.tiles.virtualearth.net/tiles/r${id}.png?g=6570",
+            "//ecn.t1.tiles.virtualearth.net/tiles/r${id}.png?g=6570",
+            "//ecn.t2.tiles.virtualearth.net/tiles/r${id}.png?g=6570",
+            "//ecn.t3.tiles.virtualearth.net/tiles/r${id}.png?g=6570"
         ];
     },
 

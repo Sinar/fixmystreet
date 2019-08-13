@@ -6,10 +6,13 @@ package FixMyStreet::DB::Result::Comment;
 
 use strict;
 use warnings;
-use FixMyStreet::Template;
 
 use base 'DBIx::Class::Core';
-__PACKAGE__->load_components("FilterColumn", "InflateColumn::DateTime", "EncodedColumn");
+__PACKAGE__->load_components(
+  "FilterColumn",
+  "FixMyStreet::InflateColumn::DateTime",
+  "FixMyStreet::EncodedColumn",
+);
 __PACKAGE__->table("comment");
 __PACKAGE__->add_columns(
   "id",
@@ -70,8 +73,8 @@ __PACKAGE__->add_columns(
   { data_type => "timestamp", is_nullable => 1 },
 );
 __PACKAGE__->set_primary_key("id");
-__PACKAGE__->might_have(
-  "moderation_original_data",
+__PACKAGE__->has_many(
+  "moderation_original_datas",
   "FixMyStreet::DB::Result::ModerationOriginalData",
   { "foreign.comment_id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
@@ -90,8 +93,8 @@ __PACKAGE__->belongs_to(
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07035 @ 2015-08-13 16:33:38
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:ZR+YNA1Jej3s+8mr52iq6Q
+# Created by DBIx::Class::Schema::Loader v0.07035 @ 2019-04-25 12:06:39
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:CozqNY621I8G7kUPXi5RoQ
 #
 
 __PACKAGE__->load_components("+FixMyStreet::DB::RABXColumn");
@@ -99,21 +102,32 @@ __PACKAGE__->rabx_column('extra');
 
 use Moo;
 use namespace::clean -except => [ 'meta' ];
+use FixMyStreet::Template;
 
 with 'FixMyStreet::Roles::Abuser',
      'FixMyStreet::Roles::Extra',
+     'FixMyStreet::Roles::Moderation',
      'FixMyStreet::Roles::PhotoSet';
 
-my $stz = sub {
-    my ( $orig, $self ) = ( shift, shift );
-    my $s = $self->$orig(@_);
-    return $s unless $s && UNIVERSAL::isa($s, "DateTime");
-    FixMyStreet->set_time_zone($s);
-    return $s;
-};
+=head2 get_cobrand_logged
 
-around created => $stz;
-around confirmed => $stz;
+Get a cobrand object for the cobrand the update was made on.
+
+e.g. if an update was logged at www.fixmystreet.com, this will be a
+FixMyStreet::Cobrand::FixMyStreet object.
+
+=cut
+
+has get_cobrand_logged => (
+    is => 'ro',
+    lazy => 1,
+    default => sub {
+        my $self = shift;
+        my $cobrand_class = FixMyStreet::Cobrand->get_class_for_moniker( $self->cobrand );
+        return $cobrand_class->new;
+    },
+);
+
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration
 
@@ -156,17 +170,6 @@ sub url {
     return "/report/" . $self->problem_id . '#update_' . $self->id;
 }
 
-=head2 latest_moderation_log_entry
-
-Return most recent ModerationLog object
-
-=cut
-
-sub latest_moderation_log_entry {
-    my $self = shift;
-    return $self->admin_log_entries->search({ action => 'moderation' }, { order_by => { -desc => 'id' } })->first;
-}
-
 __PACKAGE__->has_many(
   "admin_log_entries",
   "FixMyStreet::DB::Result::AdminLog",
@@ -177,23 +180,23 @@ __PACKAGE__->has_many(
   }
 );
 
-# we already had the `moderation_original_data` rel above, as inferred by
-# Schema::Loader, but that doesn't know about the problem_id mapping, so we now
-# (slightly hackishly) redefine here:
-#
-# we also add cascade_delete, though this seems to be insufficient.
-#
-# TODO: should add FK on moderation_original_data field for this, to get S::L to
-# pick up without hacks.
-
+# This will return the oldest moderation_original_data, if any.
+# The plural can be used to return all entries.
 __PACKAGE__->might_have(
   "moderation_original_data",
   "FixMyStreet::DB::Result::ModerationOriginalData",
   { "foreign.comment_id" => "self.id",
     "foreign.problem_id" => "self.problem_id",
   },
-  { cascade_copy => 0, cascade_delete => 1 },
+  { order_by => 'id',
+    rows => 1,
+    cascade_copy => 0, cascade_delete => 1 },
 );
+
+sub moderation_filter {
+    my $self = shift;
+    { problem_id => $self->problem_id };
+}
 
 =head2 meta_line
 
@@ -226,9 +229,13 @@ sub meta_line {
                 $body = "$body <img src='/cobrands/bromley/favicon.png' alt=''>";
             } elsif ($body eq 'Royal Borough of Greenwich') {
                 $body = "$body <img src='/cobrands/greenwich/favicon.png' alt=''>";
+            } elsif ($body eq 'Hounslow Borough Council') {
+                $body = 'Hounslow Highways';
             }
         }
-        my $can_view_contribute = $c->user_exists && $c->user->has_permission_to('view_body_contribute_details', $self->problem->bodies_str_ids);
+        my $cobrand_always_view_body_user = $c->cobrand->call_hook("always_view_body_contribute_details");
+        my $can_view_contribute = $cobrand_always_view_body_user ||
+            ($c->user_exists && $c->user->has_permission_to('view_body_contribute_details', $self->problem->bodies_str_ids));
         if ($self->text) {
             if ($can_view_contribute) {
                 $meta = sprintf( _( 'Posted by <strong>%s</strong> (%s) at %s' ), $body, $user_name, Utils::prettify_dt( $self->confirmed ) );
@@ -253,24 +260,22 @@ sub meta_line {
     return $meta;
 };
 
+sub problem_state_processed {
+    my $self = shift;
+    return 'fixed - user' if $self->mark_fixed;
+    return 'confirmed' if $self->mark_open;
+    return $self->problem_state;
+}
+
 sub problem_state_display {
     my ( $self, $c ) = @_;
 
-    my $update_state = '';
-    my $cobrand = $c->cobrand->moniker;
+    my $state = $self->problem_state_processed;
+    return '' unless $state;
 
-    if ($self->mark_fixed) {
-        return FixMyStreet::DB->resultset("State")->display('fixed', 1);
-    } elsif ($self->mark_open)  {
-        return FixMyStreet::DB->resultset("State")->display('confirmed', 1);
-    } elsif ($self->problem_state) {
-        my $state = $self->problem_state;
-        my $cobrand_name = $cobrand;
-        $cobrand_name = 'bromley' if $self->problem->to_body_named('Bromley');
-        $update_state = FixMyStreet::DB->resultset("State")->display($state, 1, $cobrand_name);
-    }
-
-    return $update_state;
+    my $cobrand_name = $c->cobrand->moniker;
+    $cobrand_name = 'bromley' if $self->problem->to_body_named('Bromley');
+    return FixMyStreet::DB->resultset("State")->display($state, 1, $cobrand_name);
 }
 
 sub is_latest {
@@ -296,6 +301,29 @@ sub hide {
     $self->get_photoset->delete_cached;
     $self->update({ state => 'hidden' });
     return $ret;
+}
+
+sub as_hashref {
+    my ($self, $c, $cols) = @_;
+
+    my $out = {
+        id => $self->id,
+        problem_id => $self->problem_id,
+        text => $self->text,
+        state => $self->state,
+        created => $self->created,
+    };
+
+    $out->{problem_state} = $self->problem_state_processed;
+
+    $out->{photos} = [ map { $_->{url} } @{$self->photos} ] if !$cols || $cols->{photos};
+
+    if ($self->confirmed) {
+        $out->{confirmed} = $self->confirmed if !$cols || $cols->{confirmed};
+        $out->{confirmed_pp} = $c->cobrand->prettify_dt( $self->confirmed ) if !$cols || $cols->{confirmed_pp};
+    }
+
+    return $out;
 }
 
 1;

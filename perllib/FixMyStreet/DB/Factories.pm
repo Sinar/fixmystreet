@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use v5.14;
+use utf8;
 
 use FixMyStreet::DB;
 
@@ -94,9 +95,25 @@ sub data {
     my $self = shift;
 
     my %titles = (
-        'Potholes' => ['Deep pothole', 'Small pothole', 'Pothole in cycle lane', 'Pothole on busy pavement', 'Large pothole', 'Sinking manhole'],
-        'Street lighting' => ['Faulty light', 'Street light not working', 'Lights out in tunnel', 'Light not coming on', 'Light not going off'],
+        'Abandoned vehicles' => ['Car on pavement, has been there for months', 'Silver car outside house, never used'],
+        'Bus stops' => ['Bus stop sign wonky', 'Information board broken'],
+        'Dog fouling' => ['Bad dog fouling in alley way', 'Inconsiderate dog owner' ],
+        'Flyposting' => ['Fence by road covered in posters', 'Under the bridge is a poster haven'],
+        'Flytipping' => ['Flytipping on country lane', 'Ten bags of rubbish'],
+        'Footpath/bridleway away from road' => ['Vehicle blocking footpath'],
         'Graffiti' => ['Graffiti', 'Graffiti', 'Offensive graffiti', 'Graffiti on the bridge', 'Remove graffiti'],
+        'Parks/landscapes' => ['Full litter bins', 'Allotment gate needs repair'],
+        'Pavements' => ['Hedge encroaching pavement', 'Many cracked slabs on street corner'],
+        'Potholes' => ['Deep pothole', 'Small pothole', 'Pothole in cycle lane', 'Pothole on busy pavement', 'Large pothole', 'Sinking manhole'],
+        'Public toilets' => ['Door will not open'],
+        'Roads/highways' => ['Restricted sight line by zig-zag lines', 'Missing lane markings'],
+        'Road traffic signs' => ['Bent sign', 'Zebra crossing', 'Bollard missing'],
+        'Rubbish (refuse and recycling)' => ['Missing bin', 'Bags left uncollected'],
+        'Street cleaning' => ['Two abandoned trollies', 'Yet more litter'],
+        'Street lighting' => ['Faulty light', 'Street light not working', 'Lights out in tunnel', 'Light not coming on', 'Light not going off'],
+        'Street nameplates' => ['Broken nameplate', 'Missing nameplate'],
+        'Traffic lights' => ['Out of sync lights', 'Always on green', 'Broken light'],
+        'Trees' => ['Young tree damaged', 'Tree looks dangerous in wind'],
         'Other' => ['Loose drain cover', 'Flytipping on country lane', 'Vehicle blocking footpath', 'Hedge encroaching pavement', 'Full litter bins'],
     );
     my %photos = (
@@ -171,8 +188,8 @@ sub create_problem {
 
     $params->{latitude} += rand(2 * $inaccurate_km) - $inaccurate_km;
     $params->{longitude} += rand(3 * $inaccurate_km) - 1.5 * $inaccurate_km,
-    $params->{title} = $titles->[$rand];
-    $params->{detail} = $descs->[$rand];
+    $params->{title} ||= $titles->[$rand];
+    $params->{detail} ||= $descs->[$rand] || 'Please deal with this issue, thank you.';
     $params->{photo_id} = $photo;
     $params->{confirmed} = DateTime::Format::Pg->format_datetime($params->{confirmed});
     return $self->create($params);
@@ -183,7 +200,7 @@ sub create_problem {
 package FixMyStreet::DB::Factory::Body;
 
 use parent -norequire, "FixMyStreet::DB::Factory::Base";
-use mySociety::MaPit;
+use FixMyStreet::MapIt;
 
 __PACKAGE__->resultset(FixMyStreet::DB->resultset("Body"));
 
@@ -192,7 +209,7 @@ __PACKAGE__->exclude(['area_id', 'categories']);
 __PACKAGE__->fields({
     name => __PACKAGE__->callback(sub {
         my $area_id = shift->get('area_id');
-        my $area = mySociety::MaPit::call('area', $area_id);
+        my $area = FixMyStreet::MapIt::call('area', $area_id);
         $area->{name};
     }),
     body_areas => __PACKAGE__->callback(sub {
@@ -212,7 +229,7 @@ sub key_field { 'id' }
 
 package FixMyStreet::DB::Factory::Contact;
 
-use parent "DBIx::Class::Factory";
+use parent -norequire, "FixMyStreet::DB::Factory::Base";
 
 __PACKAGE__->resultset(FixMyStreet::DB->resultset("Contact"));
 
@@ -224,14 +241,16 @@ __PACKAGE__->fields({
     category => 'Other',
     email => __PACKAGE__->callback(sub {
         my $category = shift->get('category');
-        (my $email = lc $_) =~ s/ /-/g;
-        lc $category . '@example.org';
+        (my $email = lc $category) =~ s/ /-/g;
+        $email . '@example.org';
     }),
     state => 'confirmed',
     editor => 'Factory',
     whenedited => \'current_timestamp',
     note => 'Created by factory',
 });
+
+sub key_field { 'id' }
 
 #######################
 

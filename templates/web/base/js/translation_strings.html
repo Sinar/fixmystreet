@@ -4,8 +4,16 @@ fixmystreet.password_minimum_length = [% c.cobrand.password_minimum_length %];
 
     translation_strings = {
         update: '[% loc('Please enter a message') | replace("'", "\\'") %]',
-        title: '[% loc('Please enter a subject') | replace("'", "\\'") %]',
-        detail: '[% loc('Please enter some details') | replace("'", "\\'") %]',
+        error: '[% loc('Error') | replace("'", "\\'") %]',
+        title: {
+            required: '[% loc('Please enter a subject') | replace("'", "\\'") %]',
+            maxlength: '[% loc('Summaries are limited to {0} characters in length. Please shorten your summary') | replace("'", "\\'") %]',
+            notEmail: '[% loc('Please make sure you are not including an email address') %]'
+        },
+        detail: {
+            required: '[% loc('Please enter some details') | replace("'", "\\'") %]',
+            maxlength: '[% loc('Reports are limited to {0} characters in length. Please shorten your report') | replace("'", "\\'") %]',
+        },
         name: {
             required: '[% loc('Please enter your name') | replace("'", "\\'") %]',
             validName: '[% loc('Please enter your full name, councils need this information – if you do not wish your name to be shown on the site, untick the box below') | replace("'", "\\'") %]'
@@ -38,6 +46,11 @@ fixmystreet.password_minimum_length = [% c.cobrand.password_minimum_length %];
         how_to_send: '[% loc('How to send successful reports') | replace("'", "\\'") %]',
         more_details: '[% loc('Details') | replace("'", "\\'") %]',
 
+        this_report: '[% loc('This report') | replace("'", "\\'") %]',
+        this_is_the_problem: '[% loc('This is the problem') | replace("'", "\\'") %]',
+
+        or: '[% loc(' or ') | replace("'", "\\'") %]',
+
         geolocation_declined: '[% loc('You declined; please fill in the box above') | replace("'", "\\'") %]',
         geolocation_no_position: '[% loc('Could not look up location') | replace("'", "\\'") %]',
         geolocation_no_result: '[% loc('No result returned') | replace("'", "\\'") %]',
@@ -57,10 +70,12 @@ fixmystreet.password_minimum_length = [% c.cobrand.password_minimum_length %];
 
         permalink: '[% loc('Permalink') | replace("'", "\\'") %]',
 
+        filter: '[% loc('Filter') | replace("'", "\\'") %]',
+
         show_pins: '[% loc('Show pins') | replace("'", "\\'") %]',
         hide_pins: '[% loc('Hide pins') | replace("'", "\\'") %]',
 
-        upload_max_files_exceeded: '[% loc ('Whoa there Testino! Three photos are enough.') | replace("'", "\\'") %]',
+        upload_max_files_exceeded: '[% loc ('Sorry! You’ve hit the limit of images that can be attached to one report.') | replace("'", "\\'") %]',
         upload_default_message: '[% loc ('Drag and drop photos here or <u>click to upload</u>') | replace("'", "\\'") %]',
         upload_cancel_confirmation: '[% loc ('Are you sure you want to cancel this upload?') | replace("'", "\\'") %]',
         upload_invalid_file_type: '[% loc ('Please upload an image only') | replace("'", "\\'") %]',
@@ -70,6 +85,12 @@ fixmystreet.password_minimum_length = [% c.cobrand.password_minimum_length %];
         [% ELSE ~%]
         login_with_email: '[% loc('Log in with email') | replace("'", "\\'") %]',
         [% END ~%]
+
+        report_a_problem_btn: {
+            default: '[% loc('Report a problem') | replace("'", "\\'") %]',
+            here: '[% loc('Report a problem here') | replace("'", "\\'") %]',
+            another: '[% loc('Report another problem here') | replace("'", "\\'") %]'
+        },
 
         offline: {
             your_reports: '[% loc('Your offline reports') | replace("'", "\\'") %]',

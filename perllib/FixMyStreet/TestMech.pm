@@ -10,6 +10,7 @@ sub import {
     Test::More->export_to_level(1);
 }
 
+use Encode;
 use Test::WWW::Mechanize::Catalyst 'FixMyStreet::App';
 use t::Mock::MapIt;
 use Test::More;
@@ -240,7 +241,7 @@ sub get_text_body_from_email {
         my $part = shift;
         return if $part->subparts;
         return if $part->content_type !~ m{text/plain};
-        $body = $obj ? $part : $part->body;
+        $body = $obj ? $part : $part->body_str;
         ok $body, "Found text body";
     });
     return $body;
@@ -430,7 +431,7 @@ sub extract_problem_title {
 
     $banner = $mech->extract_problem_banner;
 
-Returns the problem title from a problem report page. Returns a hashref with id and text.
+Returns the problem title from a problem report page. Returns a hashref with class and text.
 
 =cut
 
@@ -438,8 +439,8 @@ sub extract_problem_banner {
     my $mech = shift;
 
     my $result = scraper {
-        process 'div#side > p.banner', id => '@id', text => 'TEXT';
-        process 'div.banner > p', id => '@id', text => 'TEXT';
+        process 'div.banner', class => '@class';
+        process 'div.banner > p', text => 'TEXT';
     }
     ->scrape( $mech->response );
 
@@ -534,31 +535,6 @@ sub visible_form_values {
     my %params = map { $_ => $form->value($_) } @visible_field_names;
 
     return \%params;
-}
-
-=head2 session_cookie_expiry
-
-    $expiry = $mech->session_cookie_expiry(  );
-
-Returns the current expiry time for the session cookie. Might be '0' which
-indicates it expires at end of browser session.
-
-=cut
-
-sub session_cookie_expiry {
-    my $mech = shift;
-
-    my $cookie_name = 'fixmystreet_app_session';
-    my $expires     = 'not found';
-
-    $mech             #
-      ->cookie_jar    #
-      ->scan( sub { $expires = $_[8] if $_[1] eq $cookie_name } );
-
-    croak "Could not find cookie '$cookie_name'"
-      if $expires && $expires eq 'not found';
-
-    return $expires || 0;
 }
 
 =head2 get_ok_json
@@ -705,7 +681,7 @@ sub create_problems_for_body {
             latitude           => '51.5016605453401',
             longitude          => '-0.142497580865087',
             user_id            => $user->id,
-            photo              => $mech->get_photo_data,
+            photo              => '74e3362283b6ef0c48686fb0e161da4043bbcc97.jpeg',
         };
 
         my %report_params = ( %$default_params, %$params );
@@ -718,15 +694,6 @@ sub create_problems_for_body {
     }
 
     return @problems;
-}
-
-sub get_photo_data {
-    my $mech = shift;
-    return $mech->{sample_photo} ||= do {
-        my $sample_file = FixMyStreet->path_to( 't/app/controller/sample.jpg' );
-        $mech->builder->ok( -f "$sample_file", "sample file $sample_file exists" );
-        $sample_file->slurp(iomode => '<:raw');
-    };
 }
 
 sub create_comment_for_problem {
@@ -743,4 +710,21 @@ sub create_comment_for_problem {
 
     FixMyStreet::App->model('DB::Comment')->create($params);
 }
+
+sub encoded_content {
+    my $self = shift;
+    return encode_utf8($self->content);
+}
+
+sub content_as_csv {
+    my $self = shift;
+    open my $data_handle, '<:encoding(utf-8)', \$self->encoded_content;
+    my $csv = Text::CSV->new({ binary => 1 });
+    my @rows;
+    while (my $row = $csv->getline($data_handle)) {
+        push @rows, $row;
+    }
+    return @rows;
+}
+
 1;

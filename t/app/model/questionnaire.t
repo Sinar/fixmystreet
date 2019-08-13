@@ -1,3 +1,14 @@
+package FixMyStreet::Cobrand::Tester;
+
+use parent 'FixMyStreet::Cobrand::Default';
+
+sub send_questionnaire {
+    my ($self, $row) = @_;
+    return $row->latitude == 1;
+}
+
+package main;
+
 use FixMyStreet;
 use FixMyStreet::TestMech;
 
@@ -27,7 +38,7 @@ my $problem = FixMyStreet::DB->resultset('Problem')->create(
 
 my $mech = FixMyStreet::TestMech->new;
 
-for my $test ( 
+for my $test (
     {
         state => 'unconfirmed',
         send_email => 0,
@@ -74,22 +85,22 @@ for my $test (
     },
     {
         state => 'duplicate',
-        send_email => 1,
+        send_email => 0,
     },
     {
         state => 'unable to fix',
-        send_email => 1,
+        send_email => 0,
     },
     {
         state => 'not responsible',
-        send_email => 1,
+        send_email => 0,
     },
     {
         state => 'closed',
-        send_email => 1,
+        send_email => 0,
     },
 ) {
-    subtest "correct questionnaire behviour for state $test->{state}" => sub {
+    subtest "correct questionnaire behaviour for state $test->{state}" => sub {
         $problem->discard_changes;
         $problem->state( $test->{state} );
         $problem->send_questionnaire( 1 );
@@ -106,6 +117,31 @@ for my $test (
 
         $mech->clear_emails_ok();
     }
+}
+
+for my $test (
+    { latitude => 2, emails => 0, },
+    { latitude => 1, emails => 1, },
+) {
+    subtest "test cobrand questionnaire send override, expecting $test->{emails} email" => sub {
+        FixMyStreet::override_config {
+            ALLOWED_COBRANDS => 'tester',
+        }, sub {
+            $problem->latitude($test->{latitude});
+            $problem->send_questionnaire(1);
+            $problem->state('confirmed');
+            $problem->update;
+            $problem->questionnaires->delete;
+
+            $mech->email_count_is(0);
+            FixMyStreet::DB->resultset('Questionnaire')->send_questionnaires( { site => 'tester' } );
+            $mech->email_count_is($test->{emails});
+            $mech->clear_emails_ok();
+
+            $problem->discard_changes;
+            is $problem->send_questionnaire, 0;
+        };
+    };
 }
 
 done_testing();

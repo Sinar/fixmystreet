@@ -1,4 +1,5 @@
 use FixMyStreet::TestMech;
+use Test::MockModule;
 
 my $mech = FixMyStreet::TestMech->new;
 
@@ -7,6 +8,14 @@ my $oxon = $mech->create_body_ok(2237, 'Oxfordshire County Council', { can_be_de
 my $contact = $mech->create_contact_ok( body_id => $oxon->id, category => 'Cows', email => 'cows@example.net' );
 my $contact2 = $mech->create_contact_ok( body_id => $oxon->id, category => 'Sheep', email => 'SHEEP', send_method => 'Open311' );
 my $contact3 = $mech->create_contact_ok( body_id => $oxon->id, category => 'Badgers', email => 'badgers@example.net' );
+my $dt = FixMyStreet::DB->resultset("DefectType")->create({
+    body => $oxon,
+    name => 'Small Defect', description => "Teeny",
+});
+FixMyStreet::DB->resultset("ContactDefectType")->create({
+    contact => $contact,
+    defect_type => $dt,
+});
 my $rp = FixMyStreet::DB->resultset("ResponsePriority")->create({
     body => $oxon,
     name => 'High Priority',
@@ -23,14 +32,14 @@ FixMyStreet::DB->resultset("ContactResponsePriority")->create({
     contact => $contact3,
     response_priority => $rp2,
 });
-my $wodc = $mech->create_body_ok(2420, 'West Oxfordshire District Council');
-$mech->create_contact_ok( body_id => $wodc->id, category => 'Horses', email => 'horses@example.net' );
+my $oxfordcity = $mech->create_body_ok(2421, 'Oxford City Council');
+$mech->create_contact_ok( body_id => $oxfordcity->id, category => 'Horses', email => 'horses@example.net' );
 
 
 my ($report, $report2, $report3) = $mech->create_problems_for_body(3, $oxon->id, 'Test', {
-    category => 'Cows', cobrand => 'fixmystreet', areas => ',2237,2420',
+    category => 'Cows', cobrand => 'fixmystreet', areas => ',2237,2421,',
     whensent => \'current_timestamp',
-    latitude => 51.847693, longitude => -1.355908,
+    latitude => 51.754926, longitude => -1.256179,
 });
 my $report_id = $report->id;
 my $report2_id = $report2->id;
@@ -48,12 +57,22 @@ FixMyStreet::override_config {
     subtest "test inspect page" => sub {
         $mech->get_ok("/report/$report_id");
         $mech->content_lacks('Save changes');
+        $mech->content_lacks('Private');
+        $mech->content_lacks('Priority');
+        $mech->content_lacks('Traffic management');
+        $mech->content_lacks('/admin/report_edit/'.$report_id.'">admin</a>)');
+
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_mark_private' });
+        $mech->get_ok("/report/$report_id");
+        $mech->content_contains('Private');
+        $mech->content_contains('Save changes');
         $mech->content_lacks('Priority');
         $mech->content_lacks('Traffic management');
         $mech->content_lacks('/admin/report_edit/'.$report_id.'">admin</a>)');
 
         $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_edit_priority' });
         $mech->get_ok("/report/$report_id");
+        $mech->content_contains('Private');
         $mech->content_contains('Save changes');
         $mech->content_contains('Priority');
         $mech->content_lacks('Traffic management');
@@ -62,6 +81,7 @@ FixMyStreet::override_config {
         $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_inspect' });
         $mech->get_ok("/report/$report_id");
         $mech->content_contains('Save changes');
+        $mech->content_contains('Private');
         $mech->content_contains('Priority');
         $mech->content_contains('Traffic management');
         $mech->content_lacks('/admin/report_edit/'.$report_id.'">admin</a>)');
@@ -82,7 +102,28 @@ FixMyStreet::override_config {
         $user->update({is_superuser => 0});
     };
 
+    subtest "test mark private submission" => sub {
+        $user->user_body_permissions->delete;
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_mark_private' });
+
+        $mech->get_ok("/report/$report_id");
+        $mech->submit_form_ok({ button => 'save', with_fields => { non_public => 1 } });
+        $report->discard_changes;
+        my $alert = FixMyStreet::App->model('DB::Alert')->find(
+            { user => $user, alert_type => 'new_updates', confirmed => 1, }
+        );
+
+        is $report->state, 'confirmed', 'report state not changed';
+        ok $report->non_public, 'report not public';
+        ok !defined( $alert ) , 'not signed up for alerts';
+
+        $report->update( { non_public => 0 } );
+    };
     subtest "test basic inspect submission" => sub {
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_edit_priority' });
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_inspect' });
+
+        $mech->get_ok("/report/$report_id");
         $mech->submit_form_ok({ button => 'save', with_fields => { traffic_information => 'Yes', state => 'Action scheduled', include_update => undef } });
         $report->discard_changes;
         my $alert = FixMyStreet::App->model('DB::Alert')->find(
@@ -142,6 +183,19 @@ FixMyStreet::override_config {
         $mech->content_contains('Invalid location');
         $mech->submit_form_ok({ button => 'save', with_fields => { latitude => 51.754926, longitude => -1.256179, include_update => undef } });
         $mech->content_lacks('Invalid location');
+    };
+
+    subtest "test areas update when location changes" => sub {
+        $report->discard_changes;
+        my ($lat, $lon, $areas) = ($report->latitude, $report->longitude, $report->areas);
+        $mech->get_ok("/report/$report_id");
+        $mech->submit_form_ok({ button => 'save', with_fields => { latitude => 52.038712, longitude => -1.346397, include_update => undef } });
+        $mech->content_lacks('Invalid location');
+        $report->discard_changes;
+        is $report->areas, ",151767,2237,2419,", 'Areas set correctly';
+        $mech->submit_form_ok({ button => 'save', with_fields => { latitude => $lat, longitude => $lon, include_update => undef } });
+        $report->discard_changes;
+        is $report->areas, $areas, 'Areas reset correctly';
     };
 
     subtest "test duplicate reports are shown" => sub {
@@ -394,6 +448,24 @@ FixMyStreet::override_config {
         is $report->response_priority->id, $rp->id, 'response priority set';
     };
 
+    subtest "check can set defect type for category when changing from category with no defect types" => sub {
+        $report->update({ category => 'Sheep', defect_type_id => undef });
+        $user->user_body_permissions->delete;
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_inspect' });
+        $mech->get_ok("/report/$report_id");
+        $mech->submit_form_ok({
+            button => 'save',
+            with_fields => {
+                include_update => 0,
+                defect_type => $dt->id,
+                category => 'Cows',
+            }
+        });
+        $report->discard_changes;
+        is $report->defect_type->id, $dt->id, 'defect type set';
+        $report->update({ defect_type_id => undef });
+    };
+
     subtest "check can't set priority that isn't for a category" => sub {
         $report->discard_changes;
         $report->update({ category => 'Cows', response_priority_id => $rp->id });
@@ -412,6 +484,26 @@ FixMyStreet::override_config {
 
         $report->discard_changes;
         is $report->response_priority, undef, 'response priority set';
+    };
+
+    subtest "check can unset priority" => sub {
+        $report->discard_changes;
+        $report->update({ category => 'Cows', response_priority_id => $rp->id });
+        $report->discard_changes;
+        is $report->response_priority->id, $rp->id, 'response priority set';
+        $user->user_body_permissions->delete;
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_edit_category' });
+        $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_edit_priority' });
+        $mech->get_ok("/report/$report_id");
+        $mech->submit_form_ok({
+            button => 'save',
+            with_fields => {
+                priority => "",
+            }
+        });
+
+        $report->discard_changes;
+        is $report->response_priority, undef, 'response priority unset';
     };
 
     subtest "check nearest address display" => sub {
@@ -460,6 +552,14 @@ foreach my $test (
     FixMyStreet::override_config {
       ALLOWED_COBRANDS => $test->{cobrand},
     }, sub {
+        my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Oxfordshire');
+        $cobrand->mock('available_permissions', sub {
+            my $self = shift;
+
+            my $perms = FixMyStreet::Cobrand::Default->available_permissions;
+
+            return $perms;
+        });
         subtest $test->{desc} => sub {
             $user->user_body_permissions->delete;
             $user->user_body_permissions->create({ body => $oxon, permission_type => 'report_inspect' });
@@ -506,6 +606,14 @@ foreach my $test (
 FixMyStreet::override_config {
     ALLOWED_COBRANDS => 'oxfordshire',
 }, sub {
+    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Oxfordshire');
+    $cobrand->mock('available_permissions', sub {
+        my $self = shift;
+
+        my $perms = FixMyStreet::Cobrand::Default->available_permissions;
+
+        return $perms;
+    });
     subtest "test negative reputation" => sub {
         my $reputation = $report->user->get_extra_metadata("reputation") || 0;
 
@@ -641,7 +749,7 @@ FixMyStreet::override_config {
         # set the timezone on this so the date comparison below doesn't fail due to mismatched
         # timezones
         my $now = DateTime->now(
-            time_zone =>  FixMyStreet->time_zone || FixMyStreet->local_time_zone
+            time_zone => FixMyStreet->local_time_zone
         )->subtract(days => 1);
         $mech->submit_form(button => 'save', form_id => 'report_inspect_form',
             fields => { include_update => 1, public_update => 'An update', saved_at => $now->epoch });
@@ -655,6 +763,14 @@ FixMyStreet::override_config {
     ALLOWED_COBRANDS => [ 'oxfordshire', 'fixmystreet' ],
     BASE_URL => 'http://fixmystreet.site',
 }, sub {
+    my $cobrand = Test::MockModule->new('FixMyStreet::Cobrand::Oxfordshire');
+    $cobrand->mock('available_permissions', sub {
+        my $self = shift;
+
+        my $perms = FixMyStreet::Cobrand::Default->available_permissions;
+
+        return $perms;
+    });
     subtest "test report not resent when category changes if send_method doesn't change" => sub {
         $mech->get_ok("/report/$report3_id");
         $mech->submit_form(button => 'save', with_fields => { category => 'Badgers', include_update => undef, });
@@ -690,7 +806,7 @@ FixMyStreet::override_config {
         $report->discard_changes;
         is $report->category, "Horses", "Report in correct category";
         is $report->whensent, undef, "Report marked as unsent";
-        is $report->bodies_str, $wodc->id, "Reported to WODC";
+        is $report->bodies_str, $oxfordcity->id, "Reported to Oxford City";
 
         is $mech->uri->path, "/report/$report_id", "redirected to correct page";
         is $mech->res->code, 200, "got 200 for final destination";
